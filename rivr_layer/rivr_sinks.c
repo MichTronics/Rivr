@@ -158,11 +158,16 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
          * a limited-TTL broadcast so the message is not silently dropped.   */
         bool pushed = rb_try_push(&rf_tx_queue, &req);
         if (!pushed && dec && pkt.dst_id != 0u) {
-            /* ── Unicast failover: fallback flood ───────────────────────── */
+            /* ── Unicast failover: fallback flood ───────────────────────── *
+             * Bump seq so that nodes which already saw the unicast attempt  *
+             * (or this node on a retry) do NOT dedupe-drop the flood.       *
+             * Set hop=0: this is an originated fallback, not a relay hop.   */
             rivr_pkt_hdr_t fb = pkt;
-            fb.dst_id  = 0u;                      /* broadcast */
-            fb.ttl     = RIVR_FALLBACK_TTL;        /* limited range */
-            fb.flags  |= PKT_FLAG_FALLBACK;
+            fb.dst_id  = 0u;                        /* broadcast */
+            fb.ttl     = RIVR_FALLBACK_TTL;          /* limited range */
+            fb.hop     = 0u;                         /* originated, not relayed */
+            fb.seq     = ++g_ctrl_seq;               /* fresh seq → no dedupe hit */
+            fb.flags   = (uint8_t)((pkt.flags & ~PKT_FLAG_RELAY) | PKT_FLAG_FALLBACK);
             int fb_enc = protocol_encode(&fb, pl_copy, pl_len,
                                          req.data, sizeof(req.data));
             if (fb_enc > 0) {
@@ -172,8 +177,9 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                 if (pushed) {
                     ESP_LOGW(TAG,
                         "rf_tx: unicast queue full → FALLBACK flood "
-                        "dst=0x%08lx ttl=%u flags=FALLBACK",
-                        (unsigned long)pkt.dst_id, RIVR_FALLBACK_TTL);
+                        "dst=0x%08lx ttl=%u seq=%lu flags=FALLBACK",
+                        (unsigned long)pkt.dst_id, RIVR_FALLBACK_TTL,
+                        (unsigned long)fb.seq);
                 }
             }
         }
@@ -181,6 +187,12 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
             ESP_LOGW(TAG, "rf_tx: queue full (fallback also failed) – dropped");
         } else {
             ESP_LOGI(TAG, "rf_tx: queued %u bytes (toa=%u us)", req.len, req.toa_us);
+            /* Track originated TX separately from relayed traffic so that a
+             * heavy relay storm cannot exhaust the forward budget and silence
+             * this node's own transmissions.  (Check #5 — fwd vs originated) */
+            if (dec && pkt.pkt_type < FWDBUDGET_PKT_TYPES) {
+                routing_get_fwdbudget()->tx_originated_count[pkt.pkt_type] += 1u;
+            }
         }
         return;   /* RIVR_VAL_BYTES path done */
 

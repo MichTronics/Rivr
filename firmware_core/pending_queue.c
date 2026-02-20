@@ -87,7 +87,11 @@ uint8_t pending_queue_drain_for_dst(pending_queue_t *pq,
             }
         }
 
-        /* Always clear the slot — don't retry indefinitely */
+        /* Always clear the slot immediately — before any further processing.
+         * This prevents a second ROUTE_RPL from draining the same entry
+         * (double-send protection).  We intentionally do not retry on TX    *
+         * push failure; the ROUTE_REQ will be re-issued by the next          *
+         * origination attempt if the message is still needed.               */
         memset(e, 0, sizeof(*e));
         if (pq->count > 0u) pq->count--;
     }

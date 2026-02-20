@@ -346,16 +346,18 @@ static void tx_drain_loop(void)
         if (!rb_pop(&rf_tx_queue, &req)) break;   /* queue empty */
 
         /* ── Jitter gate: hold frame until its due_ms timestamp ──────────── *
-         * due_ms == 0 means "send immediately".                          *
-         * If the head frame isn't ready, push it back to the tail of the *
-         * queue and stop draining this cycle.  The 1 ms main-loop tick   *
-         * means worst-case latency for re-check is negligible.           */
+         * due_ms == 0 means "send immediately".                             *
+         * If the head frame isn't ready, push it back to the TAIL of the   *
+         * queue and CONTINUE to the next iteration — do NOT break.          *
+         * Breaking would cause head-of-line blocking: an immediate frame    *
+         * sitting behind a deferred one would never drain this tick.         *
+         * Using continue is safe because TX_DRAIN_LIMIT bounds total pops.  */
         if (req.due_ms != 0u && req.due_ms > now_ms) {
             if (!rb_try_push(&rf_tx_queue, &req)) {
                 /* Should never happen (we just freed a slot), but don't drop */
                 ESP_LOGW(TAG, "TX re-push failed for jittered frame – dropped");
             }
-            break;   /* stop draining; try again next loop iteration */
+            continue;   /* skip — try next frame; revisit this one next tick  */
         }
 
         /* Hard duty-cycle gate (C-layer backup; RIVR budget.toa_us already

@@ -202,6 +202,12 @@ typedef struct {
     /* ── Drop diagnostics ──────────────────────────────────────────── */
     uint16_t fwd_drop_count[FWDBUDGET_PKT_TYPES]; /**< Drops per type this window */
     uint32_t total_fwd_drops;                    /**< All-time budget drop count  */
+
+    /* ── Originated TX tracking (separate from relayed traffic) ─────── *
+     * Counting originated and forwarded frames separately prevents a    *
+     * heavy relay storm from silencing this node's own transmissions.   *
+     * These counters are reset each minute with the per-minute window.  */
+    uint16_t tx_originated_count[FWDBUDGET_PKT_TYPES]; /**< Originated TX/type/min */
 } forward_budget_t;
 
 /* ── Global state accessors ──────────────────────────────────────────────── */

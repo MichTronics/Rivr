@@ -182,9 +182,10 @@ static void fwdbudget_roll_window(forward_budget_t *fb, uint32_t now_ms)
     /* Per-minute window */
     uint32_t age = now_ms - fb->window_start_ms;
     if (age >= FWDBUDGET_WINDOW_MS) {
-        memset(fb->fwd_count,      0, sizeof(fb->fwd_count));
-        memset(fb->fwd_air_us,     0, sizeof(fb->fwd_air_us));
-        memset(fb->fwd_drop_count, 0, sizeof(fb->fwd_drop_count));
+        memset(fb->fwd_count,           0, sizeof(fb->fwd_count));
+        memset(fb->fwd_air_us,          0, sizeof(fb->fwd_air_us));
+        memset(fb->fwd_drop_count,      0, sizeof(fb->fwd_drop_count));
+        memset(fb->tx_originated_count, 0, sizeof(fb->tx_originated_count));
         fb->window_start_ms = now_ms;
     }
 
@@ -289,8 +290,11 @@ uint32_t routing_forward_delay_ms(uint32_t src_id, uint32_t seq, uint8_t pkt_typ
     (void)src_id; (void)seq; (void)pkt_type;
     return 0u;
 #else
-    /* Seed includes pkt_type so different frame types spread independently
-     * even when (src_id, seq) is the same (e.g. rapid back-to-back frames). */
+    /* Seed uses only (src_id, seq, pkt_type) — intentionally excludes from_id
+     * and rx_rssi so that jitter is fully deterministic: the same packet
+     * injected twice (e.g. via JSONL replay) always produces the same delay,
+     * and different relays forwarding the same frame schedule the same offset,
+     * avoiding coordinated collisions without PRNG state synchronisation. */
     uint32_t x = src_id ^ seq ^ ((uint32_t)pkt_type << 24u);
     x ^= x << 13u;
     x ^= x >> 17u;
