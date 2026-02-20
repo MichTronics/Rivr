@@ -136,7 +136,7 @@ void radio_poll_rx(void);
  *
  * Attached with:  gpio_isr_handler_add(DIO1_PIN, radio_isr, NULL);
  */
-void IRAM_ATTR radio_isr(void *arg);
+void radio_isr(void *arg);  /* IRAM_ATTR on the definition in radio_sx1262.c */
 
 /* ── Packet decoder (main-loop only) ────────────────────────────────────── */
 
