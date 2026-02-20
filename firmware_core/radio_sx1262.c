@@ -1,0 +1,299 @@
+/**
+ * @file  radio_sx1262.c
+ * @brief SX1262 LoRa radio driver.
+ *
+ * DETERMINISM INVARIANTS
+ * ──────────────────────
+ *  • radio_isr() writes ONLY to rf_rx_ringbuf (SPSC push).
+ *  • radio_isr() never calls malloc, printf, or any RIVR function.
+ *  • radio_transmit() is called only from the main loop.
+ *  • All SX1262 register accesses go through platform_spi_transfer().
+ *
+ * SX1262 COMMAND REFERENCE (subset used here)
+ * ─────────────────────────────────────────────
+ *  0x8A  SetStandby(0=RC, 1=XOSC)
+ *  0x86  SetRfFrequency(freq[3])
+ *  0x8B  SetPacketType(0=FSK, 1=LoRa)
+ *  0x8C  SetTxParams(power, rampTime)
+ *  0x8E  SetModulationParams(SF, BW, CR, LDRO)
+ *  0x8F  SetPacketParams(preamble,headerType,payloadLen,crc,invertIQ)
+ *  0x96  SetDioIrqParams(irqMask[2], dio1[2], dio2[2], dio3[2])
+ *  0x82  SetTx(timeout[3])
+ *  0x80  SetSleep(sleepConfig)
+ *  0x98  SetRx(timeout[3])
+ *  0x13  GetIrqStatus() → 2 bytes
+ *  0x02  ClearIrqStatus(mask[2])
+ *  0x1E  GetRxBufferStatus() → 2 bytes (payloadLen, startAddr)
+ *  0x1D  ReadBuffer(startAddr, offset, ...) → payload
+ */
+
+#include "radio_sx1262.h"
+#include "platform_esp32.h"
+#include "timebase.h"
+#include "esp_log.h"
+#include <string.h>
+#include <stdio.h>
+
+#define TAG "RADIO"
+
+/* ── Ring-buffer storage (static, no heap) ───────────────────────────────── */
+static rf_rx_frame_t  s_rx_storage[RF_RX_RINGBUF_CAP];
+static rf_tx_request_t s_tx_storage[RF_TX_QUEUE_CAP];
+
+rb_t rf_rx_ringbuf;
+rb_t rf_tx_queue;
+
+void radio_init_buffers_only(void)
+{
+    /* Initialise ring-buffers without any SPI/GPIO access.
+     * Safe to call before platform_init() in simulation builds. */
+    rb_init(&rf_rx_ringbuf, s_rx_storage, RF_RX_RINGBUF_CAP, sizeof(rf_rx_frame_t));
+    rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
+    ESP_LOGI(TAG, "radio_init_buffers_only: ringbufs ready (SIM MODE)");
+}
+
+/* ── Internal SX1262 register helpers ───────────────────────────────────── */
+
+static void sx1262_cmd(uint8_t cmd, const uint8_t *params, uint8_t n_params)
+{
+    uint8_t tx_buf[32];
+    uint8_t rx_buf[32];
+    tx_buf[0] = cmd;
+    if (n_params > 0 && params) {
+        memcpy(tx_buf + 1, params, n_params);
+    }
+    platform_spi_transfer(tx_buf, rx_buf, 1 + n_params);
+}
+
+static void sx1262_read_cmd(uint8_t cmd, uint8_t *out, uint8_t n_out)
+{
+    uint8_t tx_buf[34] = { cmd, 0x00 };  /* cmd + NOP status byte */
+    uint8_t rx_buf[34] = {0};
+    platform_spi_transfer(tx_buf, rx_buf, 2 + n_out);
+    memcpy(out, rx_buf + 2, n_out);
+}
+
+/* ── Initialisation ──────────────────────────────────────────────────────── */
+
+void radio_init(void)
+{
+    ESP_LOGI(TAG, "radio_init: resetting SX1262");
+
+    rb_init(&rf_rx_ringbuf, s_rx_storage, RF_RX_RINGBUF_CAP, sizeof(rf_rx_frame_t));
+    rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
+
+    platform_sx1262_reset();
+    platform_sx1262_wait_busy(100);
+
+    /* SetStandby(STDBY_RC) */
+    uint8_t p = 0x00;
+    sx1262_cmd(0x8A, &p, 1);
+    platform_sx1262_wait_busy(10);
+
+    /* SetPacketType(LoRa=1) */
+    p = 0x01;
+    sx1262_cmd(0x8B, &p, 1);
+    platform_sx1262_wait_busy(10);
+
+    /* SetRfFrequency: fRF = RF_FREQ_HZ, PLL step = 32e6/2^25 */
+    uint32_t frf = (uint32_t)((double)RF_FREQ_HZ / 0.95367f);  /* ≈ freq * 2^25 / 32e6 */
+    uint8_t freq_params[4] = {
+        (uint8_t)(frf >> 24), (uint8_t)(frf >> 16),
+        (uint8_t)(frf >>  8), (uint8_t)(frf)
+    };
+    sx1262_cmd(0x86, freq_params, 4);
+    platform_sx1262_wait_busy(10);
+
+    /* SetModulationParams: SF=9, BW=4(125kHz), CR=1(4/5), LDRO=0 */
+    uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x01, 0x00 };
+    sx1262_cmd(0x8E, mod_params, 4);
+    platform_sx1262_wait_busy(10);
+
+    /* SetPacketParams: preamble=8, explicit header, maxPayload, CRC=on, noInvertIQ */
+    uint8_t pkt_params[6] = {
+        0x00, RF_PREAMBLE_LEN,  /* preamble MSB, LSB */
+        0x00,                   /* variable length header */
+        RF_MAX_PAYLOAD_LEN,     /* maxPayloadLength */
+        0x01,                   /* CRC on */
+        0x00                    /* IQ standard */
+    };
+    sx1262_cmd(0x8F, pkt_params, 6);
+    platform_sx1262_wait_busy(10);
+
+    /* SetTxParams: +14 dBm, rampTime=40µs */
+    uint8_t tx_params[2] = { 0x16, 0x04 };
+    sx1262_cmd(0x8C, tx_params, 2);
+    platform_sx1262_wait_busy(10);
+
+    /* SetDioIrqParams: enable TxDone+RxDone+Timeout on DIO1 */
+    uint8_t irq_params[8] = {
+        0x02, 0x03,   /* irqMask: TxDone(0x0001) | RxDone(0x0002) */
+        0x02, 0x03,   /* DIO1 */
+        0x00, 0x00,   /* DIO2 */
+        0x00, 0x00    /* DIO3 */
+    };
+    sx1262_cmd(0x96, irq_params, 8);
+    platform_sx1262_wait_busy(10);
+
+    /* Attach DIO1 ISR */
+    gpio_isr_handler_add(PIN_SX1262_DIO1, radio_isr, NULL);
+
+    ESP_LOGI(TAG, "radio_init: done (SF%u BW%ukHz)", RF_SPREADING_FACTOR, RF_BANDWIDTH_KHZ);
+}
+
+void radio_start_rx(void)
+{
+    /* SetRx with timeout=0 (continuous) */
+    uint8_t timeout[3] = { 0xFF, 0xFF, 0xFF };
+    sx1262_cmd(0x98, timeout, 3);
+    platform_sx1262_wait_busy(5);
+    ESP_LOGI(TAG, "RX mode started");
+}
+
+/* ── ISR ─────────────────────────────────────────────────────────────────── *
+ *
+ * BOUNDED-TIME PATH: no calls to RIVR, no allocation, no printf.
+ *
+ * Total worst-case time at 8 MHz SPI:
+ *   GetIrqStatus (3 SPI bytes)          ≈   3 µs
+ *   ClearIrqStatus (3 SPI bytes)        ≈   3 µs
+ *   GetRxBufferStatus (4 SPI bytes)     ≈   4 µs
+ *   ReadBuffer (3 + 255 SPI bytes max)  ≈ 260 µs
+ *   rb_try_push (memcpy 258 bytes)      ≈  10 µs
+ *   TOTAL                               < 290 µs
+ * ─────────────────────────────────────────────────────────────────────────── */
+void IRAM_ATTR radio_isr(void *arg)
+{
+    (void)arg;
+
+    /* 1. Read IRQ status */
+    uint8_t irq_status[2] = {0};
+    sx1262_read_cmd(0x13, irq_status, 2);
+    uint16_t irq = ((uint16_t)irq_status[0] << 8) | irq_status[1];
+
+    /* 2. Clear all IRQ flags */
+    uint8_t clr[2] = { irq_status[0], irq_status[1] };
+    sx1262_cmd(0x02, clr, 2);
+
+    if (!(irq & 0x0002)) return;  /* Not RxDone – ignore (TxDone, Timeout, etc.) */
+
+    /* 3. GetRxBufferStatus → payloadLen, startAddr */
+    uint8_t buf_status[2] = {0};
+    sx1262_read_cmd(0x1E, buf_status, 2);
+    uint8_t payload_len  = buf_status[0];
+    uint8_t start_addr   = buf_status[1];
+
+    if (payload_len == 0 || payload_len > RF_MAX_PAYLOAD_LEN) return;
+
+    /* 4. ReadBuffer: command=0x1E, offset=start_addr, NOP, then payload */
+    rf_rx_frame_t frame;
+    {
+        uint8_t tx_buf[4] = { 0x1D, start_addr, 0x00, 0x00 };
+        uint8_t rx_buf[4 + RF_MAX_PAYLOAD_LEN];
+        memset(rx_buf, 0, sizeof(rx_buf));
+        platform_spi_transfer(tx_buf, rx_buf, 4 + payload_len);
+        memcpy(frame.data, rx_buf + 3, payload_len);
+    }
+    frame.len         = payload_len;
+    frame.rx_mono_ms  = (uint32_t)atomic_load_explicit(&g_mono_ms, memory_order_relaxed);
+    frame.rssi_dbm    = -99;   /* GetPacketStatus would give accurate value; skipped in ISR */
+    frame.snr_db      = 0;
+
+    /* 5. Push into ringbuf (may silently drop if full) */
+    rb_try_push(&rf_rx_ringbuf, &frame);
+}
+
+/* ── TX ──────────────────────────────────────────────────────────────────── */
+
+bool radio_transmit(const rf_tx_request_t *req)
+{
+    if (!req || req->len == 0) return false;
+
+    platform_sx1262_wait_busy(10);
+
+    /* WriteBuffer: 0x0E + offset=0 + payload */
+    uint8_t tx_cmd[3 + RF_MAX_PAYLOAD_LEN];
+    tx_cmd[0] = 0x0E;   /* WriteBuffer */
+    tx_cmd[1] = 0x00;   /* offset */
+    tx_cmd[2] = 0x00;   /* NOP */
+    memcpy(tx_cmd + 3, req->data, req->len);
+    platform_spi_transfer(tx_cmd, NULL, 3 + req->len);
+    platform_sx1262_wait_busy(5);
+
+    /* Update payload length in packet params */
+    uint8_t pkt_params[6] = {
+        0x00, RF_PREAMBLE_LEN, 0x00, req->len, 0x01, 0x00
+    };
+    sx1262_cmd(0x8F, pkt_params, 6);
+    platform_sx1262_wait_busy(5);
+
+    /* SetTx with timeout = ToA × 1.5 converted to SX1262 ticks (15.625 µs/tick) */
+    uint32_t timeout_ticks = (req->toa_us * 3u / 2u) / 16u;
+    uint8_t tx_timeout[3] = {
+        (uint8_t)(timeout_ticks >> 16),
+        (uint8_t)(timeout_ticks >>  8),
+        (uint8_t)(timeout_ticks)
+    };
+    sx1262_cmd(0x82, tx_timeout, 3);
+
+    /* Poll for TxDone (up to toa_us × 2 ms) */
+    uint32_t t0 = tb_millis();
+    uint32_t deadline_ms = t0 + req->toa_us / 1000u * 2u + 100u;
+
+    while (tb_millis() < deadline_ms) {
+        uint8_t irq[2] = {0};
+        sx1262_read_cmd(0x13, irq, 2);
+        uint16_t flags = ((uint16_t)irq[0] << 8) | irq[1];
+        if (flags & 0x0001) {   /* TxDone */
+            uint8_t clr[2] = { irq[0], irq[1] };
+            sx1262_cmd(0x02, clr, 2);
+            radio_start_rx();   /* return to RX */
+            return true;
+        }
+        if (flags & 0x0200) {   /* Timeout */
+            ESP_LOGE(TAG, "TX timeout");
+            radio_start_rx();
+            return false;
+        }
+    }
+    ESP_LOGE(TAG, "TX deadline exceeded");
+    radio_start_rx();
+    return false;
+}
+
+/* ── Frame decoder ───────────────────────────────────────────────────────── */
+
+uint8_t radio_decode_frame(const rf_rx_frame_t *frame, char *out_buf, uint8_t out_len)
+{
+    if (!frame || frame->len < 3 || out_len == 0) return 0;
+
+    const char *prefix = "DATA";
+    switch (frame->data[0]) {
+        case RF_FRAME_CHAT:   prefix = "CHAT";   break;
+        case RF_FRAME_BEACON: prefix = "BEACON"; break;
+        case RF_FRAME_ACK:    prefix = "ACK";    break;
+        default:              prefix = "DATA";   break;
+    }
+
+    /* Payload starts at byte 3 (after [type, tick_lo, tick_hi]) */
+    uint8_t payload_len = frame->len - 3u;
+    int n = snprintf(out_buf, out_len, "%s:", prefix);
+    if (n < 0 || n >= out_len) return 0;
+
+    uint8_t remain = out_len - (uint8_t)n - 1u;
+    uint8_t copy   = payload_len < remain ? payload_len : remain;
+    memcpy(out_buf + n, frame->data + 3, copy);
+    out_buf[n + copy] = '\0';
+    return (uint8_t)(n + copy);
+}
+
+uint16_t radio_frame_sender_tick(const rf_rx_frame_t *frame)
+{
+    if (!frame || frame->len < 3) return 0;
+    return (uint16_t)frame->data[1] | ((uint16_t)frame->data[2] << 8);
+}
+
+void radio_poll_rx(void)
+{
+    /* Used in polling mode (no ISR).  In ISR mode, this is a no-op. */
+}

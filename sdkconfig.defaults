@@ -1,0 +1,36 @@
+# sdkconfig.defaults – RIVR Embedded Node
+# Applied by `idf.py build` before the interactive menuconfig values.
+# Override any setting here to pin it for the project.
+
+# ── CPU + Flash ──────────────────────────────────────────────────────────────
+CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ_240=y      # 240 MHz for best LoRa throughput
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+
+# ── FreeRTOS ─────────────────────────────────────────────────────────────────
+CONFIG_FREERTOS_HZ=1000                      # 1 ms tick (matches tb_millis())
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3072
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+CONFIG_LOG_DEFAULT_LEVEL_DEBUG=y             # Enable debug logs during POC
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+
+# ── UART console ─────────────────────────────────────────────────────────────
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_NUM=0
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+
+# ── Partition table ──────────────────────────────────────────────────────────
+CONFIG_PARTITION_TABLE_SINGLE_APP=y
+
+# ── SPI ──────────────────────────────────────────────────────────────────────
+CONFIG_SPI_MASTER_IN_IRAM=y                  # SPI ISR handler in IRAM
+
+# ── GPIO ─────────────────────────────────────────────────────────────────────
+CONFIG_GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL=y
+
+# ── Disable unused stacks to save RAM ────────────────────────────────────────
+CONFIG_BT_ENABLED=n
+CONFIG_WIFI_ENABLED=n
+CONFIG_ESP32_ENABLE_COREDUMP_TO_NONE=y

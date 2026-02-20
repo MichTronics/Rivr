@@ -1,0 +1,9 @@
+{"source":"usb","t_ms":100,"v":{"type":"Str","v":"hello world"}}
+{"source":"usb","t_ms":200,"v":{"type":"Str","v":""}}
+{"source":"usb","t_ms":300,"v":{"type":"Str","v":"  "}}
+{"source":"usb","t_ms":500,"v":{"type":"Str","v":"rivr is alive"}}
+{"source":"usb","t_ms":1000,"v":{"type":"Str","v":"packet one"}}
+{"source":"usb","t_ms":1500,"v":{"type":"Str","v":"packet two"}}
+{"source":"usb","t_ms":2100,"v":{"type":"Str","v":"window two A"}}
+{"source":"usb","t_ms":2200,"v":{"type":"Str","v":"window two B"}}
+{"source":"usb","t_ms":3000,"v":{"type":"Str","v":"final message"}}

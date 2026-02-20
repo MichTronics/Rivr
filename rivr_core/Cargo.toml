@@ -1,0 +1,36 @@
+[package]
+name        = "rivr_core"
+version     = "0.1.0"
+edition     = "2021"
+description = "RIVR core – no_std + alloc stream-graph runtime and compiler"
+
+# -------------------------------------------------------------------
+# Crate types
+# -------------------------------------------------------------------
+# `rlib`      – normal Rust crate (used by rivr_host)
+# `staticlib` – C-linkable .a for ESP32 firmware embedding
+#                Build with:  cargo build --target xtensa-esp32-espidf
+#                             --no-default-features --features ffi
+# -------------------------------------------------------------------
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+# -------------------------------------------------------------------
+# Feature flags
+# -------------------------------------------------------------------
+# `std`      – enables std::collections, std::io, full serde  (default)
+# `alloc`    – heap types without std (Vec/String/BTreeMap via alloc crate)
+# `ffi`      – C-ABI exports for embedding in C firmware (ESP32)
+# `embedded` – convenience: ffi + no std + no alloc (pure stack types)
+# No features = pure no_std, no heap – uses FixedText / FixedBytes
+# -------------------------------------------------------------------
+[features]
+default  = ["std"]
+std      = ["serde/std", "serde_json", "alloc"]
+alloc    = []
+ffi      = []        # C-ABI exports (works with default std build; no_std path is WIP)
+embedded = ["ffi"]   # ffi alias  – pass --no-default-features --features embedded for no_std
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true, optional = true }

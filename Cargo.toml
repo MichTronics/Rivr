@@ -1,0 +1,11 @@
+[workspace]
+members  = ["rivr_core", "rivr_host"]
+resolver = "2"
+
+[workspace.dependencies]
+serde      = { version = "1", default-features = false, features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "z"   # size-optimised — fits ESP32 flash budgets
+lto       = true

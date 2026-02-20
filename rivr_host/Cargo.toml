@@ -1,0 +1,14 @@
+[package]
+name        = "rivr_host"
+version     = "0.1.0"
+edition     = "2021"
+description = "RIVR host – demos, JSONL replay, and dev tooling"
+
+[[bin]]
+name = "rivr"
+path = "src/main.rs"
+
+[dependencies]
+rivr_core  = { path = "../rivr_core", features = ["std"] }
+serde      = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,37 @@
+# ─── Rust ─────────────────────────────────────────────────────────────────────
+target/
+
+# ─── ESP-IDF / CMake build output ─────────────────────────────────────────────
+build/
+sdkconfig
+managed_components/
+dependencies.lock
+
+# ─── PlatformIO ───────────────────────────────────────────────────────────────
+.pio/
+.pioenvs/
+
+# ─── Python (ESP-IDF toolchain helpers) ───────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# ─── Editors ──────────────────────────────────────────────────────────────────
+# Keep .vscode/launch.json and tasks.json – they are useful to all contributors.
+.vscode/settings.json
+.vscode/*.log
+.idea/
+*.swp
+*~
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ─── Compiled firmware artefacts ──────────────────────────────────────────────
+# build/ above already excludes firmware images; these catch stray copies.
+*.elf
+*.map
+*.hex
