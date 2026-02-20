@@ -42,11 +42,9 @@ extern "C" {
 /**
  * C mirror of Rust `Stamp { clock: u8, tick: u64 }`.
  * Matches the repr(C) layout exported by rivr_core/src/ffi.rs.
+ * NOTE: rivr_stamp_t is defined in firmware_core/timebase.h and re-used here.
  */
-typedef struct {
-    uint8_t  clock;
-    uint64_t tick;
-} rivr_stamp_t;
+/* rivr_stamp_t is typedef'd in timebase.h (included above) */
 
 /** Value tag discriminants (mirrors Rust Value enum). */
 typedef enum {

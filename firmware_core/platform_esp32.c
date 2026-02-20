@@ -4,10 +4,12 @@
  */
 
 #include "platform_esp32.h"
+#include "radio_sx1262.h"   /* RF_MAX_PAYLOAD_LEN */
 
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_timer.h"      /* esp_timer_get_time */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 

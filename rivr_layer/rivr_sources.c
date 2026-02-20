@@ -5,6 +5,7 @@
 
 #include "rivr_sources.h"
 #include "rivr_embed.h"
+#include "../firmware_core/platform_esp32.h"  /* UART_CLI_BAUD + pin defs */
 #include "../firmware_core/radio_sx1262.h"
 #include "../firmware_core/protocol.h"
 #include "../firmware_core/timebase.h"

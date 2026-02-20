@@ -1,0 +1,15 @@
+# Partition table for RIVR Node (ESP32, 4MB flash, single-app / no OTA)
+# App partition: 2M – large enough for a debug build of ESP-IDF 5.x + Rust
+#
+# Layout (offset 0x0000 = flash start):
+#   0x0000 – 0x8000  : bootloader (32 KB, managed by IDF)
+#   0x8000 – 0x9000  : partition table (4 KB)
+#   0x9000 – 0xF000  : nvs (24 KB)
+#   0xF000 – 0x10000 : phy_init (4 KB)
+#   0x10000 – 0x210000 : factory app (2 MB)
+#   0x210000 – 0x400000 : remaining (~2 MB, unused / NVS2 expandable)
+#
+# Name,   Type, SubType,  Offset,   Size,   Flags
+nvs,      data, nvs,      0x9000,   0x6000,
+phy_init, data, phy,      0xF000,   0x1000,
+factory,  app,  factory,  0x10000,  0x1F0000,

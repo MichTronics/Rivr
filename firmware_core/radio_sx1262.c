@@ -30,6 +30,7 @@
 #include "radio_sx1262.h"
 #include "platform_esp32.h"
 #include "timebase.h"
+#include "driver/gpio.h"    /* gpio_isr_handler_add */
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
