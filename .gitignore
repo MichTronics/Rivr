@@ -35,3 +35,7 @@ desktop.ini
 *.elf
 *.map
 *.hex
+
+# ─── Host acceptance-test build artefacts ─────────────────────────────────────
+tests/*.exe
+*.obj
