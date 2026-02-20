@@ -23,6 +23,9 @@ CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
 
 # ── Partition table ──────────────────────────────────────────────────────────
 CONFIG_PARTITION_TABLE_SINGLE_APP=y
+# IDF v5.5 bootloader for ESP32 is ~29 KB, which overflows the classic 28 KB
+# window ending at 0x8000.  Move partition table to 0x9000 (32 KB for bootloader).
+CONFIG_PARTITION_TABLE_OFFSET=0x9000
 
 # ── SPI ──────────────────────────────────────────────────────────────────────
 CONFIG_SPI_MASTER_IN_IRAM=y                  # SPI ISR handler in IRAM
