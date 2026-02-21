@@ -25,6 +25,8 @@ void platform_init(void)
     gpio_config_t out_cfg = {
         .pin_bit_mask = (1ULL << PIN_SX1262_NSS)   |
                         (1ULL << PIN_SX1262_RESET)  |
+                        (1ULL << PIN_SX1262_RXEN)   |
+                        (1ULL << PIN_SX1262_TXEN)   |
                         (1ULL << PIN_LED_STATUS),
         .mode         = GPIO_MODE_OUTPUT,
         .pull_up_en   = GPIO_PULLUP_DISABLE,
@@ -44,10 +46,12 @@ void platform_init(void)
     };
     ESP_ERROR_CHECK(gpio_config(&in_cfg));
 
-    /* Start with NSS high, RESET high, LED off */
-    gpio_set_level(PIN_SX1262_NSS, 1);
+    /* Start with NSS high, RESET high, LED off, antenna switch idle (both low) */
+    gpio_set_level(PIN_SX1262_NSS,   1);
     gpio_set_level(PIN_SX1262_RESET, 1);
-    gpio_set_level(PIN_LED_STATUS, 0);
+    gpio_set_level(PIN_SX1262_RXEN,  0);
+    gpio_set_level(PIN_SX1262_TXEN,  0);
+    gpio_set_level(PIN_LED_STATUS,   0);
 
     /* ── VSPI bus ── */
     spi_bus_config_t bus_cfg = {
@@ -115,6 +119,16 @@ void platform_sx1262_reset(void)
     vTaskDelay(pdMS_TO_TICKS(1));
     gpio_set_level(PIN_SX1262_RESET, 1);
     vTaskDelay(pdMS_TO_TICKS(10));
+}
+
+/* ── Antenna switch ────────────────────────────────────────────────── */
+/**
+ * Drive the RXEN line.  TXEN is driven by SX1262 DIO2 automatically
+ * (after SetDio2AsRfSwitchCtrl is sent in radio_init).
+ */
+void platform_sx1262_set_rxen(bool enable)
+{
+    gpio_set_level(PIN_SX1262_RXEN, enable ? 1 : 0);
 }
 
 /* ── LED ─────────────────────────────────────────────────────────────────── */

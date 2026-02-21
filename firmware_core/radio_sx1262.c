@@ -91,6 +91,13 @@ void radio_init(void)
     sx1262_cmd(0x8A, &p, 1);
     platform_sx1262_wait_busy(10);
 
+    /* SetDio2AsRfSwitchCtrl(1): DIO2 goes high automatically during TX.
+     * DIO2 is wired directly to TXEN on this board, so the RF switch
+     * is driven without firmware intervention during transmit. */
+    p = 0x01;
+    sx1262_cmd(0x9D, &p, 1);
+    platform_sx1262_wait_busy(10);
+
     /* SetPacketType(LoRa=1) */
     p = 0x01;
     sx1262_cmd(0x8B, &p, 1);
@@ -144,6 +151,9 @@ void radio_init(void)
 
 void radio_start_rx(void)
 {
+    /* Enable receive path on the RF switch */
+    platform_sx1262_set_rxen(true);
+
     /* SetRx with timeout=0 (continuous) */
     uint8_t timeout[3] = { 0xFF, 0xFF, 0xFF };
     sx1262_cmd(0x98, timeout, 3);
@@ -227,6 +237,10 @@ bool radio_transmit(const rf_tx_request_t *req)
     };
     sx1262_cmd(0x8F, pkt_params, 6);
     platform_sx1262_wait_busy(5);
+
+    /* Switch antenna to TX path (RXEN low; DIO2/TXEN goes high automatically
+     * once SetTx is issued, driven by SetDio2AsRfSwitchCtrl). */
+    platform_sx1262_set_rxen(false);
 
     /* SetTx with timeout = ToA × 1.5 converted to SX1262 ticks (15.625 µs/tick) */
     uint32_t timeout_ticks = (req->toa_us * 3u / 2u) / 16u;
