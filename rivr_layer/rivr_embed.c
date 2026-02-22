@@ -35,6 +35,7 @@
 #include "rivr_embed.h"
 #include "rivr_sources.h"
 #include "rivr_sinks.h"
+#include <inttypes.h>   /* PRIu32 */
 #include "rivr_programs/default_program.h"
 #include "../firmware_core/radio_sx1262.h"
 #include "../firmware_core/dutycycle.h"
@@ -108,8 +109,14 @@ uint32_t rivr_tick(void)
     total += sources_cli_drain();
 
     /* 3. Run engine – processes pending events, fires emit callbacks */
-    uint32_t steps = rivr_engine_run(MAX_ENGINE_STEPS);
-    total += steps;
+    rivr_result_t run = rivr_engine_run(MAX_ENGINE_STEPS);
+    total += run.cycles_used;
+    if (run.gas_remaining == 0) {
+        /* gas_remaining == 0 means the scheduler was NOT idle at return.
+         * This may indicate an unbounded program or tick-storm on the input. */
+        ESP_LOGW(TAG, "rivr_engine_run gas exhausted (%" PRIu32 " steps) – starvation risk",
+                 run.cycles_used);
+    }
 
     return total;
 }
@@ -140,9 +147,10 @@ void rivr_embed_init(void)
     /* Compile and load the default RIVR program from flash.
        In RIVR_SIM_MODE, RIVR_ACTIVE_PROGRAM also emits to usb_print for
        immediate UART visibility.  On hardware RIVR_ACTIVE_PROGRAM = RIVR_DEFAULT_PROGRAM. */
-    int32_t rc = rivr_engine_init(RIVR_ACTIVE_PROGRAM);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "rivr_engine_init failed: %d", rc);
+    rivr_result_t rc = rivr_engine_init(RIVR_ACTIVE_PROGRAM);
+    if (rc.code != RIVR_OK) {
+        ESP_LOGE(TAG, "rivr_engine_init failed: code %" PRIu32 " (RIVR_ERR_* constants in rivr_embed.h)",
+                 rc.code);
         /* Halt – firmware cannot operate without the RIVR engine */
         for (;;) { }
     }

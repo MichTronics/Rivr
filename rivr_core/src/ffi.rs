@@ -88,9 +88,53 @@ pub struct CEvent {
     pub seq:      u32,
 }
 
+// ── Result type returned by all FFI calls ────────────────────────────────────
+//
+// All public `extern "C"` functions return this struct instead of a bare
+// integer.  The C side uses `rc.code != RIVR_OK` as the error check.
+//
+// Layout is `repr(C)` so the ABI is stable across Rust compiler versions.
+#[repr(C)]
+pub struct RivrResult {
+    /// 0 = success (RIVR_OK).  Non-zero = one of the RIVR_ERR_* constants.
+    pub code:          u32,
+    /// Scheduler steps consumed by this call (meaningful for `rivr_engine_run`).
+    pub cycles_used:   u32,
+    /// Remaining step budget = `max_steps - cycles_used`.
+    /// Reaching 0 means the scheduler was NOT idle when the limit was hit
+    /// (possible starvation / unbounded program).
+    pub gas_remaining: u32,
+}
+
+impl RivrResult {
+    pub const fn ok()    -> Self { Self { code: RIVR_OK,           cycles_used: 0, gas_remaining: 0 } }
+    pub const fn err(c: u32) -> Self { Self { code: c,             cycles_used: 0, gas_remaining: 0 } }
+}
+
+// ── Error codes (match RIVR_ERR_* constants in rivr_embed.h) ─────────────────
+pub const RIVR_OK:               u32 = 0;
+pub const RIVR_ERR_NULL_PTR:     u32 = 1;  // null pointer argument
+pub const RIVR_ERR_UTF8:         u32 = 2;  // non-UTF-8 C string
+pub const RIVR_ERR_PARSE:        u32 = 3;  // RIVR parse error
+pub const RIVR_ERR_COMPILE:      u32 = 4;  // RIVR compile error
+pub const RIVR_ERR_NOT_INIT:     u32 = 5;  // engine not yet initialised
+pub const RIVR_ERR_SRC_UNKNOWN:  u32 = 6;  // source name not found in graph
+pub const RIVR_ERR_NODE_LIMIT:   u32 = 7;  // compiled graph exceeds RIVR_MAX_NODES
+
+/// Hard cap on compiled graph size.  Programs that exceed this are rejected
+/// at `rivr_engine_init()` time so we never exceed the static BSS budget.
+pub const RIVR_MAX_NODES: usize = 64;
+
 // ── Emit dispatch callback type ───────────────────────────────────────────────
 // The C side provides this function (rivr_emit_dispatch in rivr_embed.c).
 type EmitDispatchFn = unsafe extern "C" fn(sink_name: *const c_char, v: *const CValue);
+
+/// Watchdog reset callback.  Called every `WATCHDOG_INTERVAL` steps inside
+/// `rivr_engine_run()`.  Typical use: `esp_task_wdt_reset()`.
+type WatchdogHookFn = unsafe extern "C" fn();
+
+/// Number of scheduler steps between watchdog-reset callbacks.
+const WATCHDOG_INTERVAL: u32 = 64;
 
 // ── Static engine slot (one per firmware) ─────────────────────────────────────
 // No heap required: the Engine is stored in BSS.  16 KB fits the pipeline.
@@ -101,51 +145,81 @@ use core::sync::atomic::{AtomicBool, Ordering};
 static mut ENGINE_SLOT: MaybeUninit<Engine> = MaybeUninit::uninit();
 static ENGINE_READY: AtomicBool = AtomicBool::new(false);
 
-static mut EMIT_DISPATCH: Option<EmitDispatchFn> = None;
+static mut EMIT_DISPATCH:   Option<EmitDispatchFn>   = None;
+static mut WATCHDOG_HOOK:   Option<WatchdogHookFn>   = None;
 
 // ── FFI exports ──────────────────────────────────────────────────────────────
 
-/// Initialise the engine from a null-terminated RIVR program string in flash.
+/// Register an optional watchdog-reset callback.
 ///
-/// Returns 0 on success, -1 on parse error, -2 on compile error.
+/// When set, the callback is invoked every `WATCHDOG_INTERVAL` (64) scheduler
+/// steps inside `rivr_engine_run()`.  On ESP-IDF, pass `esp_task_wdt_reset`.
+/// Pass `None` / `NULL` from C to disable.
 #[no_mangle]
-pub unsafe extern "C" fn rivr_engine_init(program_src: *const c_char) -> i32 {
-    if program_src.is_null() { return -1; }
+pub unsafe extern "C" fn rivr_set_watchdog_hook(hook: Option<WatchdogHookFn>) {
+    WATCHDOG_HOOK = hook;
+}
+
+/// Return the number of nodes in the compiled graph (diagnostic).
+///
+/// Returns 0 if the engine is not yet initialised.
+#[no_mangle]
+pub unsafe extern "C" fn rivr_engine_node_count() -> u32 {
+    if !ENGINE_READY.load(Ordering::Acquire) { return 0; }
+    ENGINE_SLOT.assume_init_ref().nodes.len() as u32
+}
+
+/// Initialise the engine from a null-terminated RIVR program string.
+///
+/// Parses, compiles, and stores the resulting stream graph.  Rejects programs
+/// whose node count exceeds `RIVR_MAX_NODES` (`code = RIVR_ERR_NODE_LIMIT`).
+///
+/// # Safety
+/// `program_src` must be a valid null-terminated UTF-8 C string.
+#[no_mangle]
+pub unsafe extern "C" fn rivr_engine_init(program_src: *const c_char) -> RivrResult {
+    if program_src.is_null() { return RivrResult::err(RIVR_ERR_NULL_PTR); }
 
     let src = match CStr::from_ptr(program_src).to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+        Ok(s)  => s,
+        Err(_) => return RivrResult::err(RIVR_ERR_UTF8),
     };
 
     let program = match parse(src) {
-        Ok(p) => p,
-        Err(_) => return -1,
+        Ok(p)  => p,
+        Err(_) => return RivrResult::err(RIVR_ERR_PARSE),
     };
 
     let (engine, _warns) = match compile(&program) {
         Ok(pair) => pair,
-        Err(_) => return -2,
+        Err(_)   => return RivrResult::err(RIVR_ERR_COMPILE),
     };
+
+    // Reject over-complex graphs: unbounded node counts are a DoS/memory risk.
+    if engine.nodes.len() > RIVR_MAX_NODES {
+        return RivrResult::err(RIVR_ERR_NODE_LIMIT);
+    }
 
     ENGINE_SLOT.write(engine);
     ENGINE_READY.store(true, Ordering::Release);
-    0
+    RivrResult::ok()
 }
 
 /// Inject one event into the named source queue.
 ///
-/// Returns 0 on success, -1 if source not found, -2 if queue full.
+/// # Safety
+/// Both `source_name` (null-terminated UTF-8) and `event` must be valid pointers.
 #[no_mangle]
 pub unsafe extern "C" fn rivr_inject_event(
     source_name: *const c_char,
     event: *const CEvent,
-) -> i32 {
-    if !ENGINE_READY.load(Ordering::Acquire) { return -1; }
-    if source_name.is_null() || event.is_null() { return -1; }
+) -> RivrResult {
+    if !ENGINE_READY.load(Ordering::Acquire) { return RivrResult::err(RIVR_ERR_NOT_INIT); }
+    if source_name.is_null() || event.is_null() { return RivrResult::err(RIVR_ERR_NULL_PTR); }
 
     let name = match CStr::from_ptr(source_name).to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+        Ok(s)  => s,
+        Err(_) => return RivrResult::err(RIVR_ERR_UTF8),
     };
 
     let ev_c = &*event;
@@ -207,17 +281,52 @@ pub unsafe extern "C" fn rivr_inject_event(
 
     let engine = ENGINE_SLOT.assume_init_mut();
     match engine.inject(name, rivr_event) {
-        Ok(_) => 0,
-        Err(_) => -2,
+        Ok(_)  => RivrResult::ok(),
+        Err(_) => RivrResult::err(RIVR_ERR_SRC_UNKNOWN),
     }
 }
 
-/// Run the engine for up to `max_steps` cycles.  Returns steps taken.
+/// Run the engine for up to `max_steps` scheduler cycles.
+///
+/// Processes pending events and fires registered emit callbacks.
+/// Every `WATCHDOG_INTERVAL` steps the registered watchdog hook (if any) is
+/// called so the hardware watchdog does not trigger on large programs.
+///
+/// # Returns
+/// `RivrResult` with:
+/// - `code`          – `RIVR_OK` always (run never hard-fails).
+/// - `cycles_used`   – actual steps taken.
+/// - `gas_remaining` – steps left (`max_steps - cycles_used`).
+///   A value of `0` means the scheduler was *not* idle at return (starvation).
 #[no_mangle]
-pub unsafe extern "C" fn rivr_engine_run(max_steps: u32) -> u32 {
-    if !ENGINE_READY.load(Ordering::Acquire) { return 0; }
-    let engine = ENGINE_SLOT.assume_init_mut();
-    engine.run(max_steps as usize) as u32
+pub unsafe extern "C" fn rivr_engine_run(max_steps: u32) -> RivrResult {
+    if !ENGINE_READY.load(Ordering::Acquire) {
+        return RivrResult::err(RIVR_ERR_NOT_INIT);
+    }
+    let engine     = ENGINE_SLOT.assume_init_mut();
+    let mut total  = 0u32;
+    let mut budget = max_steps;
+
+    while budget > 0 {
+        let chunk     = budget.min(WATCHDOG_INTERVAL);
+        let done      = engine.run(chunk as usize) as u32;
+        total        += done;
+        budget        = budget.saturating_sub(chunk);
+
+        // Kick watchdog (safe even if done < chunk; wdt just gets extra resets).
+        if let Some(hook) = WATCHDOG_HOOK { hook(); }
+
+        if done < chunk {
+            // Scheduler went idle before exhausting the chunk – we're done.
+            break;
+        }
+    }
+
+    RivrResult {
+        code:          RIVR_OK,
+        cycles_used:   total,
+        gas_remaining: max_steps.saturating_sub(total),
+    }
 }
 
 /// Return the current tick for the given clock index.

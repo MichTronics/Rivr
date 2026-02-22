@@ -36,7 +36,26 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 #include "../firmware_core/timebase.h"
+/* ── Result type returned by all rivr_core FFI calls ──────────────────────
+ *
+ * C mirror of Rust `RivrResult`.  Use `rc.code != RIVR_OK` as the error check.
+ * Never test the raw code value with -1 / -2 etc. -- use the constants below.
+ */
+typedef struct {
+    uint32_t code;           /**< 0 = success.  Non-zero = RIVR_ERR_* code. */
+    uint32_t cycles_used;    /**< Scheduler steps consumed (meaningful for rivr_engine_run). */
+    uint32_t gas_remaining;  /**< Remaining budget; 0 = gas exhausted (starvation risk). */
+} rivr_result_t;
 
+/* Error-code constants (match Rust RIVR_ERR_* in ffi.rs). */
+#define RIVR_OK               0u
+#define RIVR_ERR_NULL_PTR     1u  /**< Null pointer argument. */
+#define RIVR_ERR_UTF8         2u  /**< Non-UTF-8 C string. */
+#define RIVR_ERR_PARSE        3u  /**< RIVR parse error. */
+#define RIVR_ERR_COMPILE      4u  /**< RIVR compile error. */
+#define RIVR_ERR_NOT_INIT     5u  /**< Engine not yet initialised. */
+#define RIVR_ERR_SRC_UNKNOWN  6u  /**< Source name not found in graph. */
+#define RIVR_ERR_NODE_LIMIT   7u  /**< Compiled graph exceeds RIVR_MAX_NODES (64). */
 /* ── rivr_core FFI types (mirrors Rust structs) ─────────────────────────── */
 
 /**
@@ -92,12 +111,13 @@ typedef struct {
  * @brief Initialise a fresh engine from a compiled RIVR program string.
  *
  * Parses and compiles `program_src`, wires up the sink callbacks, and
- * stores the result in the static engine slot.
+ * stores the result in the static engine slot.  Rejects programs whose node
+ * count exceeds RIVR_MAX_NODES (64).
  *
  * @param program_src  null-terminated RIVR source (stored in flash / ROM)
- * @return 0 on success, negative errno on parse/compile failure
+ * @return rivr_result_t  .code == RIVR_OK on success, RIVR_ERR_* on failure
  */
-int32_t rivr_engine_init(const char *program_src);
+rivr_result_t rivr_engine_init(const char *program_src);
 
 /**
  * @brief Inject a single event into the named source queue.
@@ -106,23 +126,38 @@ int32_t rivr_engine_init(const char *program_src);
  *
  * @param source_name  null-terminated source name (e.g. "rf_rx\0")
  * @param event        pointer to populated rivr_event_t
- * @return 0 on success, -1 if source not found, -2 if queue full
+ * @return rivr_result_t  .code == RIVR_OK, or RIVR_ERR_SRC_UNKNOWN / RIVR_ERR_NULL_PTR
  */
-int32_t rivr_inject_event(const char *source_name, const rivr_event_t *event);
+rivr_result_t rivr_inject_event(const char *source_name, const rivr_event_t *event);
 
 /**
  * @brief Run the engine for up to `max_steps` scheduler cycles.
  *
- * Processes pending events and fires registered emit callbacks.
- * Returns the number of events actually processed.
+ * Calls the registered watchdog hook every 64 steps so the hardware watchdog
+ * does not trigger on large programs.  Returns a `rivr_result_t` with:
+ *   .cycles_used   – actual steps taken
+ *   .gas_remaining – 0 if the scheduler was still active at return (starvation)
  *
  * @param max_steps  upper bound on scheduler iterations (prevents starvation)
- * @return           actual steps taken
+ * @return           rivr_result_t (code is always RIVR_OK if engine is ready)
  */
-uint32_t rivr_engine_run(uint32_t max_steps);
+rivr_result_t rivr_engine_run(uint32_t max_steps);
 
 /** Returns the engine's last-known monotonic clock value. */
 uint64_t rivr_engine_clock_now(uint8_t clock_id);
+
+/** Returns the number of nodes in the compiled stream graph (diagnostic). */
+uint32_t rivr_engine_node_count(void);
+
+/**
+ * @brief Register an optional watchdog-reset callback.
+ *
+ * When set, the callback is invoked every 64 scheduler steps inside
+ * `rivr_engine_run()`.  Typical use: pass `esp_task_wdt_reset`.
+ * Pass `NULL` to disable.
+ */
+typedef void (*rivr_watchdog_hook_t)(void);
+void rivr_set_watchdog_hook(rivr_watchdog_hook_t hook);
 
 /**
  * @brief Register the C emit-dispatch callback with the Rust FFI layer.

@@ -5,6 +5,7 @@
 
 #include "rivr_sources.h"
 #include "rivr_embed.h"
+#include <inttypes.h>   /* PRIu32 */
 #include "../firmware_core/platform_esp32.h"  /* UART_CLI_BAUD + pin defs */
 #include "../firmware_core/radio_sx1262.h"
 #include "../firmware_core/protocol.h"
@@ -223,8 +224,8 @@ uint32_t sources_rf_rx_drain(void)
             memcpy(ev.v.as_bytes.buf, frame.data, copy_len);
             ev.v.as_bytes.len = copy_len;
 
-            int32_t rc = rivr_inject_event("rf_rx", &ev);
-            if (rc == 0) {
+            rivr_result_t rc = rivr_inject_event("rf_rx", &ev);
+            if (rc.code == RIVR_OK) {
                 ESP_LOGD(TAG,
                     "rf_rx: injected %u bytes pkt_type=%u src=0x%08lx seq=%lu fwd=%d",
                     copy_len, pkt_hdr.pkt_type,
@@ -232,7 +233,7 @@ uint32_t sources_rf_rx_drain(void)
                     (unsigned long)pkt_hdr.seq, (int)fwd);
                 injected++;
             } else {
-                ESP_LOGW(TAG, "rf_rx: inject failed rc=%d", rc);
+                ESP_LOGW(TAG, "rf_rx: inject failed code=%" PRIu32, rc.code);
             }
         }
 
@@ -308,7 +309,7 @@ uint32_t sources_cli_drain(void)
             ev.v.as_str.len = len;
             memcpy(ev.kind_tag, "CLI", 4);
 
-            rivr_inject_event("rf_rx", &ev);   /* CLI events go into rf_rx source */
+            (void)rivr_inject_event("rf_rx", &ev);   /* CLI events go into rf_rx source */
             s_cli_pos = 0;
             return 1;
         } else if (s_cli_pos < sizeof(s_cli_buf) - 1u) {
@@ -343,7 +344,7 @@ uint32_t sources_timer_tick(uint32_t interval_ms)
 
     /* Timer events are injected into a hypothetical "timer" source.
        For now we re-use "rf_rx" to trigger periodic RIVR rules. */
-    rivr_inject_event("rf_rx", &ev);
+    (void)rivr_inject_event("rf_rx", &ev);
     return 1;
 }
 
