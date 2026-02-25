@@ -444,6 +444,20 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "═══ RIVR Embedded Node booting ═══");
     ESP_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
+
+    /* Silence verbose ESP-IDF driver debug logs that produce thousands of
+     * D-level lines per minute and bury application output.
+     * spi_master is the main offender: it logs every SPI transaction at DEBUG.
+     * These calls are safe to make before driver init — level is stored in a
+     * global table keyed by tag string. */
+    esp_log_level_set("spi_master",      ESP_LOG_WARN);
+    esp_log_level_set("spi_flash",        ESP_LOG_WARN);
+    esp_log_level_set("bootloader_flash", ESP_LOG_WARN);
+    esp_log_level_set("memory_layout",    ESP_LOG_WARN);
+    esp_log_level_set("heap_init",        ESP_LOG_WARN);
+    esp_log_level_set("efuse",            ESP_LOG_WARN);
+    esp_log_level_set("intr_alloc",       ESP_LOG_WARN);
+    esp_log_level_set("cpu_start",        ESP_LOG_WARN);
 #ifdef RIVR_SIM_MODE
     ESP_LOGI(TAG, "*** SIMULATION MODE: no real SX1262 hardware ***");
 #endif
@@ -550,10 +564,19 @@ void app_main(void)
 #ifndef RIVR_SIM_MODE
         {
             /* Fill the snapshot from live globals — cheap reads, no alloc */
-            disp.node_id        = g_my_node_id;
-            disp.uptime_s       = now / 1000u;
-            disp.rssi_inst_dbm  = radio_get_rssi_inst();
-            disp.rssi_dbm       = g_last_rssi_dbm;
+            disp.node_id  = g_my_node_id;
+            disp.uptime_s = now / 1000u;
+
+            /* Rate-limit the GetRssiInst SPI call: once per 500 ms is more
+             * than sufficient for the display; polling every 10 ms floods the
+             * spi_master debug log and wastes ~4 µs of SPI bus time per tick. */
+            static uint32_t s_last_rssi_poll_ms = 0u;
+            if ((now - s_last_rssi_poll_ms) >= 500u) {
+                s_last_rssi_poll_ms  = now;
+                disp.rssi_inst_dbm   = radio_get_rssi_inst();
+            }
+
+            disp.rssi_dbm = g_last_rssi_dbm;
             disp.snr_db         = g_last_snr_db;
             disp.rx_count       = g_rx_frame_count;
             disp.tx_count       = g_tx_frame_count;
