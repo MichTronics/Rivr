@@ -42,15 +42,24 @@ extern "C" {
 #define RF_FREQ_HZ           869480000UL  /**< 869.480 MHz (EU868 g3 high-power) */
 
 /**
- * Approximate Time-on-Air in microseconds for a payload of `payload_bytes`
- * at SF8 BW125kHz CR4/8, header enabled, CRC enabled.
- * Formula: see SX1262 datasheet Section 6.1.4
- * At SF8, BW=125kHz: T_sym = 2^8 / 125000 ≈ 2.048 ms
- * n_payload = ceil((8*PL - 4*SF + 28 + 16 - 20*IH) / (4*(SF-2*DE))) * (CR+4)
- * For PL=50 bytes, SF8, BW125, no low-dr: ToA ≈ 238 ms
+ * Time-on-Air in microseconds for a payload of `pl` bytes.
+ * SF8, BW=125kHz, CR=4/8, explicit header, CRC on, LDRO off.
+ * Formula: SX1262 datasheet §6.1.4
+ *
+ *   T_sym      = 2^SF / BW = 2048 µs  (exact at SF8, BW=125kHz)
+ *   t_preamble = (N_pre + 4.25) × T_sym = 12.25 × 2048 = 25088 µs
+ *   n_payload  = ceil((8×PL + 12) / 32) × 8  [symbols, SF8 CR4/8 IH=0]
+ *   t_payload  = n_payload × T_sym
+ *   ToA        = t_preamble + t_payload
+ *
+ * Verified sample values:
+ *   PL=15 → 107 ms  |  PL=20 → 123 ms  |  PL=30 → 156 ms  |  PL=50 → 238 ms
+ *
+ * Previous macro used a wrong inner formula and gave ~6× too-low results,
+ * causing SetTx to timeout mid-frame (e.g. 30 ms budget for a 123 ms frame).
  */
-#define RF_TOA_APPROX_US(payload_bytes) \
-    ((uint32_t)(2048u + 2048u * (((payload_bytes) * 8u + 28u + 32u) / (4u * (RF_SPREADING_FACTOR - 2u)))))
+#define RF_TOA_APPROX_US(pl) \
+    (25088u + (((8u * (uint32_t)(pl) + 43u) / 32u) * 16384u))
 
 /* ── Frame types ─────────────────────────────────────────────────────────── */
 typedef enum {
