@@ -89,14 +89,36 @@ void radio_init(void)
     platform_sx1262_reset();
     platform_sx1262_wait_busy(100);
 
-    /* SetStandby(STDBY_RC) */
+    /* SetStandby(STDBY_RC) — must be first command after reset */
     uint8_t p = 0x00;
     sx1262_cmd(0x8A, &p, 1);
     platform_sx1262_wait_busy(10);
 
-    /* SetDio2AsRfSwitchCtrl(1): DIO2 goes high automatically during TX.
-     * DIO2 is wired directly to TXEN on this board, so the RF switch
-     * is driven without firmware intervention during transmit. */
+    /* SetDio3AsTcxoCtrl(voltage=1.8V, delay=5ms)
+     * The E22-900M30S powers its TCXO from SX1262 DIO3.
+     * Without this the oscillator never starts → no RF output even though
+     * SPI responds normally.
+     * Voltage byte 0x02 = 1.8 V; delay = 5 ms / 15.625 µs = 320 = 0x000140. */
+    {
+        uint8_t tcxo[4] = { 0x02, 0x00, 0x01, 0x40 };
+        sx1262_cmd(0x97, tcxo, 4);
+        platform_sx1262_wait_busy(10);
+    }
+
+    /* Calibrate(0xFF) — run full calibration with TCXO powered.
+     * Required after SetDio3AsTcxoCtrl; takes up to 3.5 ms. */
+    p = 0xFF;
+    sx1262_cmd(0x89, &p, 1);
+    platform_sx1262_wait_busy(20);   /* generous budget for full cal */
+
+    /* SetStandby(STDBY_RC) again — chip exits calibration in standby */
+    p = 0x00;
+    sx1262_cmd(0x8A, &p, 1);
+    platform_sx1262_wait_busy(10);
+
+    /* SetDio2AsRfSwitchCtrl(1): DIO2 also drives TXEN automatically during TX.
+     * Combined with the explicit GPIO13 drive in platform_sx1262_set_rxen()
+     * this covers both board variants (DIO2→TXEN traced or not). */
     p = 0x01;
     sx1262_cmd(0x9D, &p, 1);
     platform_sx1262_wait_busy(10);
@@ -106,14 +128,24 @@ void radio_init(void)
     sx1262_cmd(0x8B, &p, 1);
     platform_sx1262_wait_busy(10);
 
-    /* SetRfFrequency: fRF = RF_FREQ_HZ, PLL step = 32e6/2^25 */
-    uint32_t frf = (uint32_t)((double)RF_FREQ_HZ / 0.95367f);  /* ≈ freq * 2^25 / 32e6 */
+    /* SetRfFrequency: fRF = freq_hz * 2^25 / 32000000 (integer, no float rounding error).
+     * Float approximation (/ 0.95367f) introduced ~17 kHz error at 869 MHz. */
+    uint32_t frf = (uint32_t)(((uint64_t)RF_FREQ_HZ << 25) / 32000000UL);
     uint8_t freq_params[4] = {
         (uint8_t)(frf >> 24), (uint8_t)(frf >> 16),
         (uint8_t)(frf >>  8), (uint8_t)(frf)
     };
     sx1262_cmd(0x86, freq_params, 4);
     platform_sx1262_wait_busy(10);
+
+    /* SetPaConfig: required for E22-900M30S high-power (HP) PA.
+     * paDutyCycle=0x04, hpMax=0x07, deviceSel=0x00 (SX1262), paLut=0x01.
+     * Without this the PA is unconfigured and produces no output. */
+    {
+        uint8_t pa[4] = { 0x04, 0x07, 0x00, 0x01 };
+        sx1262_cmd(0x95, pa, 4);
+        platform_sx1262_wait_busy(10);
+    }
 
     /* SetModulationParams: SF=8, BW=4(125kHz), CR=4(4/8), LDRO=0 */
     uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x04, 0x00 };
@@ -131,7 +163,8 @@ void radio_init(void)
     sx1262_cmd(0x8F, pkt_params, 6);
     platform_sx1262_wait_busy(10);
 
-    /* SetTxParams: +14 dBm, rampTime=40µs */
+    /* SetTxParams: +22 dBm (SX1262 max), rampTime=40µs.
+     * The E22-900M30S external PA boosts this to ~30 dBm. */
     uint8_t tx_params[2] = { 0x16, 0x04 };
     sx1262_cmd(0x8C, tx_params, 2);
     platform_sx1262_wait_busy(10);
@@ -149,7 +182,8 @@ void radio_init(void)
     /* Attach DIO1 ISR */
     gpio_isr_handler_add(PIN_SX1262_DIO1, radio_isr, NULL);
 
-    ESP_LOGI(TAG, "radio_init: done (SF%u BW%ukHz)", RF_SPREADING_FACTOR, RF_BANDWIDTH_KHZ);
+    ESP_LOGI(TAG, "radio_init: done (SF%u BW%ukHz @ %luHz)",
+             RF_SPREADING_FACTOR, RF_BANDWIDTH_KHZ, (unsigned long)RF_FREQ_HZ);
 }
 
 void radio_start_rx(void)
