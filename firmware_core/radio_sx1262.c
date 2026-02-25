@@ -161,8 +161,10 @@ void radio_init(void)
         platform_sx1262_wait_busy(10);
     }
 
-    /* SetModulationParams: SF=8, BW=4(125kHz), CR=4(4/8), LDRO=0 */
-    uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x04, 0x00 };
+    /* SetModulationParams: SF=8, BW=0x07(125kHz), CR=0x04(4/8), LDRO=0
+     * SX1262 BW encoding: 0x04=31.25kHz 0x06=62.5kHz 0x07=125kHz
+     *                     0x08=250kHz   0x09=500kHz              */
+    uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x07, 0x04, 0x00 };
     sx1262_cmd(0x8B, mod_params, 4);   /* 0x8B = SetModulationParams */
     platform_sx1262_wait_busy(10);
 

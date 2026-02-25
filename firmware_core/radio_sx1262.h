@@ -46,7 +46,7 @@ extern "C" {
  * SF8, BW=125kHz, CR=4/8, explicit header, CRC on, LDRO off.
  * Formula: SX1262 datasheet §6.1.4
  *
- *   T_sym      = 2^SF / BW = 2048 µs  (exact at SF8, BW=125kHz)
+ *   T_sym      = 2^SF / BW = 2^8 / 125000 = 2048 µs
  *   t_preamble = (N_pre + 4.25) × T_sym = 12.25 × 2048 = 25088 µs
  *   n_payload  = ceil((8×PL + 12) / 32) × 8  [symbols, SF8 CR4/8 IH=0]
  *   t_payload  = n_payload × T_sym
@@ -54,9 +54,6 @@ extern "C" {
  *
  * Verified sample values:
  *   PL=15 → 107 ms  |  PL=20 → 123 ms  |  PL=30 → 156 ms  |  PL=50 → 238 ms
- *
- * Previous macro used a wrong inner formula and gave ~6× too-low results,
- * causing SetTx to timeout mid-frame (e.g. 30 ms budget for a 123 ms frame).
  */
 #define RF_TOA_APPROX_US(pl) \
     (25088u + (((8u * (uint32_t)(pl) + 43u) / 32u) * 16384u))
