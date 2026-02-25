@@ -18,8 +18,9 @@ CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3072
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 
 # ── Logging ──────────────────────────────────────────────────────────────────
-CONFIG_LOG_DEFAULT_LEVEL_DEBUG=y             # Enable debug logs during POC
-CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y              # INFO default: hides driver ESP_LOGD spam
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y             # Keep max at DEBUG; use esp_log_level_set for per-tag DEBUG
+CONFIG_LOG_DYNAMIC_LEVEL_CONTROL=y           # Allow runtime esp_log_level_set overrides
 
 # ── UART console ─────────────────────────────────────────────────────────────
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y

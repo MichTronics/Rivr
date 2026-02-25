@@ -445,19 +445,6 @@ void app_main(void)
     ESP_LOGI(TAG, "═══ RIVR Embedded Node booting ═══");
     ESP_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
 
-    /* Silence verbose ESP-IDF driver debug logs that produce thousands of
-     * D-level lines per minute and bury application output.
-     * spi_master is the main offender: it logs every SPI transaction at DEBUG.
-     * These calls are safe to make before driver init — level is stored in a
-     * global table keyed by tag string. */
-    esp_log_level_set("spi_master",      ESP_LOG_WARN);
-    esp_log_level_set("spi_flash",        ESP_LOG_WARN);
-    esp_log_level_set("bootloader_flash", ESP_LOG_WARN);
-    esp_log_level_set("memory_layout",    ESP_LOG_WARN);
-    esp_log_level_set("heap_init",        ESP_LOG_WARN);
-    esp_log_level_set("efuse",            ESP_LOG_WARN);
-    esp_log_level_set("intr_alloc",       ESP_LOG_WARN);
-    esp_log_level_set("cpu_start",        ESP_LOG_WARN);
 #ifdef RIVR_SIM_MODE
     ESP_LOGI(TAG, "*** SIMULATION MODE: no real SX1262 hardware ***");
 #endif
