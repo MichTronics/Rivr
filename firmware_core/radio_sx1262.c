@@ -9,22 +9,29 @@
  *  • radio_transmit() is called only from the main loop.
  *  • All SX1262 register accesses go through platform_spi_transfer().
  *
- * SX1262 COMMAND REFERENCE (subset used here)
- * ─────────────────────────────────────────────
- *  0x8A  SetStandby(0=RC, 1=XOSC)
- *  0x86  SetRfFrequency(freq[3])
- *  0x8B  SetPacketType(0=FSK, 1=LoRa)
- *  0x8C  SetTxParams(power, rampTime)
- *  0x8E  SetModulationParams(SF, BW, CR, LDRO)
- *  0x8F  SetPacketParams(preamble,headerType,payloadLen,crc,invertIQ)
- *  0x96  SetDioIrqParams(irqMask[2], dio1[2], dio2[2], dio3[2])
- *  0x82  SetTx(timeout[3])
- *  0x80  SetSleep(sleepConfig)
- *  0x98  SetRx(timeout[3])
- *  0x13  GetIrqStatus() → 2 bytes
+ * SX1262 COMMAND REFERENCE (SX1261/62 UM v2.1, Section 13)
+ * ──────────────────────────────────────────────────────────
+ *  0x80  SetStandby(0=STDBY_RC, 1=STDBY_XOSC)
+ *  0x82  SetRx(timeout[3])
+ *  0x83  SetTx(timeout[3])
+ *  0x84  SetSleep(sleepConfig)
+ *  0x86  SetRfFrequency(frf[4])
+ *  0x08  SetDioIrqParams(irqMask[2], dio1[2], dio2[2], dio3[2])
+ *  0x89  Calibrate(calibParam)
+ *  0x95  SetPaConfig(paDutyCycle, hpMax, deviceSel, paLut)
+ *  0x96  SetRegulatorMode(0=LDO, 1=DC-DC)
+ *  0x97  SetDio3AsTcxoCtrl(voltage, delay[3])
+ *  0x9D  SetDio2AsRfSwitchCtrl(enable)
+ *  0x8B  SetModulationParams(SF, BW, CR, LDRO)
+ *  0x8C  SetPacketParams(preamble[2],headerType,payloadLen,crc,invertIQ)
+ *  0x8E  SetTxParams(power, rampTime)
+ *  0x8F  SetPacketType(0=FSK, 1=LoRa)
+ *  0x0E  WriteBuffer(offset, data...)
+ *  0x1E  ReadBuffer(offset, NOP, data...) → payload
+ *  0x12  GetIrqStatus() → NOP + 2 bytes
+ *  0x13  GetRxBufferStatus() → NOP + 2 bytes (payloadLen, startAddr)
+ *  0x14  GetPacketStatus() → NOP + 3 bytes
  *  0x02  ClearIrqStatus(mask[2])
- *  0x1E  GetRxBufferStatus() → 2 bytes (payloadLen, startAddr)
- *  0x1D  ReadBuffer(startAddr, offset, ...) → payload
  */
 
 #include "radio_sx1262.h"
@@ -91,7 +98,7 @@ void radio_init(void)
 
     /* SetStandby(STDBY_RC) — must be first command after reset */
     uint8_t p = 0x00;
-    sx1262_cmd(0x8A, &p, 1);
+    sx1262_cmd(0x80, &p, 1);   /* 0x80 = SetStandby */
     platform_sx1262_wait_busy(10);
 
     /* SetDio3AsTcxoCtrl(voltage=1.8V, delay=5ms)
@@ -105,15 +112,22 @@ void radio_init(void)
         platform_sx1262_wait_busy(10);
     }
 
+    /* SetRegulatorMode(DC-DC=1): the E22-900M30S uses a DC-DC converter.
+     * Without this the chip runs in LDO mode which may not supply enough
+     * current for 30 dBm output. Must be set before Calibrate. */
+    p = 0x01;
+    sx1262_cmd(0x96, &p, 1);   /* 0x96 = SetRegulatorMode */
+    platform_sx1262_wait_busy(10);
+
     /* Calibrate(0xFF) — run full calibration with TCXO powered.
      * Required after SetDio3AsTcxoCtrl; takes up to 3.5 ms. */
     p = 0xFF;
-    sx1262_cmd(0x89, &p, 1);
-    platform_sx1262_wait_busy(20);   /* generous budget for full cal */
+    sx1262_cmd(0x89, &p, 1);   /* 0x89 = Calibrate */
+    platform_sx1262_wait_busy(50);   /* generous budget for full cal */
 
     /* SetStandby(STDBY_RC) again — chip exits calibration in standby */
     p = 0x00;
-    sx1262_cmd(0x8A, &p, 1);
+    sx1262_cmd(0x80, &p, 1);   /* 0x80 = SetStandby */
     platform_sx1262_wait_busy(10);
 
     /* SetDio2AsRfSwitchCtrl(1): DIO2 also drives TXEN automatically during TX.
@@ -125,7 +139,7 @@ void radio_init(void)
 
     /* SetPacketType(LoRa=1) */
     p = 0x01;
-    sx1262_cmd(0x8B, &p, 1);
+    sx1262_cmd(0x8F, &p, 1);   /* 0x8F = SetPacketType */
     platform_sx1262_wait_busy(10);
 
     /* SetRfFrequency: fRF = freq_hz * 2^25 / 32000000 (integer, no float rounding error).
@@ -149,7 +163,7 @@ void radio_init(void)
 
     /* SetModulationParams: SF=8, BW=4(125kHz), CR=4(4/8), LDRO=0 */
     uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x04, 0x00 };
-    sx1262_cmd(0x8E, mod_params, 4);
+    sx1262_cmd(0x8B, mod_params, 4);   /* 0x8B = SetModulationParams */
     platform_sx1262_wait_busy(10);
 
     /* SetPacketParams: preamble=8, explicit header, maxPayload, CRC=on, noInvertIQ */
@@ -160,13 +174,13 @@ void radio_init(void)
         0x01,                   /* CRC on */
         0x00                    /* IQ standard */
     };
-    sx1262_cmd(0x8F, pkt_params, 6);
+    sx1262_cmd(0x8C, pkt_params, 6);   /* 0x8C = SetPacketParams */
     platform_sx1262_wait_busy(10);
 
     /* SetTxParams: +22 dBm (SX1262 max), rampTime=40µs.
      * The E22-900M30S external PA boosts this to ~30 dBm. */
     uint8_t tx_params[2] = { 0x16, 0x04 };
-    sx1262_cmd(0x8C, tx_params, 2);
+    sx1262_cmd(0x8E, tx_params, 2);   /* 0x8E = SetTxParams */
     platform_sx1262_wait_busy(10);
 
     /* SetDioIrqParams: enable TxDone+RxDone+Timeout on DIO1 */
@@ -176,7 +190,7 @@ void radio_init(void)
         0x00, 0x00,   /* DIO2 */
         0x00, 0x00    /* DIO3 */
     };
-    sx1262_cmd(0x96, irq_params, 8);
+    sx1262_cmd(0x08, irq_params, 8);   /* 0x08 = SetDioIrqParams */
     platform_sx1262_wait_busy(10);
 
     /* Attach DIO1 ISR */
@@ -191,9 +205,9 @@ void radio_start_rx(void)
     /* Enable receive path on the RF switch */
     platform_sx1262_set_rxen(true);
 
-    /* SetRx with timeout=0 (continuous) */
+    /* SetRx with timeout=0xFFFFFF (continuous) */
     uint8_t timeout[3] = { 0xFF, 0xFF, 0xFF };
-    sx1262_cmd(0x98, timeout, 3);
+    sx1262_cmd(0x82, timeout, 3);   /* 0x82 = SetRx */
     platform_sx1262_wait_busy(5);
     s_in_rx = true;
     ESP_LOGI(TAG, "RX mode started");
@@ -217,18 +231,18 @@ void IRAM_ATTR radio_isr(void *arg)
 
     /* 1. Read IRQ status */
     uint8_t irq_status[2] = {0};
-    sx1262_read_cmd(0x13, irq_status, 2);
+    sx1262_read_cmd(0x12, irq_status, 2);   /* 0x12 = GetIrqStatus */
     uint16_t irq = ((uint16_t)irq_status[0] << 8) | irq_status[1];
 
     /* 2. Clear all IRQ flags */
     uint8_t clr[2] = { irq_status[0], irq_status[1] };
-    sx1262_cmd(0x02, clr, 2);
+    sx1262_cmd(0x02, clr, 2);   /* 0x02 = ClearIrqStatus */
 
     if (!(irq & 0x0002)) return;  /* Not RxDone – ignore (TxDone, Timeout, etc.) */
 
     /* 3. GetRxBufferStatus → payloadLen, startAddr */
     uint8_t buf_status[2] = {0};
-    sx1262_read_cmd(0x1E, buf_status, 2);
+    sx1262_read_cmd(0x13, buf_status, 2);   /* 0x13 = GetRxBufferStatus */
     uint8_t payload_len  = buf_status[0];
     uint8_t start_addr   = buf_status[1];
 
@@ -244,10 +258,10 @@ void IRAM_ATTR radio_isr(void *arg)
         pkt_snr_db   = (int8_t)pkt_status[1] / 4;
     }
 
-    /* 5. ReadBuffer: command=0x1D, offset=start_addr, NOP, then payload */
+    /* 5. ReadBuffer: command=0x1E, offset=start_addr, NOP, then payload */
     rf_rx_frame_t frame;
     {
-        uint8_t tx_buf[4] = { 0x1D, start_addr, 0x00, 0x00 };
+        uint8_t tx_buf[4] = { 0x1E, start_addr, 0x00, 0x00 };   /* 0x1E = ReadBuffer */
         uint8_t rx_buf[4 + RF_MAX_PAYLOAD_LEN];
         memset(rx_buf, 0, sizeof(rx_buf));
         platform_spi_transfer(tx_buf, rx_buf, 4 + payload_len);
@@ -279,15 +293,21 @@ bool radio_transmit(const rf_tx_request_t *req)
     platform_spi_transfer(tx_cmd, NULL, 3 + req->len);
     platform_sx1262_wait_busy(5);
 
+    /* SetStandby before TX — chip may still be in RX mode */
+    {
+        uint8_t stdby = 0x00;
+        sx1262_cmd(0x80, &stdby, 1);   /* 0x80 = SetStandby(RC) */
+        platform_sx1262_wait_busy(5);
+    }
+
     /* Update payload length in packet params */
     uint8_t pkt_params[6] = {
         0x00, RF_PREAMBLE_LEN, 0x00, req->len, 0x01, 0x00
     };
-    sx1262_cmd(0x8F, pkt_params, 6);
+    sx1262_cmd(0x8C, pkt_params, 6);   /* 0x8C = SetPacketParams */
     platform_sx1262_wait_busy(5);
 
-    /* Switch antenna to TX path (RXEN low; DIO2/TXEN goes high automatically
-     * once SetTx is issued, driven by SetDio2AsRfSwitchCtrl). */
+    /* Switch antenna to TX path (RXEN low, TXEN high) */
     s_in_rx = false;
     platform_sx1262_set_rxen(false);
 
@@ -298,7 +318,7 @@ bool radio_transmit(const rf_tx_request_t *req)
         (uint8_t)(timeout_ticks >>  8),
         (uint8_t)(timeout_ticks)
     };
-    sx1262_cmd(0x82, tx_timeout, 3);
+    sx1262_cmd(0x83, tx_timeout, 3);   /* 0x83 = SetTx  ← was 0x82=SetRx, the root cause */
 
     /* Poll for TxDone (up to toa_us × 2 ms) */
     uint32_t t0 = tb_millis();
@@ -306,11 +326,11 @@ bool radio_transmit(const rf_tx_request_t *req)
 
     while (tb_millis() < deadline_ms) {
         uint8_t irq[2] = {0};
-        sx1262_read_cmd(0x13, irq, 2);
+        sx1262_read_cmd(0x12, irq, 2);   /* 0x12 = GetIrqStatus */
         uint16_t flags = ((uint16_t)irq[0] << 8) | irq[1];
         if (flags & 0x0001) {   /* TxDone */
             uint8_t clr[2] = { irq[0], irq[1] };
-            sx1262_cmd(0x02, clr, 2);
+            sx1262_cmd(0x02, clr, 2);   /* 0x02 = ClearIrqStatus */
             radio_start_rx();   /* return to RX */
             return true;
         }
