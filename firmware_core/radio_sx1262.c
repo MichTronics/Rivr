@@ -56,6 +56,9 @@ static rf_tx_request_t s_tx_storage[RF_TX_QUEUE_CAP];
 /** True while the radio is in continuous-RX mode (cleared during TX). */
 static volatile bool s_in_rx = false;
 
+/** Set by radio_isr() when DIO1 fires; cleared by radio_service_rx(). */
+static volatile bool s_dio1_pending = false;
+
 rb_t rf_rx_ringbuf;
 rb_t rf_tx_queue;
 
@@ -234,9 +237,22 @@ void radio_start_rx(void)
  *   rb_try_push (memcpy 258 bytes)      ≈  10 µs
  *   TOTAL                               < 290 µs
  * ─────────────────────────────────────────────────────────────────────────── */
+/* ISR: ONLY sets s_dio1_pending.  No SPI calls allowed from ISR context —
+ * spi_device_transmit() takes a FreeRTOS semaphore which deadlocks the
+ * scheduler and triggers the Interrupt WDT.  All SPI work is deferred to
+ * radio_service_rx() which is called from the main-loop task. */
 void IRAM_ATTR radio_isr(void *arg)
 {
     (void)arg;
+    s_dio1_pending = true;
+}
+
+/* Called from the main loop after every rivr_tick().  Drains all pending
+ * DIO1 events (there is normally at most one per loop iteration). */
+void radio_service_rx(void)
+{
+    if (!s_dio1_pending) return;
+    s_dio1_pending = false;
 
     /* 1. Read IRQ status */
     uint8_t irq_status[2] = {0};
@@ -281,7 +297,7 @@ void IRAM_ATTR radio_isr(void *arg)
     frame.rssi_dbm    = pkt_rssi_dbm;
     frame.snr_db      = pkt_snr_db;
 
-    /* 5. Push into ringbuf (may silently drop if full) */
+    /* Push into ringbuf (may silently drop if full) */
     rb_try_push(&rf_rx_ringbuf, &frame);
 }
 

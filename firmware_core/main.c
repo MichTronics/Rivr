@@ -15,13 +15,15 @@
  *   └─ radio_start_rx()       start continuous receive
  *        │
  *        └─ loop forever:
+ *              radio_service_rx()   ← drain DIO1 events via SPI (NOT in ISR)
  *              rivr_tick()          ← drain RX, run engine, emit to sinks
  *              tx_drain_loop()      ← send queued TX frames (with DC gate)
  *              platform_led_toggle()← heartbeat
  *              vTaskDelay(1ms)
  *
  * ISR PATH (DIO1 fires on RxDone):
- *   radio_isr() ──► rf_rx_ringbuf.try_push()    (no RIVR call, no alloc)
+ *   radio_isr() ──► sets s_dio1_pending flag ONLY  (no SPI – would deadlock)
+ *   radio_service_rx() ──► reads SPI, pushes frame into rf_rx_ringbuf
  *
  * EMIT PATH:
  *   RIVR emit rf_tx(chat) ──► rf_tx_sink_cb() ──► rf_tx_queue.try_push()
@@ -523,6 +525,12 @@ void app_main(void)
     disp.net_id = (uint16_t)RIVR_NET_ID;
 
     for (;;) {
+        /* ─ 0. Service DIO1 events (RxDone / TxDone) ─
+         * Must come BEFORE rivr_tick so any received frame is already in the
+         * ring-buffer when RIVR drains it.  SPI is illegal from ISR context,
+         * so the ISR only sets a flag; we do the actual SPI read here. */
+        radio_service_rx();
+
         /* ─ 1. RIVR processing tick ─ */
         rivr_tick();
 

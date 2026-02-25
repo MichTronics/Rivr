@@ -148,12 +148,23 @@ int16_t radio_get_rssi_inst(void);
 /**
  * @brief DIO1 interrupt handler.
  *
- * Reads status register, fetches payload via SPI, pushes into rf_rx_ringbuf.
- * NEVER calls RIVR. NEVER allocates. Fully deterministic bounded-time path.
+ * Sets an internal flag ONLY.  NO SPI calls are made here — spi_device_transmit
+ * takes a FreeRTOS semaphore which is illegal from ISR context and would
+ * trigger the Interrupt WDT.  All actual SPI work is deferred to
+ * radio_service_rx() which must be called from the main-loop task.
  *
  * Attached with:  gpio_isr_handler_add(DIO1_PIN, radio_isr, NULL);
  */
 void radio_isr(void *arg);  /* IRAM_ATTR on the definition in radio_sx1262.c */
+
+/**
+ * @brief Drain all pending DIO1 events (RxDone).
+ *
+ * Must be called from the main-loop task on every iteration (before
+ * rivr_tick so received frames are in the ring-buffer for processing).
+ * Does nothing if no DIO1 event is pending.
+ */
+void radio_service_rx(void);
 
 /* ── Packet decoder (main-loop only) ────────────────────────────────────── */
 
