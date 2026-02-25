@@ -147,6 +147,9 @@ uint32_t sources_rf_rx_drain(void)
             ESP_LOGI(TAG, "BEACON src=0x%08lx cs='%s' rssi=%d dBm",
                      (unsigned long)pkt_hdr.src_id, callsign,
                      (int)frame.rssi_dbm);
+            /* Persist callsign into the neighbour table entry for this node */
+            routing_neighbor_set_callsign(&g_neighbor_table,
+                                          pkt_hdr.src_id, callsign);
             goto maybe_relay;
         }
 

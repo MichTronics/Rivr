@@ -151,6 +151,34 @@ uint8_t routing_neighbor_count(const neighbor_table_t *tbl, uint32_t now_ms)
     return alive;
 }
 
+const neighbor_entry_t *routing_neighbor_get(const neighbor_table_t *tbl,
+                                              uint8_t idx)
+{
+    if (!tbl || idx >= NEIGHBOR_TABLE_SIZE) return NULL;
+    const neighbor_entry_t *n = &tbl->entries[idx];
+    return (n->node_id != 0) ? n : NULL;
+}
+
+void routing_neighbor_set_callsign(neighbor_table_t *tbl,
+                                   uint32_t          node_id,
+                                   const char       *callsign)
+{
+    if (!tbl || node_id == 0 || !callsign) return;
+    for (uint8_t i = 0; i < NEIGHBOR_TABLE_SIZE; i++) {
+        neighbor_entry_t *n = &tbl->entries[i];
+        if (n->node_id == node_id) {
+            /* Copy at most 11 chars + NUL terminator */
+            uint8_t j = 0;
+            while (j < (uint8_t)(sizeof(n->callsign) - 1u) && callsign[j] != '\0') {
+                n->callsign[j] = callsign[j];
+                j++;
+            }
+            n->callsign[j] = '\0';
+            return;
+        }
+    }
+}
+
 /* ════════════════════════════════════════════════════════════════════════════
  * PHASE A — Flood hardening
  * ══════════════════════════════════════════════════════════════════════════ */

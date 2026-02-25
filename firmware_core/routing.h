@@ -73,6 +73,7 @@ typedef struct {
     uint32_t  last_seen_ms;   /**< Monotonic ms of last received packet     */
     int8_t    rssi_dbm;       /**< Last observed RSSI                       */
     uint8_t   hop_count;      /**< Minimum hops to this neighbour (=hop+1)  */
+    char      callsign[12];   /**< Callsign from last PKT_BEACON (NUL-term) */
 } neighbor_entry_t;
 
 /** Complete neighbour tracking state. */
@@ -155,6 +156,30 @@ void routing_neighbor_update(neighbor_table_t       *tbl,
  * @brief Return the number of alive (non-expired) neighbour entries.
  */
 uint8_t routing_neighbor_count(const neighbor_table_t *tbl, uint32_t now_ms);
+
+/**
+ * @brief Return a pointer to neighbour entry at raw index @p idx, or NULL if
+ *        the slot is empty (node_id == 0) or @p idx is out of range.
+ *
+ * The returned pointer is valid until the next call to routing_neighbor_update().
+ * Index is 0-based into the internal table; iterate 0..NEIGHBOR_TABLE_SIZE-1.
+ */
+const neighbor_entry_t *routing_neighbor_get(const neighbor_table_t *tbl,
+                                              uint8_t idx);
+
+/**
+ * @brief Store a callsign string into the entry matching @p node_id.
+ *
+ * If no entry with @p node_id exists (beacon received before any other packet
+ * from this node) the call is a no-op.  The string is copied and NUL-terminated.
+ *
+ * @param tbl       Neighbour table.
+ * @param node_id   Node to update.
+ * @param callsign  NUL-terminated callsign; at most 11 chars are copied.
+ */
+void routing_neighbor_set_callsign(neighbor_table_t *tbl,
+                                   uint32_t          node_id,
+                                   const char       *callsign);
 
 /* ════════════════════════════════════════════════════════════════════════════
  * PHASE A — Flood hardening

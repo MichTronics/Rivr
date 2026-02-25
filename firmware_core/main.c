@@ -558,6 +558,42 @@ void app_main(void)
             disp.rx_count       = g_rx_frame_count;
             disp.tx_count       = g_tx_frame_count;
             disp.neighbor_count = routing_neighbor_count(&g_neighbor_table, now);
+
+            /* ── Fill Neighbours page slots (up to DISPLAY_NEIGHBOR_MAX) ── */
+            {
+                uint8_t slot = 0u;
+                for (uint8_t ni = 0u;
+                     ni < NEIGHBOR_TABLE_SIZE && slot < DISPLAY_NEIGHBOR_MAX;
+                     ni++) {
+                    const neighbor_entry_t *ne =
+                        routing_neighbor_get(&g_neighbor_table, ni);
+                    if (!ne) continue;
+                    uint32_t age_ms = now - ne->last_seen_ms;
+                    if (age_ms > NEIGHBOR_EXPIRY_MS) continue; /* skip expired */
+                    disp.neighbors[slot].rssi_dbm  = (int16_t)ne->rssi_dbm;
+                    disp.neighbors[slot].hop_count = ne->hop_count;
+                    disp.neighbors[slot].age_s     = age_ms / 1000u;
+                    disp.neighbors[slot].valid     = true;
+                    if (ne->callsign[0] != '\0') {
+                        strncpy(disp.neighbors[slot].callsign, ne->callsign,
+                                sizeof(disp.neighbors[slot].callsign) - 1u);
+                        disp.neighbors[slot].callsign[
+                            sizeof(disp.neighbors[slot].callsign) - 1u] = '\0';
+                    } else {
+                        /* No callsign yet: show last 6 hex digits of node_id */
+                        snprintf(disp.neighbors[slot].callsign,
+                                 sizeof(disp.neighbors[slot].callsign),
+                                 "%06lX",
+                                 (unsigned long)(ne->node_id & 0xFFFFFFu));
+                    }
+                    slot++;
+                }
+                /* Clear any unused slots */
+                for (; slot < DISPLAY_NEIGHBOR_MAX; slot++) {
+                    disp.neighbors[slot].valid = false;
+                }
+            }
+
             disp.route_count    = route_cache_count(&g_route_cache, now);
             disp.pending_count  = g_pending_queue.count;
             /* Duty cycle used: accumulate expressed as ×10 percentage */

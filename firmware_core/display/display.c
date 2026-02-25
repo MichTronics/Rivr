@@ -383,8 +383,53 @@ static void render_page_vm(const display_stats_t *s)
 
     snprintf(buf, sizeof(buf), "ERR: %lu", (unsigned long)s->error_code);
     fb_str(0u, 4u, buf);
+    /* Page indicator handled by display_update() — VM is no longer the last page */
+}
 
-    /* Show page indicator in bottom-right corner: "5/5" */
+static void render_page_neighbors(const display_stats_t *s)
+{
+    char buf[22];
+
+    fb_str(0u, 0u, "NEIGHBOURS");
+    fb_hline(1u);
+
+    /* Show up to DISPLAY_NEIGHBOR_MAX live neighbour entries */
+    uint8_t shown = 0u;
+    for (uint8_t i = 0u; i < DISPLAY_NEIGHBOR_MAX; i++) {
+        if (!s->neighbors[i].valid) continue;
+
+        uint8_t row = (uint8_t)(2u + shown * 2u);   /* rows 2,4,6 */
+        if (row >= 8u) break;
+
+        /* Row N: callsign + RSSI, e.g. "PA3ABC  -82dBm" */
+        const char *cs = s->neighbors[i].callsign[0]
+                         ? s->neighbors[i].callsign : "------";
+        snprintf(buf, sizeof(buf), "%-6.6s %4ddBm", cs,
+                 (int)s->neighbors[i].rssi_dbm);
+        fb_str(0u, row, buf);
+
+        /* Row N+1: hop count + age, e.g. "h=1  42s ago" */
+        if (row + 1u < 8u) {
+            uint32_t age = s->neighbors[i].age_s;
+            if (age < 60u) {
+                snprintf(buf, sizeof(buf), "h=%u  %lus ago",
+                         (unsigned)s->neighbors[i].hop_count,
+                         (unsigned long)age);
+            } else {
+                snprintf(buf, sizeof(buf), "h=%u  %lum ago",
+                         (unsigned)s->neighbors[i].hop_count,
+                         (unsigned long)(age / 60u));
+            }
+            fb_str(0u, (uint8_t)(row + 1u), buf);
+        }
+        shown++;
+    }
+
+    if (shown == 0u) {
+        fb_str(2u, 3u, "no neighbours");
+    }
+
+    /* Last-page indicator: "6/6" in bottom-right corner */
     char pg[5];
     pg[0] = (char)('0' + (char)(s_page + 1u));
     pg[1] = '/';
@@ -547,6 +592,7 @@ static void display_update(const display_stats_t *stats)
         case 2u: render_page_routing(stats);    break;
         case 3u: render_page_dutycycle(stats);  break;
         case 4u: render_page_vm(stats);         break;
+        case 5u: render_page_neighbors(stats);  break;
         default: render_page_overview(stats);   break;
     }
 

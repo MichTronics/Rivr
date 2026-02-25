@@ -65,7 +65,10 @@ extern "C" {
 #define DISPLAY_PAGE_ROTATE_MS  3000u
 
 /** Total number of display pages. */
-#define DISPLAY_PAGES           5u
+#define DISPLAY_PAGES           6u
+
+/** Number of neighbour slots carried in the stats snapshot for page 6. */
+#define DISPLAY_NEIGHBOR_MAX    3u
 
 /* ── I2C pin defaults (can be overridden by compiler flags) ─────────────── */
 
@@ -115,6 +118,15 @@ typedef struct {
     uint32_t vm_cycles;        /**< Accumulated VM scheduler cycles          */
     char     last_event[16];   /**< Name of most recent RIVR event (or "")  */
     uint32_t error_code;       /**< Last non-OK RIVR error code (0 = none)  */
+
+    /* Page 5 – Neighbours */
+    struct {
+        char     callsign[12]; /**< Callsign from last beacon, or node ID    */
+        int16_t  rssi_dbm;     /**< RSSI of last received frame from node    */
+        uint32_t age_s;        /**< Seconds since last heard                 */
+        uint8_t  hop_count;    /**< Minimum hop distance                     */
+        bool     valid;        /**< true when slot contains live data         */
+    } neighbors[DISPLAY_NEIGHBOR_MAX];
 } display_stats_t;
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
