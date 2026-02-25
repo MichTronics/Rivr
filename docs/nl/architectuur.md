@@ -61,10 +61,10 @@
 
 | Bestand | Verantwoordelijkheid |
 |---|---|
-| `rivr_embed.c` | `rivr_engine_init`, `rivr_inject_event`, `rivr_engine_run` |
-| `rivr_sources.c` | Koppel hardware-events aan RIVR-bron-IDs |
-| `rivr_sinks.c` | `rf_tx_sink_cb`, `usb_print_sink_cb`, `log_sink_cb` |
-| `default_program.h` | Selecteerbare RIVR-programma-strings |
+| `rivr_embed.c` | `rivr_engine_init`, `rivr_tick`, emit-dispatch, NVS laden/opslaan, `rivr_embed_reload` |
+| `rivr_sources.c` | Koppel hardware-events aan RIVR-bron-IDs; multi-timer tabel (`sources_timer_drain`) |
+| `rivr_sinks.c` | `rf_tx_sink_cb`, `usb_print_sink_cb`, `log_sink_cb`, `beacon_sink_cb` |
+| `default_program.h` | Selecteerbare RIVR-programma-strings (`RIVR_DEFAULT_PROGRAM`, `RIVR_BEACON_PROGRAM`, `RIVR_MESH_PROGRAM`) |
 
 ---
 
@@ -118,8 +118,10 @@ horologisch.
 |---|---|---|
 | BSS | `ENGINE_SLOT: MaybeUninit<Engine>` | ~16 KB |
 | BSS | `rx_ring_buf[2048]` | 2 KB |
+| BSS | `s_nvs_program[2048]` — NVS-geladen programmastring | 2 KB |
 | BSS | `tx_queue[RF_TX_QUEUE_CAP × frame_size]` | variabel |
-| Flash | RIVR-programmastring (ingebakken in firmware) | < 1 KB |
+| Flash | Ingebakken RIVR-programmastrings | < 1 KB |
+| NVS-partitie | Gebruikersprogramma (`rivr/program`) | max. 2 KB |
 | Heap | Geen gebruik na `app_main()` | 0 |
 
 Na initialisatie doet de engine geen dynamische allocatie —

@@ -138,10 +138,11 @@ Sinks call back into C via `rivr_emit_dispatch()`.
 | Component | Language | Role |
 |---|---|---|
 | `rivr_core` | Rust (`no_std + alloc`) | Language runtime — parse, compile, run |
-| `rivr_host` | Rust (`std`) | Desktop demos and Replay 2.0 |
-| `firmware_core` | C | Hardware drivers, simulation mode |
+| `rivr_host` | Rust (`std`) | Desktop demos, Replay 2.0, `rivrc` CLI |
+| `firmware_core` | C | Hardware drivers, simulation mode, OLED display |
 | `rivr_layer` | C | Glue between RIVR runtime and C firmware |
 | Protocol / Routing | C | Binary packet format, mesh flooding |
+| `tools/vscode-rivr` | JSON/TS | VS Code syntax highlighting + snippets |
 
 ---
 
@@ -149,8 +150,11 @@ Sinks call back into C via `rivr_emit_dispatch()`.
 
 ```powershell
 # Run all host demos (no hardware needed)
-cd rivr_core
 cargo run -p rivr_host
+
+# Check / inspect a .rivr source file
+cargo run -p rivr_host --bin rivrc -- my_program.rivr
+cargo run -p rivr_host --bin rivrc -- --check my_program.rivr   # CI mode
 
 # Build the Rust static library for ESP32
 cargo build --features ffi

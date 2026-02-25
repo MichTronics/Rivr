@@ -33,21 +33,26 @@ Rivr/
 │           ├── engine.rs     # Engine struct, injection, run
 │           ├── node.rs       # uitvoering per operator/node
 │           └── value.rs      # Value enum (Int, Bool, Str, Bytes, Window, …)
-├── rivr_host/                # Rust (std) — desktop-demo's en Replay 2.0
+├── rivr_host/                # Rust (std) — desktop-demo's, Replay 2.0, rivrc CLI
 │   └── src/
 │       ├── main.rs           # 8 demo's: window, budget, debounce, pkt_type, …
-│       └── replay.rs         # Replay 2.0 — record / replay / assert (JSONL)
+│       ├── replay.rs         # Replay 2.0 — record / replay / assert (JSONL)
+│       └── bin/
+│           └── rivrc.rs      # CLI: parseer + compileer .rivr-bestanden
 ├── firmware_core/            # C — ESP32 stuurprogramma's + protocol + routing
 │   ├── main.c                # app_main, main-lus, SIM-frame-injectie
 │   ├── platform_esp32.c/h    # klokken, SPI, GPIO-pinnen
 │   ├── radio_sx1262.c/h      # SX1262 LoRa driver, TX-wachtrij, ring-buffer
+│   ├── display/display.c/h   # OLED-weergavetaak
 │   ├── protocol.c/h          # binaire frame-encode/decode met CRC-16
 │   └── routing.c/h           # dedupe-cache, hop-limiet, buurttabel
-└── rivr_layer/               # C — lijmlaag RIVR↔firmware
-    ├── rivr_embed.c/h        # engine_init, inject, run, emit-dispatch
-    ├── rivr_sources.c/h      # bronregistratie (rf, usb, …)
-    ├── rivr_sinks.c/h        # sink-callbacks (rf_tx, usb_print, log)
-    └── default_program.h     # selecteerbare RIVR-programma's via #define
+├── rivr_layer/               # C — lijmlaag RIVR↔firmware
+│   ├── rivr_embed.c/h        # engine_init, tick, NVS opslaan/laden, hot-reload
+│   ├── rivr_sources.c/h      # bronregistratie (rf, usb, timer…)
+│   ├── rivr_sinks.c/h        # sink-callbacks (rf_tx, usb_print, beacon)
+│   └── default_program.h     # selecteerbare RIVR-programma's via #define
+└── tools/
+    └── vscode-rivr/          # VS Code-extensie (syntaxis + snippets)
 ```
 
 ---
@@ -106,9 +111,10 @@ emit {
 | Onderdeel | Taal | Rol |
 |---|---|---|
 | `rivr_core` | Rust (`no_std+alloc`) | Parser, compiler, runtime, FFI-exports |
-| `rivr_host` | Rust (std) | Desktop-demo's, Replay 2.0 |
-| `firmware_core` | C | ESP32 drivers, protocol, routing |
-| `rivr_layer` | C | Lijmlaag: bronnen, sinks, embedAPI |
+| `rivr_host` | Rust (std) | Desktop-demo's, Replay 2.0, `rivrc` CLI |
+| `firmware_core` | C | ESP32 drivers, protocol, routing, OLED-display |
+| `rivr_layer` | C | Lijmlaag: bronnen, sinks, embedAPI, NVS |
+| `tools/vscode-rivr` | JSON/TS | VS Code syntaxisaccentuering + snippets |
 
 ---
 
@@ -117,8 +123,16 @@ emit {
 ### Desktop-demo's uitvoeren
 
 ```powershell
-cd e:\Projects\Rivr\rivr_core
 cargo run -p rivr_host
+```
+
+### `.rivr`-bestanden controleren met `rivrc`
+
+```powershell
+# Druk knoop-grafiek af
+cargo run -p rivr_host --bin rivrc -- mijn_programma.rivr
+# CI-modus
+cargo run -p rivr_host --bin rivrc -- --check mijn_programma.rivr
 ```
 
 ### Firmware bouwen (simulatiemodus)

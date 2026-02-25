@@ -15,9 +15,12 @@ let-instr   = "let" ID "=" uitdr ";"
 emit-instr  = "emit" "{" (sink ";")+ "}"
 uitdr       = primair ("|>" pijp-op)*
 primair     = ID | TEKST | GETAL | "merge" "(" ID "," ID ")"
-sink        = "io.usb.print" "(" ID ")"
-            | "io.lora.tx"   "(" ID ")"
-            | "io.debug.dump" "(" ID ")"
+sink        = "io.usb.print"    "(" ID ")"
+            | "io.lora.tx"      "(" ID ")"
+            | "io.lora.beacon"  "(" ID ")"
+            | "io.debug.dump"   "(" ID ")"
+bron-soort  = "rf" | "usb" | "lora" | "programmatic"
+            | "timer" "(" GETAL ")"
 ```
 
 ---
@@ -32,7 +35,17 @@ source NAAM [@KLOK] = SOORT;
 |---|---|
 | `NAAM` | Identifier om naar deze bron te verwijzen |
 | `@KLOK` | Optionele klokannotatie (`@mono`, `@lmp`) |
-| `SOORT` | Hardware-oorsprong: `usb`, `lora`, `rf`, of `programmatic` |
+| `SOORT` | Hardware-oorsprong: `usb`, `lora`, `rf`, `programmatic`, of `timer(N)` |
+
+**Bronsoorten:**
+
+| Soort | Beschrijving |
+|---|---|
+| `rf` | LoRa radio-ontvangststroom — events zijn ruwe `Bytes`-frames |
+| `usb` | USB/UART-ontvangststroom |
+| `lora` | Alias voor `rf` |
+| `programmatic` | Handmatig geïnjecteerde events (klok 0) |
+| `timer(N)` | Periodieke tik elke N milliseconden (klok 0). Vuurt automatisch `Value::Int(mono_ms)`-events vanuit de C-timertabel. |
 
 **Klok-IDs:**
 
@@ -44,9 +57,10 @@ source NAAM [@KLOK] = SOORT;
 **Voorbeelden:**
 
 ```rivr
-source rf_rx @lmp  = rf_rx;
-source usb   @mono = usb;
-source sensor      = programmatic;   // klok 0 is standaard
+source rf_rx @lmp  = rf;           // LoRa-ontvangst → Lamport-klok
+source usb   @mono = usb;          // USB-stroom → mono-klok
+source sensor      = programmatic;  // klok 0 is standaard
+source beacon_tick = timer(30000);  // vuurt elke 30 s, klok 0
 ```
 
 ---
@@ -77,6 +91,7 @@ Pakket-type constanten voor `filter.pkt_type`:
 | `PKT_ROUTE_RPL` | 4 | Route-antwoord |
 | `PKT_ACK` | 5 | Bevestiging |
 | `PKT_DATA` | 6 | Generieke sensordata |
+| `PKT_PROG_PUSH` | 7 | OTA-programma-update (nooit doorgestuurd) |
 
 ### Aggregatie
 
@@ -161,6 +176,7 @@ emit {
 | Sink | C-callback | Gedrag |
 |---|---|---|
 | `io.lora.tx` | `rf_tx_sink_cb` | Codeer en zet in `rf_tx_queue` |
+| `io.lora.beacon` | `beacon_sink_cb` | Bouw `PKT_BEACON` (roepnaam + hop_count) en zet in `rf_tx_queue` |
 | `io.usb.print` | `usb_print_sink_cb` | `printf` naar UART-stdout |
 | `io.debug.dump` | `log_sink_cb` | ESP-IDF `ESP_LOGI` |
 
@@ -168,35 +184,39 @@ emit {
 
 ## Volledige voorbeelden
 
-### Standaard mesh-pijplijn
+### Standaard mesh-pijplijn (met baken)
 
 ```rivr
-source rf_rx @lmp = rf_rx;
+source rf_rx @lmp = rf;
+source beacon_tick = timer(30000);
 
 let chat = rf_rx
   |> filter.pkt_type(1)
-  |> budget.toa_us(360000, 0.10, 360000)
+  |> budget.toa_us(280000, 0.10, 280000)
   |> throttle.ticks(1);
 
-emit { rf_tx(chat); }
+emit { io.lora.tx(chat); }
+emit { io.lora.beacon(beacon_tick); }
 ```
 
 ### Multi-type mesh-routing
 
 ```rivr
-source rf_rx @lmp = rf_rx;
+source rf_rx @lmp = rf;
+source beacon_tick = timer(30000);
 
 let chat = rf_rx
   |> filter.pkt_type(1)
-  |> budget.toa_us(360000, 0.10, 360000)
+  |> budget.toa_us(280000, 0.10, 280000)
   |> throttle.ticks(1);
 
 let data = rf_rx
   |> filter.pkt_type(6)
   |> throttle.ticks(1);
 
-emit { rf_tx(chat); }
-emit { rf_tx(data); }
+emit { io.lora.tx(chat); }
+emit { io.lora.tx(data); }
+emit { io.lora.beacon(beacon_tick); }
 ```
 
 ### Begrensd venster met vroeg-doorzenden

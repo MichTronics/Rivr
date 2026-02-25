@@ -47,11 +47,36 @@ cargo +esp build --target xtensa-esp32-espidf --features ffi --release
 ### Host demos (no hardware)
 
 ```powershell
-cd e:\Projects\Rivr\rivr_core
 cargo run -p rivr_host
 ```
 
 Runs 8 demos covering every operator category plus Replay 2.0.
+
+### `rivrc` — RIVR source compiler CLI
+
+```powershell
+# Print node graph
+cargo run -p rivr_host --bin rivrc -- my_program.rivr
+
+# CI / pre-commit check (exit 0 = ok, 1 = error, no output)
+cargo run -p rivr_host --bin rivrc -- --check my_program.rivr
+
+# Or after installing:
+cargo install --path rivr_host --bin rivrc
+rivrc my_program.rivr
+```
+
+Example output:
+```
+RIVR 'beacon.rivr'  — 4 node(s)
+────────────────────────────────────────────────────────────────────────
+ID    NAME                      KIND / PARAMS
+────────────────────────────────────────────────────────────────────────
+0     rf_rx                     Source(name="rf_rx", clock=1)
+1     beacon_tick               Source(name="beacon_tick", clock=0, timer=30000ms)
+2     chat                      ThrottleTicks(1)
+3     emit_0                    Emit(sink=LoraTx)
+```
 
 ---
 
@@ -137,6 +162,33 @@ the entire pipeline (FFI, filter, budget, sink dispatch) is working.
 
 ---
 
+## VS Code extension
+
+The extension in `tools/vscode-rivr/` adds syntax highlighting and snippets
+for `.rivr` files.
+
+### Install (development)
+
+1. Open `tools/vscode-rivr/` in VS Code.
+2. Run **Extensions: Install from VSIX…** or press **F5** to launch an
+   Extension Development Host.
+3. Open any `.rivr` file to see syntax highlighting.
+
+### Snippets
+
+| Prefix | Inserts |
+|---|---|
+| `src-rf` | RF source with PKT_CHAT relay |
+| `src-timer` | Periodic timer source |
+| `prog-beacon` | Full beacon + chat relay program |
+| `prog-mesh` | Full mesh program (chat + data relay) |
+| `emit` | Emit block |
+| `let` | Let binding with pipeline |
+
+---
+
+---
+
 ## SX1262 pin mapping
 
 Default wiring from `firmware_core/platform_esp32.h`:
@@ -171,9 +223,10 @@ Adjust pin defines in `platform_esp32.h` to match your board.
 | Symptom | Cause / Fix |
 |---|---|
 | `FATAL_ERROR: librivr_core.a not found` | Run `cargo build --features ffi` first |
-| `rivr_engine_init failed: -1` | Parse error in RIVR program — check `RIVR_ACTIVE_PROGRAM` |
-| `rivr_engine_init failed: -2` | Compiler error — check program semantics (undefined source, etc.) |
+| `rivr_engine_init failed: code 1` | Parse error (`RIVR_ERR_PARSE`) — check `RIVR_ACTIVE_PROGRAM` or NVS program |
+| `rivr_engine_init failed: code 2` | Compile error (`RIVR_ERR_COMPILE`) — check program semantics (undefined source, etc.) |
 | No `[RIVR-TX]` lines | `rivr_set_emit_dispatch` not called, or `filter.pkt_type` mismatch |
 | `rf_tx: queue full` warnings | Reduce frame rate or increase `RF_TX_QUEUE_CAP` in `radio_sx1262.h` |
 | ESP32 crash at boot in sim mode | `platform_init()` was called — correct for hardware builds only |
 | CRC failures in `protocol_decode` | Frame corrupted in ring-buffer copy; check `frame.len` bounds |
+| NVS program not loading | Run `nvs_flash_erase()` once to reset partition; check `nvs_open("rivr", ...)` return value |

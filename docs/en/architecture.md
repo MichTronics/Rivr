@@ -13,10 +13,14 @@
 │  │   ├─ sources_rf_rx_drain()  ← ISR → rf_rx_ringbuf        │ │
 │  │   │      protocol_decode() → Value::Bytes               │ │
 │  │   │      rivr_inject_event("rf_rx", event)              │ │
-│  │   └─ rivr_engine_run(max_steps)                          │ │
-│  │         Engine DAG processes events                     │ │
-│  │         → rivr_emit_dispatch() callbacks                │ │
-│  │              ├─ rf_tx_sink_cb()  → rf_tx_queue          │ │
+  │   ├─ sources_cli_drain()                                 │ │
+  │   ├─ sources_timer_drain()  ← rivr_timer_entry_t[8]     │ │
+  │   │      fire due timers → Value::Int(mono_ms)          │ │
+  │   └─ rivr_engine_run(max_steps)                          │ │
+  │         Engine DAG processes events                     │ │
+  │         → rivr_emit_dispatch() callbacks                │ │
+  │              ├─ rf_tx_sink_cb()    → rf_tx_queue        │ │
+  │              ├─ beacon_sink_cb()   → rf_tx_queue        │ │
 │  │              └─ usb_print_sink_cb() → printf            │ │
 │  │                                                          │ │
 │  │  tx_drain_loop()                                         │ │
@@ -51,10 +55,10 @@
 
 | File | Responsibility |
 |---|---|
-| `rivr_embed.c` | `rivr_embed_init()`, `rivr_tick()`, emit dispatch wiring |
-| `rivr_sources.c` | Drain ring-buffers → construct `rivr_event_t` → inject |
-| `rivr_sinks.c` | Receive emitted values → encode → hardware queues |
-| `default_program.h` | RIVR program string (stored in flash) |
+| `rivr_embed.c` | `rivr_embed_init()`, `rivr_tick()`, emit dispatch wiring, NVS load/store, `rivr_embed_reload()` |
+| `rivr_sources.c` | Drain ring-buffers → construct `rivr_event_t` → inject; multi-timer table (`sources_timer_drain`) |
+| `rivr_sinks.c` | Receive emitted values → encode → hardware queues; `beacon_sink_cb` for `io.lora.beacon` |
+| `default_program.h` | Built-in RIVR program strings (`RIVR_DEFAULT_PROGRAM`, `RIVR_BEACON_PROGRAM`, `RIVR_MESH_PROGRAM`) |
 
 ### 3. `rivr_core/` — Language runtime (Rust)
 
@@ -76,6 +80,7 @@
 |---|---|
 | `main.rs` | 8 interactive demos for each operator category |
 | `replay.rs` | Record / replay / assert JSONL trace streams |
+| `bin/rivrc.rs` | `rivrc` CLI — parse + compile a `.rivr` file, print node graph; `--check` for CI |
 
 ---
 
@@ -144,12 +149,15 @@ their time constraints in.
 |---|---|---|
 | BSS (Rust `static mut`) | ~16 KB | `ENGINE_SLOT: MaybeUninit<Engine>` |
 | BSS (C) | configurable | `rf_rx_ringbuf`, `rf_tx_queue` ring buffers |
+| BSS (C) | 2 KB | `s_nvs_program[2048]` — NVS-loaded program text |
 | Stack (C) | per-call | Decoded frames, `rivr_event_t` temporaries |
-| Flash (C string) | ~256 bytes | RIVR program source string |
+| Flash (C string) | ~512 bytes | Compiled-in RIVR program strings |
+| NVS partition | up to 2 KB | User-pushed RIVR program (`rivr/program`) |
 
 **No heap allocation** occurs after `app_main()` initialisation. The Engine
-is initialised once via `rivr_engine_init()` and reused for the firmware
-lifetime.
+is initialised once via `rivr_engine_init()` — either from NVS or the compiled-in
+default — and can be hot-reloaded at runtime via `rivr_embed_reload()` when
+a `PKT_PROG_PUSH` frame arrives.
 
 ---
 

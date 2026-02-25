@@ -53,6 +53,20 @@ cargo run -p rivr_host
 
 Voert 8 demo's uit voor elke operator-categorie plus Replay 2.0.
 
+### `rivrc` — RIVR-broncompiler CLI
+
+```powershell
+# Druk knoop-grafiek af
+cargo run -p rivr_host --bin rivrc -- mijn_programma.rivr
+
+# CI-modus (exit 0 = ok, 1 = fout, geen uitvoer)
+cargo run -p rivr_host --bin rivrc -- --check mijn_programma.rivr
+
+# Of na installeren:
+cargo install --path rivr_host --bin rivrc
+rivrc mijn_programma.rivr
+```
+
 ---
 
 ## Stap 2a — Bouwen via PlatformIO *(aanbevolen)*
@@ -137,6 +151,33 @@ werkt de volledige pijplijn (FFI, filter, budget, sink-dispatch) correct.
 
 ---
 
+## VS Code-extensie
+
+De extensie in `tools/vscode-rivr/` voegt syntaxisaccentuering en snippets
+toe voor `.rivr`-bestanden.
+
+### Installeren (ontwikkeling)
+
+1. Open `tools/vscode-rivr/` in VS Code.
+2. Voer **Extensions: Install from VSIX…** uit of druk op **F5** om
+   een Extension Development Host te starten.
+3. Open een `.rivr`-bestand voor syntaxisaccentuering.
+
+### Snippets
+
+| Prefix | Invoegt |
+|---|---|
+| `src-rf` | RF-bron met PKT_CHAT-relay |
+| `src-timer` | Periodieke timer-bron |
+| `prog-beacon` | Volledig baken + chat-relay-programma |
+| `prog-mesh` | Volledig mesh-programma (chat + data-relay) |
+| `emit` | Emit-blok |
+| `let` | Let-binding met pijplijn |
+
+---
+
+---
+
 ## SX1262-pinbezetting
 
 Standaardbedrading uit `firmware_core/platform_esp32.h`:
@@ -171,9 +212,10 @@ Pas de pin-defines aan in `platform_esp32.h` voor jouw board.
 | Symptoom | Oorzaak / Oplossing |
 |---|---|
 | `FATAL_ERROR: librivr_core.a not found` | Voer eerst `cargo build --features ffi` uit |
-| `rivr_engine_init failed: -1` | Parsefout in RIVR-programma — controleer `RIVR_ACTIVE_PROGRAM` |
-| `rivr_engine_init failed: -2` | Compilatiefout — controleer programma-semantiek (onbekende bron, enz.) |
+| `rivr_engine_init failed: code 1` | Parsefout (`RIVR_ERR_PARSE`) — controleer `RIVR_ACTIVE_PROGRAM` of NVS-programma |
+| `rivr_engine_init failed: code 2` | Compilatiefout (`RIVR_ERR_COMPILE`) — controleer programma-semantiek (onbekende bron, enz.) |
 | Geen `[RIVR-TX]`-regels | `rivr_set_emit_dispatch` niet aangeroepen, of `filter.pkt_type`-mismatch |
 | `rf_tx: queue full`-waarschuwingen | Verlaag de framesnelheid of vergroot `RF_TX_QUEUE_CAP` in `radio_sx1262.h` |
 | ESP32-crash bij opstarten in sim-modus | `platform_init()` werd aangeroepen — correct voor hardware-builds |
 | CRC-fouten in `protocol_decode` | Frame beschadigd in ring-buffer-kopie; controleer `frame.len`-grenzen |
+| NVS-programma laadt niet | Voer `nvs_flash_erase()` eenmalig uit; controleer retourwaarde van `nvs_open("rivr", ...)` |

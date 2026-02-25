@@ -57,29 +57,26 @@ typedef struct {
 ### 1 — Initialiseer de engine
 
 ```c
-int rivr_engine_init(const char *program, size_t len);
+rivr_result_t rivr_engine_init(const char *program);
 ```
 
-| Retourwaarde | Betekenis |
-|---|---|
-| `0` | Succes — engine gereed |
-| `-1` | Parsefout |
-| `-2` | Compilatiefout |
-
 `program` is een NUL-afgeëindigd RIVR-broncode-string.
-In de ESP32-build wordt het actieve programma geselecteerd via `RIVR_ACTIVE_PROGRAM` in `default_program.h`.
+`rivr_embed_init()` probeert automatisch eerst NVS; het ingebakken
+`RIVR_ACTIVE_PROGRAM` wordt als terugval gebruikt bij eerste opstart.
+
+| `rc.code` | Betekenis |
+|---|---|
+| `RIVR_OK` | Succes — engine gereed |
+| `RIVR_ERR_PARSE` | Parsefout in bronstring |
+| `RIVR_ERR_COMPILE` | Compilatie-/semantische fout |
 
 **Voorbeeld:**
 
 ```c
-static const char PROG[] =
-    "source rf_rx @lmp = rf_rx;\n"
-    "let chat = rf_rx |> filter.pkt_type(1) |> throttle.ticks(1);\n"
-    "emit { rf_tx(chat); }\n";
-
-if (rivr_engine_init(PROG, strlen(PROG)) != 0) {
-    ESP_LOGE(TAG, "RIVR init mislukt");
-    abort();
+rivr_result_t rc = rivr_engine_init(RIVR_DEFAULT_PROGRAM);
+if (rc.code != RIVR_OK) {
+    ESP_LOGE(TAG, "RIVR init mislukt: %" PRIu32, rc.code);
+    for (;;) { vTaskDelay(pdMS_TO_TICKS(1000)); }
 }
 ```
 
@@ -137,24 +134,42 @@ rivr_inject_event(&ev);
 ### 4 — Klok vooruitschuiven / tikoperatoren
 
 ```c
-void rivr_engine_run(uint64_t clock0_ms, uint64_t clock1_ticks);
+rivr_result_t rivr_engine_run(uint32_t max_steps);
 ```
 
-Roep elke **hoofdlustitratie** aan om tijdgebaseerde operatoren te tikken
-(`window.ms`, `throttle.ms`, `debounce.ms`, enz.).
+Elke hoofdlustitratie aangeroepen vanuit `rivr_tick()`.
 
-**Hoofdluspatroon:**
+**Hoofdluspatroon (uit `rivr_embed.c`):**
 
 ```c
-while (1) {
-    uint64_t nu_ms    = esp_timer_get_time() / 1000;
-    uint64_t nu_tikken = lmp_clock_now();
-    rivr_engine_run(nu_ms, nu_tikken);
-    vTaskDelay(pdMS_TO_TICKS(10));
+void rivr_tick(void) {
+    sources_rf_rx_drain();   // injecteer radio-frames
+    sources_cli_drain();     // injecteer CLI-events
+    sources_timer_drain();   // vuur vervallen timer-bronnen
+    rivr_engine_run(256);    // voer DAG uit
 }
 ```
 
-### 5 — Klokken bevragen
+### 5 — NVS-programmaopslag
+
+```c
+bool rivr_nvs_store_program(const char *src);
+```
+
+Slaat `src` op in NVS-sleutel `rivr/program` (max. 2047 bytes). Bij de volgende
+opstart (of na `rivr_embed_reload()`) wordt dit programma gebruikt in plaats van
+de ingebakken standaard.
+
+```c
+bool rivr_embed_reload(void);
+```
+
+Herlaadt de engine op levende firmware: reset de timertabel, initialiseert de
+engine opnieuw vanuit NVS (of terugval), en telt timer-bronnen opnieuw.
+Wordt automatisch aangeroepen vanuit de hoofdlus als `g_program_reload_pending`
+is gezet (bijv. na ontvangst van een `PKT_PROG_PUSH`-frame).
+
+### 6 — Klokken bevragen
 
 ```c
 uint64_t rivr_engine_clock_now(uint8_t clock_id);
@@ -165,15 +180,19 @@ uit de interne status van de engine na de laatste `rivr_engine_run()`-aanroep.
 
 ---
 
-## Sink-registratie-helper
+## Sink-registratie
 
-`rivr_layer/rivr_sources.c` biedt handige macro's:
+Sinks worden op naam geregistreerd in `rivr_sinks_init()` via `rivr_register_sink()`:
 
 ```c
-rivr_register_sink(SINK_RF_TX,     rf_tx_sink_cb);
-rivr_register_sink(SINK_USB_PRINT, usb_print_sink_cb);
-rivr_register_sink(SINK_LOG,       log_sink_cb);
+rivr_register_sink("io.lora.tx",     rf_tx_sink_cb,     NULL);
+rivr_register_sink("io.lora.beacon", beacon_sink_cb,    NULL);
+rivr_register_sink("io.usb.print",   usb_print_sink_cb, NULL);
+rivr_register_sink("io.debug.dump",  log_sink_cb,       NULL);
 ```
+
+`beacon_sink_cb` bouwt een `PKT_BEACON`-frame met de roepnaam (`g_callsign`),
+net-ID (`g_net_id`) en hop count, en plaatst dit in `rf_tx_queue`.
 
 ---
 
@@ -206,6 +225,11 @@ typedef struct __attribute__((packed)) {
 | `PKT_ROUTE_RPL` | 4 |
 | `PKT_ACK` | 5 |
 | `PKT_DATA` | 6 |
+| `PKT_PROG_PUSH` | 7 |
+
+`PKT_PROG_PUSH` bevat een NUL-afgeëindigd RIVR-broncode-string als payload.
+Bij ontvangst slaat de firmware dit op in NVS en zet `g_program_reload_pending`.
+Het wordt **nooit doorgestuurd** over het mesh-netwerk.
 
 ### Coderen / decoderen
 
@@ -292,4 +316,5 @@ idf.py -DRIVR_SIM_MODE=1 -DRIVR_SIM_TX_PRINT=1 build
 2. Bied een UART-driver en koppel deze aan `usb_print_sink_cb`.
 3. Bied een radio-driver met `radio_transmit(buf, len)` en een ontvangst-ring-buffer.
 4. Koppel `librivr_core.a` (Rust, cross-gecompileerd voor jouw doel).
-5. Roep de levenscyclus aan: `rivr_engine_init` → `rivr_set_emit_dispatch` → loop `rivr_inject_event` + `rivr_engine_run`.
+5. Roep de levenscyclus aan: `rivr_embed_init()` → hoofdlus met `rivr_tick()` + `tx_drain_loop()`.
+6. Optioneel: roep `rivr_nvs_store_program()` aan om gebruikersprogramma's op te slaan.

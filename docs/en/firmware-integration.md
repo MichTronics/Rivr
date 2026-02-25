@@ -56,29 +56,26 @@ typedef struct {
 ### 1 — Initialise the engine
 
 ```c
-int rivr_engine_init(const char *program, size_t len);
+rivr_result_t rivr_engine_init(const char *program);
 ```
 
-| Return | Meaning |
-|---|---|
-| `0` | Success — engine ready |
-| `-1` | Parse error |
-| `-2` | Compile error |
-
 `program` is a NUL-terminated RIVR source string.
-In the ESP32 build the active program is selected via `RIVR_ACTIVE_PROGRAM` in `default_program.h`.
+`rivr_embed_init()` automatically tries NVS first; the compiled-in
+`RIVR_ACTIVE_PROGRAM` is used as a fallback on first boot.
+
+| `rc.code` | Meaning |
+|---|---|
+| `RIVR_OK` | Success — engine ready |
+| `RIVR_ERR_PARSE` | Parse error in source string |
+| `RIVR_ERR_COMPILE` | Compile/semantic error |
 
 **Example:**
 
 ```c
-static const char PROG[] =
-    "source rf_rx @lmp = rf_rx;\n"
-    "let chat = rf_rx |> filter.pkt_type(1) |> throttle.ticks(1);\n"
-    "emit { rf_tx(chat); }\n";
-
-if (rivr_engine_init(PROG, strlen(PROG)) != 0) {
-    ESP_LOGE(TAG, "RIVR init failed");
-    abort();
+rivr_result_t rc = rivr_engine_init(RIVR_DEFAULT_PROGRAM);
+if (rc.code != RIVR_OK) {
+    ESP_LOGE(TAG, "RIVR init failed: %" PRIu32, rc.code);
+    for (;;) { vTaskDelay(pdMS_TO_TICKS(1000)); }
 }
 ```
 
@@ -133,27 +130,61 @@ memcpy(ev.value.data, frame_buf, frame_len);
 rivr_inject_event(&ev);
 ```
 
-### 4 — Advance the clock / tick operators
+### 4 — Run the scheduler
 
 ```c
-void rivr_engine_run(uint64_t clock0_ms, uint64_t clock1_ticks);
+rivr_result_t rivr_engine_run(uint32_t max_steps);
 ```
 
-Call **every main-loop iteration** to tick time-based operators
-(`window.ms`, `throttle.ms`, `debounce.ms`, etc.).
+Called inside `rivr_tick()` every main-loop iteration.
+`max_steps` caps the number of scheduler cycles to prevent starvation.
+`rc.cycles_used` reports actual work done; `rc.gas_remaining == 0` signals
+that the engine was still busy at the step limit (potential tick-storm).
 
-**Main loop pattern:**
+**Main loop pattern (from `rivr_embed.c`):**
 
 ```c
-while (1) {
-    uint64_t now_ms    = esp_timer_get_time() / 1000;
-    uint64_t now_ticks = lmp_clock_now();
-    rivr_engine_run(now_ms, now_ticks);
-    vTaskDelay(pdMS_TO_TICKS(10));
+void rivr_tick(void) {
+    sources_rf_rx_drain();   // inject radio frames
+    sources_cli_drain();     // inject CLI events
+    sources_timer_drain();   // fire due timer sources
+    rivr_engine_run(256);    // run DAG
 }
 ```
 
-### 5 — Query clocks
+### 5 — NVS program storage
+
+```c
+bool rivr_nvs_store_program(const char *src);
+```
+
+Writes `src` to NVS key `rivr/program` (max 2047 bytes).  On the next boot
+(or after `rivr_embed_reload()`) this program will be used instead of the
+compiled-in default.
+
+```c
+bool rivr_embed_reload(void);
+```
+
+Hot-reloads the engine at runtime: resets the timer table, re-initialises
+the engine from NVS (or fallback), and re-enumerates timer sources.
+Called automatically from the main loop when `g_program_reload_pending` is set
+(e.g. after a `PKT_PROG_PUSH` frame arrives).
+
+### 6 — Timer source registration
+
+`rivr_embed_init()` and `rivr_embed_reload()` automatically enumerate all
+`source NAME = timer(N)` declarations via:
+
+```c
+typedef void (*rivr_timer_source_cb_t)(const char *name, uint64_t interval_ms);
+void rivr_foreach_timer_source(rivr_timer_source_cb_t cb);
+```
+
+The C timer table (`rivr_timer_entry_t s_timers[RIVR_TIMER_MAX]`) is populated
+by `sources_register_timer()` and polled by `sources_timer_drain()` each tick.
+
+### 7 — Query clocks
 
 ```c
 uint64_t rivr_engine_clock_now(uint8_t clock_id);
@@ -164,19 +195,20 @@ from the engine's internal state after the last `rivr_engine_run()` call.
 
 ---
 
-## Sink registration helper
+## Sink registration
 
-`rivr_layer/rivr_sources.c` provides convenience macros:
-
-```c
-#define RIVR_REGISTER_SINK(name, fn_ptr)
-```
+Sinks are registered by name in `rivr_sinks_init()` via `rivr_register_sink()`:
 
 ```c
-rivr_register_sink(SINK_RF_TX,    rf_tx_sink_cb);
-rivr_register_sink(SINK_USB_PRINT, usb_print_sink_cb);
-rivr_register_sink(SINK_LOG,      log_sink_cb);
+rivr_register_sink("io.lora.tx",     rf_tx_sink_cb,     NULL);
+rivr_register_sink("io.lora.beacon", beacon_sink_cb,    NULL);
+rivr_register_sink("io.usb.print",   usb_print_sink_cb, NULL);
+rivr_register_sink("io.debug.dump",  log_sink_cb,       NULL);
 ```
+
+The `beacon_sink_cb` builds a `PKT_BEACON` frame containing the node's
+callsign (`g_callsign`), net id (`g_net_id`), and hop count, then pushes
+it to `rf_tx_queue`.
 
 ---
 
@@ -209,6 +241,11 @@ typedef struct __attribute__((packed)) {
 | `PKT_ROUTE_RPL` | 4 |
 | `PKT_ACK` | 5 |
 | `PKT_DATA` | 6 |
+| `PKT_PROG_PUSH` | 7 |
+
+`PKT_PROG_PUSH` carries a NUL-terminated RIVR source string as payload.
+On receipt the firmware stores it to NVS and sets `g_program_reload_pending`.
+It is **never relayed** over the mesh.
 
 ### Encode / decode
 
@@ -295,4 +332,5 @@ idf.py -DRIVR_SIM_MODE=1 -DRIVR_SIM_TX_PRINT=1 build
 2. Provide a UART driver and wire it to `usb_print_sink_cb`.
 3. Provide a radio driver with `radio_transmit(buf, len)` and an RX ring-buffer.
 4. Link `librivr_core.a` (Rust, cross-compiled for your target).
-5. Call the lifecycle sequence: `rivr_engine_init` → `rivr_set_emit_dispatch` → loop `rivr_inject_event` + `rivr_engine_run`.
+5. Call the lifecycle sequence: `rivr_embed_init()` → main loop calling `rivr_tick()` + `tx_drain_loop()`.
+6. Optionally call `rivr_nvs_store_program()` to persist user programs.

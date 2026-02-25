@@ -15,9 +15,12 @@ let-stmt    = "let" IDENT "=" expr ";"
 emit-stmt   = "emit" "{" (sink ";")+ "}"
 expr        = primary ("|>" pipe-op)*
 primary     = IDENT | STRING | INTEGER | "merge" "(" IDENT "," IDENT ")"
-sink        = "io.usb.print" "(" IDENT ")"
-            | "io.lora.tx"   "(" IDENT ")"
-            | "io.debug.dump" "(" IDENT ")"
+sink        = "io.usb.print"    "(" IDENT ")"
+            | "io.lora.tx"      "(" IDENT ")"
+            | "io.lora.beacon"  "(" IDENT ")"
+            | "io.debug.dump"   "(" IDENT ")"
+source-kind = "rf" | "usb" | "lora" | "programmatic"
+            | "timer" "(" INTEGER ")"
 ```
 
 ---
@@ -32,7 +35,17 @@ source NAME [@CLOCK] = KIND;
 |---|---|
 | `NAME` | Identifier used to reference this source in `let` expressions |
 | `@CLOCK` | Optional clock annotation (`@mono`, `@lmp`) |
-| `KIND` | Hardware origin: `usb`, `lora`, `rf`, or `programmatic` |
+| `KIND` | Hardware origin: `usb`, `lora`, `rf`, `programmatic`, or `timer(N)` |
+
+**Source kinds:**
+
+| Kind | Description |
+|---|---|
+| `rf` | LoRa radio receive stream — events are raw `Bytes` frames |
+| `usb` | USB/UART receive stream |
+| `lora` | Alias for `rf` |
+| `programmatic` | Manually injected events (clock 0) |
+| `timer(N)` | Periodic tick every N milliseconds (clock 0). Fires `Value::Int(mono_ms)` events automatically from the C timer table. |
 
 **Clock ids:**
 
@@ -44,9 +57,10 @@ source NAME [@CLOCK] = KIND;
 **Examples:**
 
 ```rivr
-source rf_rx @lmp  = rf_rx;
-source usb   @mono = usb;
-source sensor      = programmatic;   // clock 0 by default
+source rf_rx @lmp  = rf;          // LoRa receive → Lamport clock
+source usb   @mono = usb;         // USB stream   → mono clock
+source sensor      = programmatic; // clock 0 by default
+source beacon_tick = timer(30000); // fires every 30 s, clock 0
 ```
 
 ---
@@ -77,6 +91,7 @@ Packet type constants for `filter.pkt_type`:
 | `PKT_ROUTE_RPL` | 4 | Route reply |
 | `PKT_ACK` | 5 | Acknowledgement |
 | `PKT_DATA` | 6 | Generic sensor data |
+| `PKT_PROG_PUSH` | 7 | OTA program update (never relayed) |
 
 ### Aggregation
 
@@ -161,6 +176,7 @@ emit {
 | Sink | C callback | Behaviour |
 |---|---|---|
 | `io.lora.tx` | `rf_tx_sink_cb` | Encode and push to `rf_tx_queue` |
+| `io.lora.beacon` | `beacon_sink_cb` | Build `PKT_BEACON` (callsign + hop_count) and push to `rf_tx_queue` |
 | `io.usb.print` | `usb_print_sink_cb` | `printf` to UART stdout |
 | `io.debug.dump` | `log_sink_cb` | ESP-IDF `ESP_LOGI` |
 
@@ -177,35 +193,39 @@ emit {
 
 ## Complete examples
 
-### Default mesh pipeline
+### Default mesh pipeline (with beacon)
 
 ```rivr
-source rf_rx @lmp = rf_rx;
+source rf_rx @lmp = rf;
+source beacon_tick = timer(30000);
 
 let chat = rf_rx
   |> filter.pkt_type(1)
-  |> budget.toa_us(360000, 0.10, 360000)
+  |> budget.toa_us(280000, 0.10, 280000)
   |> throttle.ticks(1);
 
-emit { rf_tx(chat); }
+emit { io.lora.tx(chat); }
+emit { io.lora.beacon(beacon_tick); }
 ```
 
 ### Multi-type mesh routing (extended mesh program)
 
 ```rivr
-source rf_rx @lmp = rf_rx;
+source rf_rx @lmp = rf;
+source beacon_tick = timer(30000);
 
 let chat = rf_rx
   |> filter.pkt_type(1)
-  |> budget.toa_us(360000, 0.10, 360000)
+  |> budget.toa_us(280000, 0.10, 280000)
   |> throttle.ticks(1);
 
 let data = rf_rx
   |> filter.pkt_type(6)
   |> throttle.ticks(1);
 
-emit { rf_tx(chat); }
-emit { rf_tx(data); }
+emit { io.lora.tx(chat); }
+emit { io.lora.tx(data); }
+emit { io.lora.beacon(beacon_tick); }
 ```
 
 ### Capped window with flush-early policy
