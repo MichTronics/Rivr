@@ -9,8 +9,8 @@
  *  • radio_transmit() is called only from the main loop.
  *  • All SX1262 register accesses go through platform_spi_transfer().
  *
- * SX1262 COMMAND REFERENCE (SX1261/62 UM v2.1, Section 13)
- * ──────────────────────────────────────────────────────────
+ * SX1262 COMMAND REFERENCE (SX1261/62 UM v2.1 + RadioLib SX126x_commands.h)
+ * ────────────────────────────────────────────────────────────────────────────
  *  0x80  SetStandby(0=STDBY_RC, 1=STDBY_XOSC)
  *  0x82  SetRx(timeout[3])
  *  0x83  SetTx(timeout[3])
@@ -18,20 +18,25 @@
  *  0x86  SetRfFrequency(frf[4])
  *  0x08  SetDioIrqParams(irqMask[2], dio1[2], dio2[2], dio3[2])
  *  0x89  Calibrate(calibParam)
+ *  0x8A  SetPacketType(0=GFSK, 1=LoRa)        ← NOT 0x8F
+ *  0x8B  SetModulationParams(SF, BW, CR, LDRO)
+ *  0x8C  SetPacketParams(preamble[2],headerType,payloadLen,crc,invertIQ)
+ *  0x8E  SetTxParams(power, rampTime)
+ *  0x8F  SetBufferBaseAddress(txBase, rxBase)  ← NOT SetPacketType
  *  0x95  SetPaConfig(paDutyCycle, hpMax, deviceSel, paLut)
  *  0x96  SetRegulatorMode(0=LDO, 1=DC-DC)
  *  0x97  SetDio3AsTcxoCtrl(voltage, delay[3])
  *  0x9D  SetDio2AsRfSwitchCtrl(enable)
- *  0x8B  SetModulationParams(SF, BW, CR, LDRO)
- *  0x8C  SetPacketParams(preamble[2],headerType,payloadLen,crc,invertIQ)
- *  0x8E  SetTxParams(power, rampTime)
- *  0x8F  SetPacketType(0=FSK, 1=LoRa)
  *  0x0E  WriteBuffer(offset, data...)
- *  0x1E  ReadBuffer(offset, NOP, data...) → payload
+ *  0x1E  ReadBuffer(offset, NOP, data...)
  *  0x12  GetIrqStatus() → NOP + 2 bytes
  *  0x13  GetRxBufferStatus() → NOP + 2 bytes (payloadLen, startAddr)
  *  0x14  GetPacketStatus() → NOP + 3 bytes
  *  0x02  ClearIrqStatus(mask[2])
+ *
+ * LoRa BW encoding (SetModulationParams param2, Table 13-47):
+ *   0x00=7.8  0x08=10.4  0x01=15.6  0x09=20.8  0x02=31.25
+ *   0x0A=41.7 0x03=62.5  0x04=125   0x05=250   0x06=500  kHz
  */
 
 #include "radio_sx1262.h"
@@ -137,9 +142,10 @@ void radio_init(void)
     sx1262_cmd(0x9D, &p, 1);
     platform_sx1262_wait_busy(10);
 
-    /* SetPacketType(LoRa=1) */
+    /* SetPacketType(LoRa=1)
+     * 0x8A = SetPacketType  (0x8F = SetBufferBaseAddress — not this!) */
     p = 0x01;
-    sx1262_cmd(0x8F, &p, 1);   /* 0x8F = SetPacketType */
+    sx1262_cmd(0x8A, &p, 1);   /* 0x8A = SetPacketType */
     platform_sx1262_wait_busy(10);
 
     /* SetRfFrequency: fRF = freq_hz * 2^25 / 32000000 (integer, no float rounding error).
@@ -161,10 +167,11 @@ void radio_init(void)
         platform_sx1262_wait_busy(10);
     }
 
-    /* SetModulationParams: SF=8, BW=0x07(125kHz), CR=0x04(4/8), LDRO=0
-     * SX1262 BW encoding: 0x04=31.25kHz 0x06=62.5kHz 0x07=125kHz
-     *                     0x08=250kHz   0x09=500kHz              */
-    uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x07, 0x04, 0x00 };
+    /* SetModulationParams: SF=8, BW=0x04(125kHz), CR=0x04(4/8), LDRO=0
+     * Authoritative BW encoding (RadioLib / SX1262 UM v2.1 Table 13-47):
+     *   0x00=7.8   0x08=10.4  0x01=15.6  0x09=20.8  0x02=31.25
+     *   0x0A=41.7  0x03=62.5  0x04=125   0x05=250   0x06=500  kHz */
+    uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x04, 0x00 };
     sx1262_cmd(0x8B, mod_params, 4);   /* 0x8B = SetModulationParams */
     platform_sx1262_wait_busy(10);
 
