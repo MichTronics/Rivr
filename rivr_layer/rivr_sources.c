@@ -377,31 +377,67 @@ uint32_t sources_cli_drain(void)
 
 /* ── timer source ────────────────────────────────────────────────────────── */
 
-static uint32_t s_last_timer_ms = 0;
+typedef struct {
+    char     name[32];       /**< Source name (NUL-terminated)               */
+    uint32_t interval_ms;    /**< Fire interval in milliseconds               */
+    uint32_t last_fire_ms;   /**< Monotonic ms of last fire (or init)        */
+    bool     active;         /**< Slot in use                                */
+} rivr_timer_entry_t;
 
-uint32_t sources_timer_tick(uint32_t interval_ms)
+static rivr_timer_entry_t s_timers[RIVR_TIMER_MAX];
+static uint8_t            s_timer_count = 0u;
+
+void sources_register_timer(const char *name, uint32_t interval_ms)
 {
-    uint32_t now = tb_millis();
-    if (now - s_last_timer_ms < interval_ms) return 0;
-    s_last_timer_ms = now;
+    if (!name || interval_ms == 0u || s_timer_count >= RIVR_TIMER_MAX) return;
 
-    char text_buf[32];
-    snprintf(text_buf, sizeof(text_buf), "TICK:%lu", (unsigned long)now);
+    rivr_timer_entry_t *e = &s_timers[s_timer_count++];
+    strncpy(e->name, name, sizeof(e->name) - 1u);
+    e->name[sizeof(e->name) - 1u] = '\0';
+    e->interval_ms  = interval_ms;
+    e->last_fire_ms = tb_millis();   /* start counting from registration */
+    e->active       = true;
+    ESP_LOGI(TAG, "sources: registered timer '%s' interval=%lu ms",
+             e->name, (unsigned long)interval_ms);
+}
 
-    rivr_event_t ev;
-    memset(&ev, 0, sizeof(ev));
-    ev.stamp.clock = 0;
-    ev.stamp.tick  = now;
-    ev.v.tag       = RIVR_VAL_STR;
-    uint8_t len    = (uint8_t)strlen(text_buf);
-    memcpy(ev.v.as_str.buf, text_buf, len);
-    ev.v.as_str.len = len;
-    memcpy(ev.kind_tag, "TICK", 5);
+void sources_timer_reset(void)
+{
+    memset(s_timers, 0, sizeof(s_timers));
+    s_timer_count = 0u;
+    ESP_LOGI(TAG, "sources: timer table cleared");
+}
 
-    /* Timer events are injected into a hypothetical "timer" source.
-       For now we re-use "rf_rx" to trigger periodic RIVR rules. */
-    (void)rivr_inject_event("rf_rx", &ev);
-    return 1;
+uint32_t sources_timer_drain(void)
+{
+    uint32_t fired = 0u;
+    uint32_t now   = tb_millis();
+
+    for (uint8_t i = 0u; i < s_timer_count; i++) {
+        rivr_timer_entry_t *e = &s_timers[i];
+        if (!e->active || e->interval_ms == 0u) continue;
+        if (now - e->last_fire_ms < e->interval_ms) continue;
+
+        e->last_fire_ms = now;
+
+        rivr_event_t ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.stamp.clock = 0;                      /* clock 0 = monotonic */
+        ev.stamp.tick  = now;
+        ev.v.tag       = RIVR_VAL_INT;
+        ev.v.as_int    = (int64_t)now;
+
+        rivr_result_t rc = rivr_inject_event(e->name, &ev);
+        if (rc.code == RIVR_OK) {
+            fired++;
+            ESP_LOGD(TAG, "sources: timer '%s' fired at %lu ms",
+                     e->name, (unsigned long)now);
+        } else {
+            ESP_LOGW(TAG, "sources: timer '%s' inject failed code=%u",
+                     e->name, (unsigned)rc.code);
+        }
+    }
+    return fired;
 }
 
 /* ── Init ──────────────────────────────────────────────────────────────────── */

@@ -31,6 +31,7 @@ use alloc::string::String;
 
 use crate::{compile, parse, Engine, Event, Stamp, Value};
 use crate::runtime::value::StrBuf;   // StrBuf = String (alloc) or FixedText<64> (no-alloc)
+use crate::runtime::NodeKind;
 #[cfg(not(feature = "alloc"))]
 use crate::runtime::fixed::FixedText;
 
