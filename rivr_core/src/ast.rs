@@ -152,6 +152,7 @@ pub enum Expr {
 pub enum Sink {
     UsbPrint(String),
     LoraTx(String),
+    LoraBeacon(String),
     DebugDump(String),
 }
 

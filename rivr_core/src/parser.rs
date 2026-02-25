@@ -361,9 +361,10 @@ impl<'s> Parser<'s> {
         self.skip_ws();
         let name = self.read_dotted_name();
         match name.as_str() {
-            "io.usb.print"  => { self.expect("(")?; let a = self.parse_ident()?; self.expect(")")?; Ok(Sink::UsbPrint(a)) }
-            "io.lora.tx"    => { self.expect("(")?; let a = self.parse_ident()?; self.expect(")")?; Ok(Sink::LoraTx(a)) }
-            "io.debug.dump" => { self.expect("(")?; let a = self.parse_ident()?; self.expect(")")?; Ok(Sink::DebugDump(a)) }
+            "io.usb.print"   => { self.expect("(")? ; let a = self.parse_ident()? ; self.expect(")")? ; Ok(Sink::UsbPrint(a)) }
+            "io.lora.tx"     => { self.expect("(")? ; let a = self.parse_ident()? ; self.expect(")")? ; Ok(Sink::LoraTx(a)) }
+            "io.lora.beacon" => { self.expect("(")? ; let a = self.parse_ident()? ; self.expect(")")? ; Ok(Sink::LoraBeacon(a)) }
+            "io.debug.dump"  => { self.expect("(")? ; let a = self.parse_ident()? ; self.expect(")")? ; Ok(Sink::DebugDump(a)) }
             other => Err(ParseError::new(self.pos, format!("unknown sink `{other}`"))),
         }
     }

@@ -78,9 +78,10 @@ fn value_to_json(v: &Value) -> ValueJson {
 
 fn sink_kind_str(s: &SinkKind) -> &'static str {
     match s {
-        SinkKind::UsbPrint  => "usb_print",
-        SinkKind::LoraTx    => "lora_tx",
-        SinkKind::DebugDump => "debug_dump",
+        SinkKind::UsbPrint   => "usb_print",
+        SinkKind::LoraTx     => "lora_tx",
+        SinkKind::LoraBeacon => "lora_beacon",
+        SinkKind::DebugDump  => "debug_dump",
     }
 }
 

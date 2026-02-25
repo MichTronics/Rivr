@@ -48,6 +48,7 @@ pub enum DropPolicy {
 pub enum SinkKind {
     UsbPrint,
     LoraTx,
+    LoraBeacon,
     DebugDump,
 }
 
@@ -389,9 +390,10 @@ impl Node {
                 #[cfg(feature = "ffi")]
                 {
                     let sink_name = match sink {
-                        SinkKind::UsbPrint  => "io.usb.print",
-                        SinkKind::LoraTx    => "io.lora.tx",
-                        SinkKind::DebugDump => "io.debug.dump",
+                        SinkKind::UsbPrint   => "io.usb.print",
+                        SinkKind::LoraTx     => "io.lora.tx",
+                        SinkKind::LoraBeacon => "io.lora.beacon",
+                        SinkKind::DebugDump  => "io.debug.dump",
                     };
                     // Safety: called from the engine's single-threaded tick context;
                     // EMIT_DISPATCH is set once before engine init and never mutated.
@@ -399,7 +401,8 @@ impl Node {
                 }
                 #[cfg(not(feature = "ffi"))]
                 match sink {
-                    SinkKind::UsbPrint  => println!("[usb] {}", ev.v.display()),
+                    SinkKind::UsbPrint   => println!("[usb] {}", ev.v.display()),
+                    SinkKind::LoraBeacon => { /* dispatched via rivr_emit_dispatch in firmware */ }
                     SinkKind::LoraTx => {
                         let hex: String = ev.v.display().bytes()
                             .map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");

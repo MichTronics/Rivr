@@ -295,9 +295,10 @@ impl Compiler {
             Stmt::Emit { sinks } => {
                 for sink in sinks {
                     let (stream_name, sink_kind) = match sink {
-                        Sink::UsbPrint(n)  => (n, SinkKind::UsbPrint),
-                        Sink::LoraTx(n)    => (n, SinkKind::LoraTx),
-                        Sink::DebugDump(n) => (n, SinkKind::DebugDump),
+                        Sink::UsbPrint(n)   => (n, SinkKind::UsbPrint),
+                        Sink::LoraTx(n)     => (n, SinkKind::LoraTx),
+                        Sink::LoraBeacon(n) => (n, SinkKind::LoraBeacon),
+                        Sink::DebugDump(n)  => (n, SinkKind::DebugDump),
                     };
                     let upstream = match self.resolve(stream_name) {
                         Some(id) => id,
