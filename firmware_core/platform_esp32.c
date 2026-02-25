@@ -123,12 +123,19 @@ void platform_sx1262_reset(void)
 
 /* ── Antenna switch ────────────────────────────────────────────────── */
 /**
- * Drive the RXEN line.  TXEN is driven by SX1262 DIO2 automatically
- * (after SetDio2AsRfSwitchCtrl is sent in radio_init).
+ * Drive the RF-switch control lines.
+ *   enable=true  → RX path: RXEN=1, TXEN=0
+ *   enable=false → TX path: RXEN=0, TXEN=1
+ *
+ * TXEN is also wired to SX1262 DIO2 on some boards (SetDio2AsRfSwitchCtrl),
+ * but driving it explicitly from GPIO13 is always correct and covers boards
+ * that do not have the DIO2→TXEN trace.  Both drivers agree on the level so
+ * there is no bus conflict.
  */
 void platform_sx1262_set_rxen(bool enable)
 {
     gpio_set_level(PIN_SX1262_RXEN, enable ? 1 : 0);
+    gpio_set_level(PIN_SX1262_TXEN, enable ? 0 : 1);
 }
 
 /* ── LED ─────────────────────────────────────────────────────────────────── */
