@@ -63,8 +63,10 @@ pub enum NodeKind {
         #[allow(dead_code)]
         name: String,
         /// The clock domain id assigned to this source at compile time.
-        clock: u8,
-    },
+        clock: u8,        /// For `source NAME = timer(N)` declarations: the fire interval in
+        /// milliseconds.  `None` for all other source kinds.
+        /// Exposed to C via `rivr_foreach_timer_source()`.
+        interval_ms: Option<u64>,    },
 
     // ── Text / filter ──────────────────────────────────────────────────────
     MapUpper,
@@ -384,6 +386,18 @@ impl Node {
 
             // ── emit (sink) ───────────────────────────────────────────────
             NodeKind::Emit { sink } => {
+                #[cfg(feature = "ffi")]
+                {
+                    let sink_name = match sink {
+                        SinkKind::UsbPrint  => "io.usb.print",
+                        SinkKind::LoraTx    => "io.lora.tx",
+                        SinkKind::DebugDump => "io.debug.dump",
+                    };
+                    // Safety: called from the engine's single-threaded tick context;
+                    // EMIT_DISPATCH is set once before engine init and never mutated.
+                    unsafe { crate::ffi::ffi_emit_hook(sink_name, &ev.v); }
+                }
+                #[cfg(not(feature = "ffi"))]
                 match sink {
                     SinkKind::UsbPrint  => println!("[usb] {}", ev.v.display()),
                     SinkKind::LoraTx => {

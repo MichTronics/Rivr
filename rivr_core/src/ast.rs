@@ -163,6 +163,10 @@ pub enum SourceKind {
     Lora,
     Rf,
     Programmatic,
+    /// Periodic timer source.  Fires an `Int(mono_ms)` event every
+    /// `interval_ms` milliseconds on clock 0 (mono).
+    /// Syntax: `source beacon = timer(30000);`
+    Timer { interval_ms: u64 },
 }
 
 // ── Clock annotation ──────────────────────────────────────────────────────────

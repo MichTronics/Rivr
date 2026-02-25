@@ -45,6 +45,16 @@ extern "C" {
 #define PKT_ROUTE_RPL      4u   /**< Route-reply (future)                    */
 #define PKT_ACK            5u   /**< Acknowledgement (future)                */
 #define PKT_DATA           6u   /**< Generic sensor data                     */
+/** OTA program push: payload = null-terminated RIVR source string.
+ *  Receiver stores to NVS and hot-reloads the engine.  Not relayed. */
+#define PKT_PROG_PUSH      7u
+
+/** Beacon payload layout (11 bytes after header):
+ *  [0..9]  callsign (ASCII, NUL-padded)
+ *  [10]    hop_count (always 0 for the originating node)
+ */
+#define BEACON_PAYLOAD_LEN    11u
+#define BEACON_CALLSIGN_MAX   10u
 
 /* ── Layout constants ────────────────────────────────────────────────────── */
 

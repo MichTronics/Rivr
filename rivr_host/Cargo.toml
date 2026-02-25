@@ -8,6 +8,10 @@ description = "RIVR host – demos, JSONL replay, and dev tooling"
 name = "rivr"
 path = "src/main.rs"
 
+[[bin]]
+name = "rivrc"
+path = "src/bin/rivrc.rs"
+
 [dependencies]
 rivr_core  = { path = "../rivr_core", features = ["std"] }
 serde      = { workspace = true }

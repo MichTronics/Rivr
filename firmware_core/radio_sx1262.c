@@ -41,6 +41,9 @@
 static rf_rx_frame_t  s_rx_storage[RF_RX_RINGBUF_CAP];
 static rf_tx_request_t s_tx_storage[RF_TX_QUEUE_CAP];
 
+/** True while the radio is in continuous-RX mode (cleared during TX). */
+static volatile bool s_in_rx = false;
+
 rb_t rf_rx_ringbuf;
 rb_t rf_tx_queue;
 
@@ -112,8 +115,8 @@ void radio_init(void)
     sx1262_cmd(0x86, freq_params, 4);
     platform_sx1262_wait_busy(10);
 
-    /* SetModulationParams: SF=9, BW=4(125kHz), CR=1(4/5), LDRO=0 */
-    uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x01, 0x00 };
+    /* SetModulationParams: SF=8, BW=4(125kHz), CR=4(4/8), LDRO=0 */
+    uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x04, 0x00 };
     sx1262_cmd(0x8E, mod_params, 4);
     platform_sx1262_wait_busy(10);
 
@@ -158,6 +161,7 @@ void radio_start_rx(void)
     uint8_t timeout[3] = { 0xFF, 0xFF, 0xFF };
     sx1262_cmd(0x98, timeout, 3);
     platform_sx1262_wait_busy(5);
+    s_in_rx = true;
     ESP_LOGI(TAG, "RX mode started");
 }
 
@@ -196,7 +200,17 @@ void IRAM_ATTR radio_isr(void *arg)
 
     if (payload_len == 0 || payload_len > RF_MAX_PAYLOAD_LEN) return;
 
-    /* 4. ReadBuffer: command=0x1E, offset=start_addr, NOP, then payload */
+    /* 4. GetPacketStatus (0x14): RssiPkt, SnrPkt, SignalRssiPkt */
+    int16_t pkt_rssi_dbm = -99;
+    int8_t  pkt_snr_db   = 0;
+    {
+        uint8_t pkt_status[3] = {0};
+        sx1262_read_cmd(0x14, pkt_status, 3);
+        pkt_rssi_dbm = -(int16_t)pkt_status[0] / 2;
+        pkt_snr_db   = (int8_t)pkt_status[1] / 4;
+    }
+
+    /* 5. ReadBuffer: command=0x1D, offset=start_addr, NOP, then payload */
     rf_rx_frame_t frame;
     {
         uint8_t tx_buf[4] = { 0x1D, start_addr, 0x00, 0x00 };
@@ -207,8 +221,8 @@ void IRAM_ATTR radio_isr(void *arg)
     }
     frame.len         = payload_len;
     frame.rx_mono_ms  = (uint32_t)atomic_load_explicit(&g_mono_ms, memory_order_relaxed);
-    frame.rssi_dbm    = -99;   /* GetPacketStatus would give accurate value; skipped in ISR */
-    frame.snr_db      = 0;
+    frame.rssi_dbm    = pkt_rssi_dbm;
+    frame.snr_db      = pkt_snr_db;
 
     /* 5. Push into ringbuf (may silently drop if full) */
     rb_try_push(&rf_rx_ringbuf, &frame);
@@ -240,6 +254,7 @@ bool radio_transmit(const rf_tx_request_t *req)
 
     /* Switch antenna to TX path (RXEN low; DIO2/TXEN goes high automatically
      * once SetTx is issued, driven by SetDio2AsRfSwitchCtrl). */
+    s_in_rx = false;
     platform_sx1262_set_rxen(false);
 
     /* SetTx with timeout = ToA × 1.5 converted to SX1262 ticks (15.625 µs/tick) */
@@ -311,4 +326,14 @@ uint16_t radio_frame_sender_tick(const rf_rx_frame_t *frame)
 void radio_poll_rx(void)
 {
     /* Used in polling mode (no ISR).  In ISR mode, this is a no-op. */
+}
+
+int16_t radio_get_rssi_inst(void)
+{
+    /* GetRssiInst (0x15): valid only in RX mode.
+     * Returns noise floor (~-120 dBm) when called outside an RX window. */
+    if (!s_in_rx) return -120;
+    uint8_t raw = 0;
+    sx1262_read_cmd(0x15, &raw, 1);
+    return -(int16_t)raw / 2;
 }

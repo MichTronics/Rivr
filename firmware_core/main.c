@@ -43,6 +43,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 
 #include "firmware_core/platform_esp32.h"
 #include "firmware_core/timebase.h"
@@ -54,10 +55,20 @@
 #include "firmware_core/pending_queue.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
+#include "firmware_core/display/display.h"
 
 #define TAG              "MAIN"
 #define TX_DRAIN_LIMIT   2u     /**< Max TX frames sent per main-loop iteration */
 #define STATS_INTERVAL_MS 30000u /**< Print stats every 30 s                   */
+
+/** Compile-time node callsign — override with -DRIVR_CALLSIGN="N0CALL" */
+#ifndef RIVR_CALLSIGN
+#  define RIVR_CALLSIGN "RIVR"
+#endif
+/** Compile-time network discriminator — override with -DRIVR_NET_ID=0x1234 */
+#ifndef RIVR_NET_ID
+#  define RIVR_NET_ID 0u
+#endif
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * SIMULATION MODE  (compiled in when -DRIVR_SIM_MODE=1)
@@ -451,6 +462,16 @@ void app_main(void)
     timebase_init();
     radio_init();
     dutycycle_init(&g_dc);
+
+    /* Derive unique node ID from lower 4 bytes of WiFi STA MAC address */
+    {
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        g_my_node_id = ((uint32_t)mac[2] << 24) | ((uint32_t)mac[3] << 16)
+                     | ((uint32_t)mac[4] <<  8) |  (uint32_t)mac[5];
+        ESP_LOGI(TAG, "Node ID: 0x%08lX (from MAC bytes [2..5])",
+                 (unsigned long)g_my_node_id);
+    }
 #endif
 
 #ifdef RIVR_SIM_MODE
@@ -462,7 +483,24 @@ void app_main(void)
 #endif
 
     /* ── RIVR engine init ── */
+    /* Publish identity globals before init so beacon_sink_cb and NVS helpers
+       can read callsign and net_id from the moment the engine starts. */
+    g_net_id = (uint16_t)RIVR_NET_ID;
+    strncpy(g_callsign, RIVR_CALLSIGN, sizeof(g_callsign) - 1u);
+    g_callsign[sizeof(g_callsign) - 1u] = '\0';
     rivr_embed_init();
+
+    /* ── Display task (spawns low-priority FreeRTOS task; never blocks main) ── */
+    {
+        display_stats_t boot_stats;
+        memset(&boot_stats, 0, sizeof(boot_stats));
+        boot_stats.node_id = g_my_node_id;
+        boot_stats.net_id  = (uint16_t)RIVR_NET_ID;
+        strncpy(boot_stats.callsign, RIVR_CALLSIGN, sizeof(boot_stats.callsign) - 1u);
+#ifndef RIVR_SIM_MODE
+        display_task_start(&boot_stats);
+#endif
+    }
 
 #ifdef RIVR_SIM_MODE
     /* Push simulated frames AFTER engine is ready so clock state is fully
@@ -478,6 +516,10 @@ void app_main(void)
 
     uint32_t last_stats_ms = 0;
     uint32_t loop_count    = 0;
+    display_stats_t disp;       /* stats snapshot updated each iteration */
+    memset(&disp, 0, sizeof(disp));
+    strncpy(disp.callsign, RIVR_CALLSIGN, sizeof(disp.callsign) - 1u);
+    disp.net_id = (uint16_t)RIVR_NET_ID;
 
     for (;;) {
         /* ─ 1. RIVR processing tick ─ */
@@ -485,6 +527,11 @@ void app_main(void)
 
         /* ─ 2. TX drain (with duty-cycle gate) ─ */
         tx_drain_loop();
+
+        /* ─ 2b. Hot-reload check: if PKT_PROG_PUSH stored a new program ─ */
+        if (g_program_reload_pending) {
+            rivr_embed_reload();
+        }
 
         /* ─ 3. Periodic diagnostics ─ */
         uint32_t now = tb_millis();
@@ -499,9 +546,37 @@ void app_main(void)
             rivr_embed_print_stats();
         }
 
+        /* ─ 4. Publish display stats snapshot (task picks it up at its own pace) ─ */
+#ifndef RIVR_SIM_MODE
+        {
+            /* Fill the snapshot from live globals — cheap reads, no alloc */
+            disp.node_id        = g_my_node_id;
+            disp.uptime_s       = now / 1000u;
+            disp.rssi_inst_dbm  = radio_get_rssi_inst();
+            disp.rssi_dbm       = g_last_rssi_dbm;
+            disp.snr_db         = g_last_snr_db;
+            disp.rx_count       = g_rx_frame_count;
+            disp.tx_count       = g_tx_frame_count;
+            disp.neighbor_count = routing_neighbor_count(&g_neighbor_table, now);
+            disp.route_count    = route_cache_count(&g_route_cache, now);
+            disp.pending_count  = g_pending_queue.count;
+            /* Duty cycle used: accumulate expressed as ×10 percentage */
+            uint64_t dc_used_us = g_dc.used_us;
+            disp.dc_used_pct_x10 = (DC_BUDGET_US > 0u)
+                ? (uint16_t)(dc_used_us * 1000u / DC_BUDGET_US) : 0u;
+            disp.dc_backoff_ms  = 0u;  /* no explicit backoff timer yet */
+            disp.vm_cycles      = g_vm_total_cycles;
+            disp.error_code     = g_vm_last_error;
+            /* last_event: not yet plumbed — leave as "" */
+            display_post_stats(&disp);
+        }
+#endif
+
         loop_count++;
 
-        /* ─ 4. Yield 1 ms ─ */
-        vTaskDelay(pdMS_TO_TICKS(1));
+        /* ─ 5. Yield 10 ms — long enough to be ≥1 tick at any FreeRTOS tick rate.
+         *    pdMS_TO_TICKS(1) truncates to 0 at 100 Hz (the default); using 10 ms
+         *    ensures IDLE0 always gets CPU time, preventing Task WDT triggers. ─ */
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

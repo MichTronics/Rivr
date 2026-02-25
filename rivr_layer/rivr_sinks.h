@@ -78,6 +78,27 @@ void log_sink_cb(const rivr_value_t *v, void *user_ctx);
  */
 void usb_print_sink_cb(const rivr_value_t *v, void *user_ctx);
 
+/* ── beacon sink ───────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Emit callback: transmit a PKT_BEACON on any received event.
+ *
+ * Ignores the event value entirely.  Builds a RIVR PKT_BEACON packet
+ * with this node's ID, callsign (from g_callsign) and hop_count=0,
+ * then pushes it to rf_tx_queue.
+ *
+ * Register as sink name "io.lora.beacon".
+ * Typical use in a RIVR program:
+ * ```rivr
+ * source beacon_tick = timer(30000);
+ * emit { io.lora.beacon(beacon_tick); }
+ * ```
+ *
+ * @param v         emitted value (ignored)
+ * @param user_ctx  unused (NULL)
+ */
+void beacon_sink_cb(const rivr_value_t *v, void *user_ctx);
+
 /* ── Initialisation ──────────────────────────────────────────────────────── */
 
 /** Register all sinks with rivr_register_sink(). Call before rivr_embed_init(). */

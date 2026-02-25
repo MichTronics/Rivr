@@ -322,7 +322,7 @@ uint32_t routing_forward_delay_ms(uint32_t src_id, uint32_t seq, uint8_t pkt_typ
 /**
  * @brief Rough Time-on-Air estimate in microseconds (no radio_sx1262.h dependency).
  *
- * Uses the same approximation as RF_TOA_APPROX_US: SF9, BW125kHz, CR4/5.
+ * Uses the same approximation as RF_TOA_APPROX_US: SF8, BW125kHz, CR4/8.
  * Used by the forward budget without pulling in the radio driver header.
  *
  * @param payload_len  Wire-encoded payload length in bytes.
@@ -330,8 +330,8 @@ uint32_t routing_forward_delay_ms(uint32_t src_id, uint32_t seq, uint8_t pkt_typ
  */
 static inline uint32_t routing_toa_estimate_us(uint8_t payload_len)
 {
-    return (uint32_t)(4096u + 4096u *
-        (((uint32_t)(payload_len) * 8u + 28u + 32u) / (4u * (9u - 2u))));
+    return (uint32_t)(2048u + 2048u *
+        (((uint32_t)(payload_len) * 8u + 28u + 32u) / (4u * (8u - 2u))));
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

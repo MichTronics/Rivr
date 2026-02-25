@@ -186,8 +186,7 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
         if (!pushed) {
             ESP_LOGW(TAG, "rf_tx: queue full (fallback also failed) – dropped");
         } else {
-            ESP_LOGI(TAG, "rf_tx: queued %u bytes (toa=%u us)", req.len, req.toa_us);
-            /* Track originated TX separately from relayed traffic so that a
+            ESP_LOGI(TAG, "rf_tx: queued %u bytes (toa=%u us)", req.len, req.toa_us);            g_tx_frame_count++;            /* Track originated TX separately from relayed traffic so that a
              * heavy relay storm cannot exhaust the forward budget and silence
              * this node's own transmissions.  (Check #5 — fwd vs originated) */
             if (dec && pkt.pkt_type < FWDBUDGET_PKT_TYPES) {
@@ -207,8 +206,7 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
         ESP_LOGW(TAG, "rf_tx: queue full – frame dropped (toa=%u us)", req.toa_us);
     } else {
         ESP_LOGI(TAG, "rf_tx: queued %u bytes (toa_approx=%u us, type=0x%02x)",
-                 req.len, req.toa_us, req.data[0]);
-    }
+                 req.len, req.toa_us, req.data[0]);        g_tx_frame_count++;    }
 }
 
 /* ── log sink ────────────────────────────────────────────────────────────── */
@@ -277,20 +275,71 @@ void usb_print_sink_cb(const rivr_value_t *v, void *user_ctx)
     fflush(stdout);
 }
 
-/* ── Init ────────────────────────────────────────────────────────────────── */
+/* ── beacon sink ─────────────────────────────────────────────────────────────── */
+
+void beacon_sink_cb(const rivr_value_t *v, void *user_ctx)
+{
+    (void)v;         /* beacon fires on any event; value is irrelevant */
+    (void)user_ctx;
+
+    /* Build PKT_BEACON payload: callsign[10] + hop_count[1] */
+    uint8_t payload[BEACON_PAYLOAD_LEN];
+    memset(payload, 0, sizeof(payload));
+    size_t cs_len = strlen(g_callsign);
+    if (cs_len > BEACON_CALLSIGN_MAX) cs_len = BEACON_CALLSIGN_MAX;
+    memcpy(payload, g_callsign, cs_len);
+    payload[BEACON_CALLSIGN_MAX] = 0u;   /* hop_count = 0 (origin) */
+
+    rivr_pkt_hdr_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.magic       = RIVR_MAGIC;
+    hdr.version     = RIVR_PROTO_VER;
+    hdr.pkt_type    = PKT_BEACON;
+    hdr.flags       = 0;
+    hdr.ttl         = RIVR_PKT_DEFAULT_TTL;
+    hdr.hop         = 0;
+    hdr.net_id      = g_net_id;
+    hdr.src_id      = g_my_node_id;
+    hdr.dst_id      = 0;   /* broadcast */
+    hdr.seq         = ++g_ctrl_seq;
+    hdr.payload_len = BEACON_PAYLOAD_LEN;
+
+    rf_tx_request_t req;
+    memset(&req, 0, sizeof(req));
+    int enc = protocol_encode(&hdr, payload, BEACON_PAYLOAD_LEN,
+                               req.data, sizeof(req.data));
+    if (enc <= 0) {
+        ESP_LOGW(TAG, "beacon: encode failed");
+        return;
+    }
+    req.len    = (uint8_t)enc;
+    req.toa_us = RF_TOA_APPROX_US(req.len);
+    req.due_ms = 0;
+
+    if (rb_try_push(&rf_tx_queue, &req)) {
+        ESP_LOGI(TAG, "beacon queued: src=0x%08lx cs='%s'",
+                 (unsigned long)g_my_node_id, g_callsign);
+        g_tx_frame_count++;
+    } else {
+        ESP_LOGW(TAG, "beacon: tx queue full");
+    }
+}
+
+/* ── Init ──────────────────────────────────────────────────────────────────── */
 
 void rivr_sinks_init(void)
 {
     /* Register rf_tx sink – receives all "rf_tx" emit values */
-    rivr_register_sink("rf_tx",      rf_tx_sink_cb,      NULL);
+    rivr_register_sink("io.lora.tx",     rf_tx_sink_cb,   NULL);
 
-    /* Register usb_print sink – writes plain lines to UART stdout.
-       Used by RIVR_SIM_PROGRAM and can be used in hardware builds for
-       debug emit { usb_print(x); } statements. */
-    rivr_register_sink("usb_print",  usb_print_sink_cb,  NULL);
+    /* Periodic beacon: fires on any event injected to io.lora.beacon */
+    rivr_register_sink("io.lora.beacon", beacon_sink_cb,  NULL);
 
-    /* Register log sink – useful for verbose debug emit { log(x); } */
-    rivr_register_sink("log",        log_sink_cb,        (void *)"log");
+    /* Register usb_print sink */
+    rivr_register_sink("io.usb.print",   usb_print_sink_cb, NULL);
 
-    ESP_LOGI("RIVR_SINK", "sinks registered: rf_tx, usb_print, log");
+    /* Register log sink */
+    rivr_register_sink("log",            log_sink_cb,     (void *)"log");
+
+    ESP_LOGI("RIVR_SINK", "sinks registered: rf_tx, beacon, usb_print, log");
 }

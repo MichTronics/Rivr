@@ -1,0 +1,52 @@
+{
+  "name": "vscode-rivr",
+  "displayName": "RIVR",
+  "description": "Syntax highlighting, snippets, and build integration for the RIVR stream-policy language.",
+  "version": "0.1.0",
+  "publisher": "rivr",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "keywords": ["rivr", "LoRa", "mesh", "embedded", "stream"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "rivr",
+        "aliases": ["RIVR", "rivr"],
+        "extensions": [".rivr"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rivr",
+        "scopeName": "source.rivr",
+        "path": "./syntaxes/rivr.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "rivr",
+        "path": "./snippets/rivr.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "rivr.checkFile",
+        "title": "RIVR: Check File",
+        "category": "RIVR"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

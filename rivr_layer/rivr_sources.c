@@ -13,6 +13,7 @@
 #include "../firmware_core/routing.h"
 #include "../firmware_core/route_cache.h"
 #include "esp_log.h"
+#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include "driver/uart.h"
@@ -43,7 +44,12 @@ uint32_t sources_rf_rx_drain(void)
             ESP_LOGW(TAG, "rf_rx: invalid frame (len=%u) – dropped", frame.len);
             continue;
         }
-
+        /* \u2500\u2500 Display stats: count every valid RF reception \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 *
+         * Updated before the dedupe check so g_rx_frame_count reflects total  *
+         * unique wire receptions, not just non-duplicate ones.                */
+        g_rx_frame_count++;
+        g_last_rssi_dbm = frame.rssi_dbm;
+        g_last_snr_db   = frame.snr_db;
         /* ── 2. Phase-A strict flood-forward decision ── *
          * Work on a copy so the original frame bytes are preserved for RIVR. */
         rivr_pkt_hdr_t fwd_hdr = pkt_hdr;
@@ -95,6 +101,13 @@ uint32_t sources_rf_rx_drain(void)
         if (from_id == 0 && pkt_hdr.hop == 0) {
             from_id = pkt_hdr.src_id;   /* direct neighbour */
         }
+
+        /* ── Display stats: update neighbour table for unique frames ──────────
+         * routing_neighbor_update tracks pkt_hdr.src_id + hop_count for all
+         * observed senders; hop==0 entries count as direct neighbours.       */
+        routing_neighbor_update(&g_neighbor_table, &pkt_hdr,
+                                (int8_t)frame.rssi_dbm, now_ms);
+
         route_cache_learn_rx(&g_route_cache,
                               pkt_hdr.src_id, from_id,
                               pkt_hdr.hop,
@@ -124,7 +137,44 @@ uint32_t sources_rf_rx_drain(void)
                 re ? (unsigned long)re->last_seen_ms : 0ul);
         }
 
-        /* ── 4. Phase-D: Handle ROUTE_REQ ── */
+        /* ── 4a. Handle PKT_BEACON: log + learn, skip RIVR injection ────────────────── */
+        if (pkt_hdr.pkt_type == PKT_BEACON) {
+            char callsign[BEACON_CALLSIGN_MAX + 1] = {0};
+            if (payload_ptr && pkt_hdr.payload_len >= BEACON_PAYLOAD_LEN) {
+                memcpy(callsign, payload_ptr, BEACON_CALLSIGN_MAX);
+                callsign[BEACON_CALLSIGN_MAX] = '\0';
+            }
+            ESP_LOGI(TAG, "BEACON src=0x%08lx cs='%s' rssi=%d dBm",
+                     (unsigned long)pkt_hdr.src_id, callsign,
+                     (int)frame.rssi_dbm);
+            goto maybe_relay;
+        }
+
+        /* ── 4b. Handle PKT_PROG_PUSH: store to NVS + request hot-reload ─────── */
+        if (pkt_hdr.pkt_type == PKT_PROG_PUSH) {
+            if (pkt_hdr.dst_id == g_my_node_id || pkt_hdr.dst_id == 0u) {
+                if (payload_ptr && pkt_hdr.payload_len > 0u) {
+                    char prog_buf[2048];
+                    uint8_t copy_len = pkt_hdr.payload_len < (sizeof(prog_buf) - 1u)
+                                       ? pkt_hdr.payload_len
+                                       : (uint8_t)(sizeof(prog_buf) - 1u);
+                    memcpy(prog_buf, payload_ptr, copy_len);
+                    prog_buf[copy_len] = '\0';
+                    if (rivr_nvs_store_program(prog_buf)) {
+                        g_program_reload_pending = true;
+                        ESP_LOGI(TAG,
+                            "OTA: new program received from 0x%08lx (%u bytes) – reload scheduled",
+                            (unsigned long)pkt_hdr.src_id, copy_len);
+                    }
+                }
+            } else {
+                ESP_LOGD(TAG, "OTA: PKT_PROG_PUSH for 0x%08lx (not us) – discarded",
+                         (unsigned long)pkt_hdr.dst_id);
+            }
+            continue;  /* never relay program pushes */
+        }
+
+        /* ── 4c. Phase-D: Handle ROUTE_REQ ── */
         if (pkt_hdr.pkt_type == PKT_ROUTE_REQ) {
             /* Are we the requested destination? */
             if (routing_should_reply_route_req(&pkt_hdr, g_my_node_id)) {
@@ -284,9 +334,12 @@ uint32_t sources_rf_rx_drain(void)
 /* CLI input line buffer */
 static char s_cli_buf[126];
 static uint8_t s_cli_pos = 0;
+static bool    s_uart_cli_ready = false;  /**< true only if UART driver installed */
 
 uint32_t sources_cli_drain(void)
 {
+    if (!s_uart_cli_ready) return 0;  /* no UART driver — non-blocking early exit */
+
     /* Read pending chars from UART0 FIFO */
     uint8_t ch;
     while (uart_read_bytes(UART_NUM_0, &ch, 1, 0) == 1) {
@@ -352,8 +405,10 @@ uint32_t sources_timer_tick(uint32_t interval_ms)
 
 void rivr_sources_init(void)
 {
-    /* UART0 already initialised by IDF as the default console.
-       Install UART driver for non-blocking reads if not already done. */
+#ifdef RIVR_SIM_MODE
+    /* UART0 CLI only needed in simulation mode.
+     * On real hardware, UART0 is the ESP-IDF console; installing an extra
+     * uart driver on top causes rx_mux conflicts that block the main loop. */
     const uart_config_t uart_cfg = {
         .baud_rate  = UART_CLI_BAUD,
         .data_bits  = UART_DATA_8_BITS,
@@ -363,5 +418,7 @@ void rivr_sources_init(void)
     };
     uart_param_config(UART_NUM_0, &uart_cfg);
     uart_driver_install(UART_NUM_0, 512, 0, 0, NULL, 0);
+    s_uart_cli_ready = true;
+#endif
     ESP_LOGI(TAG, "rivr_sources_init: done");
 }

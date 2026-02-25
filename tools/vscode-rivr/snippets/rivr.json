@@ -1,0 +1,79 @@
+{
+  "RF source with chat relay": {
+    "prefix": "src-rf",
+    "description": "RF source with PKT_CHAT relay",
+    "body": [
+      "source ${1:rf_rx} @lmp = rf;",
+      "",
+      "let ${2:chat} = ${1:rf_rx}",
+      "  |> filter.pkt_type(1)",
+      "  |> budget.toa_us(280000, 0.10, 280000)",
+      "  |> throttle.ticks(1);",
+      "",
+      "emit { io.lora.tx(${2:chat}); }",
+      "$0"
+    ]
+  },
+  "Timer source": {
+    "prefix": "src-timer",
+    "description": "Periodic timer source",
+    "body": [
+      "source ${1:tick} = timer(${2:30000});",
+      "",
+      "emit { ${3:io.lora.beacon}(${1:tick}); }",
+      "$0"
+    ]
+  },
+  "Beacon program": {
+    "prefix": "prog-beacon",
+    "description": "Full beacon + chat relay program",
+    "body": [
+      "source rf_rx @lmp = rf;",
+      "source beacon_tick = timer(${1:30000});",
+      "",
+      "let chat = rf_rx",
+      "  |> filter.pkt_type(1)",
+      "  |> budget.toa_us(280000, 0.10, 280000)",
+      "  |> throttle.ticks(1);",
+      "",
+      "emit { io.lora.tx(chat); }",
+      "emit { io.lora.beacon(beacon_tick); }",
+      "$0"
+    ]
+  },
+  "Mesh program": {
+    "prefix": "prog-mesh",
+    "description": "Full mesh program (chat + data relay)",
+    "body": [
+      "source rf_rx @lmp = rf;",
+      "",
+      "let chat = rf_rx",
+      "  |> filter.pkt_type(1)",
+      "  |> budget.toa_us(280000, 0.10, 280000)",
+      "  |> throttle.ticks(1);",
+      "",
+      "let data = rf_rx",
+      "  |> filter.pkt_type(6)",
+      "  |> throttle.ticks(1);",
+      "",
+      "emit { io.lora.tx(chat); }",
+      "emit { io.usb.print(chat); }",
+      "emit { io.lora.tx(data); }",
+      "$0"
+    ]
+  },
+  "emit block": {
+    "prefix": "emit",
+    "description": "Emit block",
+    "body": "emit { ${1:io.lora.tx}(${2:stream}); }$0"
+  },
+  "let pipeline": {
+    "prefix": "let",
+    "description": "Let binding with pipeline",
+    "body": [
+      "let ${1:name} = ${2:source}",
+      "  |> ${3:filter.pkt_type(1)};",
+      "$0"
+    ]
+  }
+}

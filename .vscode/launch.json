@@ -12,31 +12,31 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug",
-            "executable": "e:/Projects/Rivr/.pio/build/esp32_sim/firmware.elf",
-            "projectEnvName": "esp32_sim",
-            "toolchainBinDir": "C:/Users/Michel/.platformio/packages/toolchain-xtensa-esp-elf/bin",
+            "executable": "/home/kali/source/Rivr/.pio/build/esp32_hw/firmware.elf",
+            "projectEnvName": "esp32_hw",
+            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "preLaunchTask": {
                 "type": "PlatformIO",
-                "task": "Pre-Debug"
+                "task": "Pre-Debug (esp32_hw)"
             }
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (skip Pre-Debug)",
-            "executable": "e:/Projects/Rivr/.pio/build/esp32_sim/firmware.elf",
-            "projectEnvName": "esp32_sim",
-            "toolchainBinDir": "C:/Users/Michel/.platformio/packages/toolchain-xtensa-esp-elf/bin",
+            "executable": "/home/kali/source/Rivr/.pio/build/esp32_hw/firmware.elf",
+            "projectEnvName": "esp32_hw",
+            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart"
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (without uploading)",
-            "executable": "e:/Projects/Rivr/.pio/build/esp32_sim/firmware.elf",
-            "projectEnvName": "esp32_sim",
-            "toolchainBinDir": "C:/Users/Michel/.platformio/packages/toolchain-xtensa-esp-elf/bin",
+            "executable": "/home/kali/source/Rivr/.pio/build/esp32_hw/firmware.elf",
+            "projectEnvName": "esp32_hw",
+            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "loadMode": "manual"
         }

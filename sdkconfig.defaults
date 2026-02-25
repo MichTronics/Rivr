@@ -12,6 +12,11 @@ CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
 CONFIG_FREERTOS_HZ=1000                      # 1 ms tick (matches tb_millis())
 CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3072
 
+# ── Main task stack ──────────────────────────────────────────────────────────
+# The Rust RIVR engine init (parse + compile + graph build) uses deep recursion.
+# Default 3584 bytes overflows; 16 KB provides sufficient headroom.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 CONFIG_LOG_DEFAULT_LEVEL_DEBUG=y             # Enable debug logs during POC
 CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y

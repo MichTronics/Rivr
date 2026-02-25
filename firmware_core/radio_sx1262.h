@@ -34,23 +34,23 @@ extern "C" {
 #define RF_RX_RINGBUF_CAP    8u     /**< Power-of-2; max 8 unread RX frames   */
 #define RF_TX_QUEUE_CAP      4u     /**< Power-of-2; max 4 pending TX frames  */
 
-/* LoRa parameters (SF9 BW125kHz – good range/speed tradeoff for LoRaWAN EU) */
-#define RF_SPREADING_FACTOR  9u
+/* LoRa parameters (SF8 BW125kHz CR4/8 – 869.480 MHz EU868 high-power sub-band g3) */
+#define RF_SPREADING_FACTOR  8u
 #define RF_BANDWIDTH_KHZ     125u
-#define RF_CODING_RATE       5u     /**< 4/5 */
+#define RF_CODING_RATE       8u     /**< 4/8 */
 #define RF_PREAMBLE_LEN      8u
-#define RF_FREQ_HZ           868100000UL  /**< 868.1 MHz (EU868 channel 0) */
+#define RF_FREQ_HZ           869480000UL  /**< 869.480 MHz (EU868 g3 high-power) */
 
 /**
  * Approximate Time-on-Air in microseconds for a payload of `payload_bytes`
- * at SF9 BW125kHz CR4/5, header enabled, CRC enabled.
+ * at SF8 BW125kHz CR4/8, header enabled, CRC enabled.
  * Formula: see SX1262 datasheet Section 6.1.4
- * At SF9, BW=125kHz: T_sym = 2^9 / 125000 ≈ 4.096 ms
+ * At SF8, BW=125kHz: T_sym = 2^8 / 125000 ≈ 2.048 ms
  * n_payload = ceil((8*PL - 4*SF + 28 + 16 - 20*IH) / (4*(SF-2*DE))) * (CR+4)
- * For PL=50 bytes, SF9, BW125, no low-dr: ToA ≈ 370 ms
+ * For PL=50 bytes, SF8, BW125, no low-dr: ToA ≈ 238 ms
  */
 #define RF_TOA_APPROX_US(payload_bytes) \
-    ((uint32_t)(4096u + 4096u * (((payload_bytes) * 8u + 28u + 32u) / (4u * (RF_SPREADING_FACTOR - 2u)))))
+    ((uint32_t)(2048u + 2048u * (((payload_bytes) * 8u + 28u + 32u) / (4u * (RF_SPREADING_FACTOR - 2u)))))
 
 /* ── Frame types ─────────────────────────────────────────────────────────── */
 typedef enum {
@@ -125,6 +125,17 @@ bool radio_transmit(const rf_tx_request_t *req);
  * In ISR mode this function is a no-op.
  */
 void radio_poll_rx(void);
+
+/**
+ * @brief Read the instantaneous RSSI from the SX1262 while in RX mode.
+ *
+ * Uses GetRssiInst (opcode 0x15).  Must be called from the main task only
+ * (not from ISR).  Returns -120 dBm when the radio is not in RX mode
+ * (e.g. during a TX window).
+ *
+ * @return Instantaneous RSSI in dBm (e.g. -87 for a fairly strong signal).
+ */
+int16_t radio_get_rssi_inst(void);
 
 /* ── ISR (attached to DIO1 GPIO) ─────────────────────────────────────────── */
 

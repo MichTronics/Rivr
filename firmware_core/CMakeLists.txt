@@ -8,6 +8,7 @@ idf_component_register(
     SRCS
         "main.c"
         "platform_esp32.c"
+        "display/display.c"
         "radio_sx1262.c"
         "timebase.c"
         "dutycycle.c"
@@ -27,6 +28,7 @@ idf_component_register(
         esp_driver_spi
         esp_driver_gpio
         esp_driver_uart
+        esp_driver_i2c
         esp_timer
         freertos
         log

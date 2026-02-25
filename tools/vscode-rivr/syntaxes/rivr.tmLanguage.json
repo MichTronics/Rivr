@@ -1,0 +1,98 @@
+{
+  "scopeName": "source.rivr",
+  "name": "RIVR",
+  "fileTypes": ["rivr"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#keyword_declaration" },
+    { "include": "#keyword_control" },
+    { "include": "#builtin_source" },
+    { "include": "#builtin_operator" },
+    { "include": "#builtin_sink" },
+    { "include": "#annotation" },
+    { "include": "#number" },
+    { "include": "#string" },
+    { "include": "#punctuation" },
+    { "include": "#pipe" },
+    { "include": "#identifier" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.rivr",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.rivr",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.rivr" } },
+          "endCaptures":   { "0": { "name": "punctuation.definition.comment.end.rivr" } }
+        }
+      ]
+    },
+    "keyword_declaration": {
+      "name": "keyword.declaration.rivr",
+      "match": "\\b(source|let|emit)\\b"
+    },
+    "keyword_control": {
+      "name": "keyword.control.rivr",
+      "match": "\\b(if|else|true|false)\\b"
+    },
+    "annotation": {
+      "name": "storage.modifier.annotation.rivr",
+      "match": "@(mono|lmp|wall)\\b"
+    },
+    "builtin_source": {
+      "comment": "Built-in source kinds: rf, usb, timer(N)",
+      "patterns": [
+        {
+          "name": "support.function.source.rivr",
+          "match": "\\b(rf|usb|timer)\\b(?=\\s*(\\(|;|\\s*=))"
+        }
+      ]
+    },
+    "builtin_operator": {
+      "comment": "Pipeline operator names: filter.*, budget.*, throttle.*, etc.",
+      "name": "support.function.operator.rivr",
+      "match": "\\b(filter|budget|throttle|debounce|window|delay|merge|tag|map|fold)\\.[a-z_]+"
+    },
+    "builtin_sink": {
+      "comment": "Known IO sinks",
+      "name": "support.variable.sink.rivr",
+      "match": "\\b(io\\.lora\\.tx|io\\.lora\\.beacon|io\\.usb\\.print|io\\.debug\\.dump)\\b"
+    },
+    "number": {
+      "name": "constant.numeric.rivr",
+      "match": "\\b[0-9][0-9_]*\\.?[0-9_]*\\b"
+    },
+    "string": {
+      "name": "string.quoted.double.rivr",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.rivr", "match": "\\\\." }
+      ]
+    },
+    "pipe": {
+      "name": "keyword.operator.pipe.rivr",
+      "match": "\\|>"
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.separator.semicolon.rivr", "match": ";" },
+        { "name": "punctuation.separator.comma.rivr",     "match": "," },
+        { "name": "punctuation.separator.equals.rivr",    "match": "=" },
+        { "name": "punctuation.section.group.begin.rivr", "match": "\\{" },
+        { "name": "punctuation.section.group.end.rivr",   "match": "\\}" },
+        { "name": "punctuation.section.parens.begin.rivr","match": "\\(" },
+        { "name": "punctuation.section.parens.end.rivr",  "match": "\\)" }
+      ]
+    },
+    "identifier": {
+      "name": "variable.other.rivr",
+      "match": "[a-zA-Z_][a-zA-Z0-9_]*"
+    }
+  }
+}

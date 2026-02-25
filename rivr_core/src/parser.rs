@@ -377,6 +377,15 @@ impl<'s> Parser<'s> {
             "lora"         => Ok(SourceKind::Lora),
             "rf"           => Ok(SourceKind::Rf),
             "programmatic" => Ok(SourceKind::Programmatic),
+            "timer" => {
+                self.expect("(")?;
+                let interval_ms = self.parse_uint()?;
+                if interval_ms == 0 {
+                    return Err(ParseError::new(self.pos, "timer interval must be > 0"));
+                }
+                self.expect(")")?;
+                Ok(SourceKind::Timer { interval_ms })
+            }
             other => Err(ParseError::new(self.pos, format!("unknown source kind `{other}`"))),
         }
     }

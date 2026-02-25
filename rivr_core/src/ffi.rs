@@ -329,6 +329,34 @@ pub unsafe extern "C" fn rivr_engine_run(max_steps: u32) -> RivrResult {
     }
 }
 
+/// Enumerate all `source NAME = timer(N)` sources in the compiled graph.
+///
+/// For each timer source, calls `cb(name, interval_ms)` synchronously.
+/// `name` is a NUL-terminated stack buffer valid only during the call.
+/// No-op if the engine is not initialised or `cb` is NULL.
+///
+/// Typical usage (call after `rivr_engine_init`):
+/// ```c
+/// rivr_foreach_timer_source(sources_register_timer_cb);
+/// ```
+#[no_mangle]
+pub unsafe extern "C" fn rivr_foreach_timer_source(
+    cb: Option<unsafe extern "C" fn(*const c_char, u64)>,
+) {
+    let cb = match cb { Some(f) => f, None => return };
+    if !ENGINE_READY.load(Ordering::Acquire) { return; }
+    let engine = ENGINE_SLOT.assume_init_ref();
+    for node in &engine.nodes {
+        if let NodeKind::Source { name, interval_ms: Some(ms), .. } = &node.kind {
+            let mut buf = [0u8; 64];
+            let n = name.len().min(63);
+            buf[..n].copy_from_slice(&name.as_bytes()[..n]);
+            // buf[n] is already 0 from array initialisation
+            cb(buf.as_ptr() as *const c_char, *ms);
+        }
+    }
+}
+
 /// Return the current tick for the given clock index.
 #[no_mangle]
 pub unsafe extern "C" fn rivr_engine_clock_now(clock_id: u8) -> u64 {

@@ -59,16 +59,35 @@ uint32_t sources_cli_drain(void);
 
 /* ── timer source ────────────────────────────────────────────────────────── */
 
+/** Maximum number of simultaneously active timer sources. */
+#define RIVR_TIMER_MAX  8u
+
 /**
- * @brief Inject periodic timer events into the RIVR "timer" source.
+ * @brief Register a named timer source.
  *
- * Fires at most once per `interval_ms` milliseconds.
- * Event value: "TICK:<mono_ms>" (FixedText<128>).
+ * Called by rivr_embed.c after rivr_engine_init() for each
+ * `source NAME = timer(N)` declaration found in the compiled RIVR program.
+ * Uses rivr_foreach_timer_source() internally.
  *
- * @param interval_ms  fire interval in milliseconds (e.g. 1000 for 1 Hz)
- * @return 1 if an event was injected this call, 0 otherwise
+ * @param name         Source name (NUL-terminated, max 31 chars)
+ * @param interval_ms  Fire interval in milliseconds
  */
-uint32_t sources_timer_tick(uint32_t interval_ms);
+void sources_register_timer(const char *name, uint32_t interval_ms);
+
+/**
+ * @brief Clear all registered timer sources (called before hot-reload).
+ */
+void sources_timer_reset(void);
+
+/**
+ * @brief Poll all registered timers and inject due events into RIVR.
+ *
+ * Injects `Value::Int(mono_ms)` on clock 0 into each timer source whose
+ * interval has elapsed since its last fire time.
+ *
+ * @return total events injected this call
+ */
+uint32_t sources_timer_drain(void);
 
 /* ── Initialisation ──────────────────────────────────────────────────────── */
 

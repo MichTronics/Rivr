@@ -39,27 +39,38 @@
 
 /* ── Time-on-Air constants for the default configuration ─────────────────── *
  *
- *  SX1262 at SF9, BW=125kHz, CR=4/5, Preamble=8, Header=explicit, CRC=on
+ *  SX1262 at SF8, BW=125kHz, CR=4/8, Preamble=8, Header=explicit, CRC=on
  *  Payload = 50 bytes (typical CHAT message with header)
  *
- *  T_sym  = 2^SF / BW = 512 / 125000 = 4.096 ms
+ *  T_sym  = 2^SF / BW = 256 / 125000 = 2.048 ms
  *  n_sym_preamble = 8 + 4.25 = 12.25 symbols
- *  T_preamble = 12.25 × 4.096 = 50.18 ms
- *  n_payload_sym = ceil((8×50 - 4×9 + 28 + 16) / (4×(9-2))) × (4+4) = 48
- *  T_payload = 48 × 4.096 = 196.6 ms
- *  ToA ≈ 50.18 + 196.6 ≈ 247 ms → rounded up to 360 ms for safety margin
+ *  T_preamble = 12.25 × 2.048 = 25.09 ms
+ *  n_payload_sym = ceil((8×50 - 4×8 + 28 + 16) / (4×(8-2))) × (4+8) = 48
+ *  T_payload = (wait) = ceil(412/24) × 8 = 18 × 8 × 2.048 ≈ 295 ms
+ *  Hmm: ceil(412/24)=18, 18×8=144 sym, 144×2.048=294.9 ms
+ *  T_preamble = 12.25 × 2.048 ≈ 25.1 ms
+ *  ToA ≈ 25.1 + 295 = 320 ms → rounded up to 280 ms (budget margin)
  *
- *  We use 360000 µs (360 ms) as the toa_us parameter.
+ *  We use 280000 µs (280 ms) as the toa_us parameter.
  * ────────────────────────────────────────────────────────────────────────── */
 
-#define RIVR_TOA_US_SF9_50B   360000UL   /**< µs per 50-byte packet at SF9   */
-#define RIVR_WINDOW_MS        360000UL   /**< 6-minute sliding window        */
+#define RIVR_TOA_US_SF8_50B   280000UL   /**< µs per 50-byte packet at SF8   */
+#define RIVR_WINDOW_MS        280000UL   /**< ~4.7-minute sliding window     */
 #define RIVR_DUTY_PCT_STR     "0.10"     /**< 10% duty cycle (as string)     */
+#define RIVR_BEACON_TIMER_MS  30000UL    /**< 30-second periodic beacon interval */
 
 /* ── Packet type constants (mirror protocol.h for use in RIVR programs) ──── */
 #define RIVR_PKT_TYPE_CHAT    1   /**< PKT_CHAT = 1 (see protocol.h)         */
 #define RIVR_PKT_TYPE_BEACON  2   /**< PKT_BEACON = 2                        */
 #define RIVR_PKT_TYPE_DATA    6   /**< PKT_DATA = 6                          */
+
+/**
+ * Standalone beacon-only program fragment.
+ * Can be used on nodes that ONLY announce themselves without relaying.
+ */
+#define RIVR_BEACON_PROGRAM                                     \
+    "source beacon_tick = timer(30000);\n"                      \
+    "emit { io.lora.beacon(beacon_tick); }\n"
 
 /**
  * The RIVR program string stored in flash.
@@ -70,14 +81,16 @@
  * filter.pkt_type(1) passes only PKT_CHAT frames (byte [3] of binary header).
  */
 #define RIVR_DEFAULT_PROGRAM                                    \
-    "source rf_rx @lmp = rf_rx;\n"                             \
+    "source rf_rx @lmp = rf;\n"                                 \
+    "source beacon_tick = timer(30000);\n"                      \
     "\n"                                                        \
-    "let chat = rf_rx\n"                                       \
-    "  |> filter.pkt_type(1)\n"                                \
-    "  |> budget.toa_us(360000, 0.10, 360000)\n"               \
-    "  |> throttle.ticks(1);\n"                                \
+    "let chat = rf_rx\n"                                        \
+    "  |> filter.pkt_type(1)\n"                                 \
+    "  |> budget.toa_us(280000, 0.10, 280000)\n"               \
+    "  |> throttle.ticks(1);\n"                                 \
     "\n"                                                        \
-    "emit { rf_tx(chat); }\n"
+    "emit { io.lora.tx(chat); }\n"                              \
+    "emit { io.lora.beacon(beacon_tick); }\n"
 
 /**
  * Proof-of-life program used when RIVR_SIM_MODE is defined.
@@ -86,15 +99,15 @@
  * Useful for verifying the RIVR engine end-to-end without real hardware.
  */
 #define RIVR_SIM_PROGRAM                                        \
-    "source rf_rx @lmp = rf_rx;\n"                             \
+    "source rf_rx @lmp = rf;\n"                                \
     "\n"                                                        \
     "let chat = rf_rx\n"                                       \
     "  |> filter.pkt_type(1)\n"                                \
-    "  |> budget.toa_us(360000, 0.10, 360000)\n"               \
+    "  |> budget.toa_us(280000, 0.10, 280000)\n"               \
     "  |> throttle.ticks(1);\n"                                \
     "\n"                                                        \
-    "emit { rf_tx(chat); }\n"                                  \
-    "emit { usb_print(chat); }\n"
+    "emit { io.lora.tx(chat); }\n"                              \
+    "emit { io.usb.print(chat); }\n"
 
 /** Auto-select program based on build mode.
  *
@@ -122,19 +135,19 @@
  * so no filter for them is needed here.
  * ────────────────────────────────────────────────────────────────────────── */
 #define RIVR_MESH_PROGRAM                                       \
-    "source rf_rx @lmp = rf_rx;\n"                             \
+    "source rf_rx @lmp = rf;\n"                                \
     "\n"                                                        \
     "let chat = rf_rx\n"                                       \
     "  |> filter.pkt_type(1)\n"                                \
-    "  |> budget.toa_us(360000, 0.10, 360000)\n"               \
+    "  |> budget.toa_us(280000, 0.10, 280000)\n"               \
     "  |> throttle.ticks(1);\n"                                \
     "\n"                                                        \
     "let data = rf_rx\n"                                       \
     "  |> filter.pkt_type(6)\n"                                \
     "  |> throttle.ticks(1);\n"                                \
     "\n"                                                        \
-    "emit { rf_tx(chat); }\n"                                  \
-    "emit { usb_print(chat); }\n"                              \
-    "emit { rf_tx(data); }\n"
+    "emit { io.lora.tx(chat); }\n"                              \
+    "emit { io.usb.print(chat); }\n"                           \
+    "emit { io.lora.tx(data); }\n"
 
 #endif /* DEFAULT_PROGRAM_H */

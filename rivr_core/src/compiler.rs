@@ -263,9 +263,19 @@ impl Compiler {
                     .map(|c| clock_id(&c.name))
                     .unwrap_or(0); // default: mono
 
-                let node_kind = NodeKind::Source { name: name.clone(), clock: clk_id };
-                let node      = Node::new(self.engine.nodes.len(), name.clone(), node_kind);
-                let id        = self.engine.add_node(node);
+                // For timer sources use clock 0 (mono) regardless of annotation.
+                let (effective_clock, interval_ms) = match kind {
+                    SourceKind::Timer { interval_ms } => (0u8, Some(*interval_ms)),
+                    _ => (clk_id, None),
+                };
+
+                let node_kind = NodeKind::Source {
+                    name:        name.clone(),
+                    clock:       effective_clock,
+                    interval_ms,
+                };
+                let node = Node::new(self.engine.nodes.len(), name.clone(), node_kind);
+                let id   = self.engine.add_node(node);
                 self.engine.register_source(name.clone(), id);
                 self.bindings.insert(name.clone(), id);
 
