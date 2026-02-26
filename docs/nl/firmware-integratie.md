@@ -294,6 +294,130 @@ rivr_inject_event(&(rivr_event_t){ ... });            // voer lokale pijplijn
 
 ---
 
+## Rivr Fabric-API
+
+`firmware_core/rivr_fabric.h` biedt congestie-bewuste relaybeslissingen.
+De module is alleen actief wanneer `RIVR_FABRIC_REPEATER=1`; alle functies
+zijn anders no-ops.
+
+### Levenscyclus
+
+```c
+void rivr_fabric_init(void);            // eenmalig aanroepen in app_main na platform_init
+void rivr_fabric_tick(uint32_t now_ms); // elke hoofdlustitratie aanroepen
+```
+
+### Verkeersmeldingen (via radio-/TX-pad)
+
+```c
+void rivr_fabric_on_rx(void);            // na elk ontvangen frame
+void rivr_fabric_on_tx_enqueued(void);   // relay-frame in TX-wachtrij geplaatst
+void rivr_fabric_on_tx_ok(void);         // TX succesvol afgerond
+void rivr_fabric_on_tx_fail(void);       // TX mislukt (time-out / PA-fout)
+void rivr_fabric_on_tx_blocked_dc(void); // TX geblokkeerd door duty-cycle-bewaker
+```
+
+### Relaybeslissing
+
+```c
+fabric_decision_t rivr_fabric_decide_relay(uint8_t pkt_type, uint32_t now_ms);
+```
+
+Geeft een van de volgende waarden terug:
+
+| Waarde | Betekenis |
+|---|---|
+| `FABRIC_SEND_NOW` | Relay onmiddellijk |
+| `FABRIC_DELAY` | Voeg jitter-vertraging toe (score ≥ `RIVR_FABRIC_DELAY_THRESHOLD`) |
+| `FABRIC_DROP` | Onderdruk relay volledig (score ≥ `RIVR_FABRIC_DROP_THRESHOLD`) |
+
+Alleen `PKT_CHAT` en `PKT_DATA` worden gepoort; alle overige typen geven
+altijd `FABRIC_SEND_NOW` terug.  Wanneer de score
+`RIVR_FABRIC_BLACKOUT_GUARD_SCORE` bereikt, wordt het resultaat begrensd
+tot `FABRIC_DELAY` (maximale vertraging) om een volledige relay-blackout
+te voorkomen.
+
+### Debug / display
+
+```c
+typedef struct {
+    uint8_t  score;           // 0–100 congestiescore
+    uint8_t  band;            // 0=OK 1=LICHT_VTG 2=VTG 3=DROP
+    uint32_t rx_per_s;        // ontvangen frames gemiddeld over 60 s
+    uint32_t blocked_per_s;   // duty-cycle-blokkades gemiddeld over venster
+    uint32_t fail_per_s;      // TX-fouten gemiddeld over venster
+    uint32_t relay_drop_total;
+    uint32_t relay_delay_total;
+} fabric_debug_t;
+
+void rivr_fabric_get_debug(uint32_t now_ms, fabric_debug_t *out);
+```
+
+### Scalaire getters
+
+```c
+uint8_t  rivr_fabric_get_score(void);
+uint32_t rivr_fabric_get_relay_delayed(void);
+uint32_t rivr_fabric_get_relay_dropped(void);
+uint32_t rivr_fabric_get_relay_total(void);
+uint32_t rivr_fabric_get_tx_blocked(void);
+uint32_t rivr_fabric_get_rx_total(void);
+```
+
+### Instelbare drempelwaarden (allemaal `#ifndef`-bewaakt)
+
+| Macro | Standaard | Beschrijving |
+|---|---|---|
+| `RIVR_FABRIC_DROP_THRESHOLD` | `80` | Score ≥ waarde → DROP |
+| `RIVR_FABRIC_DELAY_THRESHOLD` | `50` | Score ≥ waarde → DELAY |
+| `RIVR_FABRIC_LIGHT_DELAY_THRESHOLD` | `20` | Score ≥ waarde → korte jitter |
+| `RIVR_FABRIC_MAX_EXTRA_DELAY_MS` | `1000` | Maximale DELAY in milliseconden |
+| `RIVR_FABRIC_BLACKOUT_GUARD_SCORE` | `95` | Begrens DROP tot DELAY vanaf deze score |
+
+### Periodiek logbericht
+
+Wanneer `RIVR_FABRIC_REPEATER=1` logt `main.c` elke 5 s een `[FAB]`-regel:
+
+```
+I (...) MAIN: [FAB] score=34 rx=12 relay=8 delay=2 drop=0 dc_block=1
+```
+
+---
+
+## Knoopvarianten
+
+RIVR ondersteunt compilatietijd-rolselectie via variantheaders.  Elke
+variantheader staat in `variants/<board>/config.h` en wordt door PlatformIO
+via `-include` ge\u00efnjecteerd.  Elke macro is omsloten door `#ifndef` zodat
+een `-D`-vlag altijd wint.
+
+### Beschikbare rols
+
+| Macro | Rol |
+|---|---|
+| *(geen)* | Standaardknoop \u2014 volledige relay van alle pakkettypen |
+| `RIVR_BUILD_REPEATER=1` + `RIVR_FABRIC_REPEATER=1` | Repeater \u2014 volledige relay met Fabric-congestiepoort voor `PKT_CHAT`/`PKT_DATA` |
+| `RIVR_ROLE_CLIENT=1` | Cli\u00ebnt \u2014 ontvangt `PKT_CHAT`/`PKT_DATA` lokaal, relay wordt onderdrukt; bestuurpakketten worden normaal doorgestuurd |
+
+### Relay-onderdrukking voor cli\u00ebnten
+
+In `rivr_layer/rivr_sources.c` zorgt de volgende bewaker ervoor dat
+relay-frames voor chat en data worden overgeslagen bij een cli\u00ebnt-build:
+
+```c
+#ifdef RIVR_ROLE_CLIENT
+    if (fwd_type == PKT_CHAT || fwd_type == PKT_DATA) {
+        goto skip_enqueue;   // relay onderdrukken; alleen lokaal afleveren
+    }
+#endif
+```
+
+Bestuurpakketten (`PKT_BEACON`, `PKT_ROUTE_REQ`, `PKT_ROUTE_RPL`, `PKT_ACK`,
+`PKT_PROG_PUSH`) worden niet ge\u00efnvloed en worden normaal doorgestuurd zodat
+mesh-routering intact blijft.
+
+---
+
 ## Simulatiemodus
 
 Compileertime-vlaggen die echte hardware vervangen:

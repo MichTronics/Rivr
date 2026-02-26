@@ -58,6 +58,8 @@
 | `ringbuf.h` | Lock-free SPSC ring buffer (ISR-safe) |
 | `protocol.c` | Binary packet encode/decode, CRC-16/CCITT |
 | `routing.c` | Dedupe cache (LRU ring), TTL decrement, neighbour table (with callsign) |
+| `rivr_fabric.c` | Congestion-aware relay policy: 60 s sliding-window score, DELAY / DROP decisions for `PKT_CHAT` / `PKT_DATA` relay; enabled when `RIVR_FABRIC_REPEATER=1` |
+| `display/` | SSD1306 OLED driver, 7-page UI (node info, mesh stats, duty cycle, routing, RX quality, neighbours, Fabric debug); compiled in when `FEATURE_DISPLAY=1` |
 
 ### 2. `rivr_layer/` — Glue layer (C)
 
@@ -89,6 +91,21 @@
 | `main.rs` | 8 interactive demos for each operator category |
 | `replay.rs` | Record / replay / assert JSONL trace streams |
 | `bin/rivrc.rs` | `rivrc` CLI — parse + compile a `.rivr` file, print node graph; `--check` for CI |
+
+---
+
+## Node roles
+
+RIVR nodes are configured at compile time via a variant header (`variants/<board>/config.h`).
+
+| Role | Key macros | Relay behaviour |
+|---|---|---|
+| **Standard** (`esp32_hw`) | — | Full relay of all packet types |
+| **Repeater** (`repeater_esp32devkit_e22_900`) | `RIVR_FABRIC_REPEATER=1`, `RIVR_BUILD_REPEATER=1` | Full relay; `PKT_CHAT` and `PKT_DATA` gated by Rivr Fabric congestion score |
+| **Client** (`client_esp32devkit_e22_900`) | `RIVR_ROLE_CLIENT=1`, `RIVR_FABRIC_REPEATER=0` | Receives `PKT_CHAT`/`PKT_DATA` locally; does **not** relay them; control frames (`BEACON`, `ROUTE_REQ/RPL`, `ACK`, `PROG_PUSH`) relayed normally |
+
+Node-role macros are wrapped in `#ifndef` inside the variant header, so
+any `-D` build flag passed on the command line takes precedence.
 
 ---
 

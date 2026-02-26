@@ -82,6 +82,19 @@ ID    NAME                      KIND / PARAMS
 
 ## Step 2a — Build via PlatformIO *(recommended)*
 
+### Build environments
+
+| Environment | Role | Key flags |
+|---|---|---|
+| `esp32_sim` | Simulation — no SX1262 required | `RIVR_SIM_MODE=1`, `RIVR_SIM_TX_PRINT=1` |
+| `esp32_hw` | Standard hardware node | `FEATURE_DISPLAY=1` |
+| `repeater_esp32devkit_e22_900` | Dedicated relay with Rivr Fabric | `RIVR_FABRIC_REPEATER=1`, `RIVR_BUILD_REPEATER=1`, `FEATURE_DISPLAY=1` |
+| `client_esp32devkit_e22_900` | Chat/data receiver; no relay | `RIVR_ROLE_CLIENT=1`, `FEATURE_DISPLAY=1` |
+
+The repeater and client environments include a board-specific variant header via `-include`:  
+`variants/esp32devkit_e22_900_repeater/config.h` and  
+`variants/esp32devkit_e22_900_client/config.h` respectively.
+
 ### Simulation mode (no SX1262 hardware required)
 
 ```powershell
@@ -191,7 +204,13 @@ for `.rivr` files.
 
 ## SX1262 pin mapping
 
-Default wiring from `firmware_core/platform_esp32.h`:
+Default wiring — applies to all environments.  For the repeater and client
+variants the pin assignments live in the variant header
+(`variants/esp32devkit_e22_900_repeater/config.h` or
+`variants/esp32devkit_e22_900_client/config.h`) and are guarded with `#ifndef`,
+so you can override any pin by passing `-DPIN_SX1262_SCK=<gpio>` in
+`platformio.ini` or via the command line.  For `esp32_hw` and `esp32_sim` the
+pins are set in `firmware_core/platform_esp32.h`.
 
 | Signal | ESP32 GPIO | Notes |
 |---|---|---|
@@ -205,7 +224,68 @@ Default wiring from `firmware_core/platform_esp32.h`:
 | RXEN | 14 | Antenna switch — HIGH = receive |
 | TXEN | 13 | Antenna switch — HIGH = transmit (also via SX1262 DIO2) |
 
-Adjust pin defines in `platform_esp32.h` to match your board.
+For the repeater / client variants, change the value inside the variant header
+or pass `-DPIN_SX1262_NSS=<gpio>` as a build flag — the `#ifndef` guard will
+honour the override.
+
+---
+
+## Variant headers
+
+Variant headers live under `variants/<board>/config.h` and are force-included
+by PlatformIO's `-include` build flag.  Every macro they set is wrapped in
+`#ifndef`, so any `-D` override wins.
+
+Create a new variant header to port to a different board:
+
+```c
+// variants/my_custom_board/config.h
+#ifndef RIVR_RF_FREQ_HZ
+#  define RIVR_RF_FREQ_HZ  915000000UL   // AU915
+#endif
+#ifndef PIN_SX1262_SCK
+#  define PIN_SX1262_SCK   18
+#endif
+// … other pins …
+#ifndef RIVR_FABRIC_REPEATER
+#  define RIVR_FABRIC_REPEATER 0
+#endif
+```
+
+Then add an environment to `platformio.ini`:
+
+```ini
+[env:my_custom_board]
+extends = base_hw
+build_flags =
+    ${base_hw.build_flags}
+    -include variants/my_custom_board/config.h
+```
+
+---
+
+## Rivr Fabric tunable macros
+
+These macros control the congestion-aware relay policy active when
+`RIVR_FABRIC_REPEATER=1`.  Override them in your variant header or as
+`-D` build flags.
+
+| Macro | Default | Description |
+|---|---|---|
+| `RIVR_FABRIC_DROP_THRESHOLD` | `80` | Score ≥ this → **DROP** relay frame (no re-broadcast) |
+| `RIVR_FABRIC_DELAY_THRESHOLD` | `50` | Score ≥ this → **DELAY** relay by up to `MAX_EXTRA_DELAY_MS` |
+| `RIVR_FABRIC_LIGHT_DELAY_THRESHOLD` | `20` | Score ≥ this → short jitter delay (low congestion) |
+| `RIVR_FABRIC_MAX_EXTRA_DELAY_MS` | `1000` | Maximum added delay in milliseconds when score triggers DELAY |
+| `RIVR_FABRIC_BLACKOUT_GUARD_SCORE` | `95` | At this score or above, DELAY is used instead of DROP to prevent a total relay blackout |
+
+The score is computed over a 60-second sliding window:
+```
+score = clamp(rx_per_s×2 + dc_blocked_per_s×25 + tx_fail_per_s×10, 0, 100)
+```
+
+Only `PKT_CHAT` and `PKT_DATA` relay is gated by Fabric.  All other packet
+types (`PKT_BEACON`, `ROUTE_REQ`, `ROUTE_RPL`, `PKT_ACK`, `PKT_PROG_PUSH`)
+always pass through unaffected.
 
 ---
 

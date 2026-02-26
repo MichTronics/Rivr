@@ -56,6 +56,8 @@
 | `radio_sx1262.c` | SX1262-stuurprogramma; `radio_isr()` zet alleen vlag (geen SPI in ISR); `radio_service_rx()` doet alle SPI vanuit de hoofdlus |
 | `protocol.c` | Binaire frame-encode/decode met CRC-16 |
 | `routing.c` | Dedupe-cache, hop-limietcontrole, buurttabel |
+| `rivr_fabric.c` | Congestie-bewuste relaybeslissingen: 60 s schuivend-venster-score, DELAY/DROP voor `PKT_CHAT`/`PKT_DATA`-relay; actief wanneer `RIVR_FABRIC_REPEATER=1` |
+| `display/` | SSD1306 OLED-stuurprogramma, 7-pagina-UI (knoopinfo, mesh-statistieken, duty-cycle, routering, RX-kwaliteit, buren, Fabric-debug); gecompileerd bij `FEATURE_DISPLAY=1` |
 
 ### `rivr_layer` (C)
 
@@ -65,6 +67,21 @@
 | `rivr_sources.c` | Koppel hardware-events aan RIVR-bron-IDs; multi-timer tabel (`sources_timer_drain`) |
 | `rivr_sinks.c` | `rf_tx_sink_cb`, `usb_print_sink_cb`, `log_sink_cb`, `beacon_sink_cb` |
 | `default_program.h` | Selecteerbare RIVR-programma-strings (`RIVR_DEFAULT_PROGRAM`, `RIVR_BEACON_PROGRAM`, `RIVR_MESH_PROGRAM`) |
+
+---
+
+## Knooprols
+
+RIVR-knopen worden via een variantheader (`variants/<board>/config.h`) geconfigureerd bij compilatietijd.
+
+| Rol | Macro’s | Relaygedrag |
+|---|---|---|
+| **Standaard** (`esp32_hw`) | — | Volledige relay van alle pakkettypen |
+| **Repeater** (`repeater_esp32devkit_e22_900`) | `RIVR_FABRIC_REPEATER=1`, `RIVR_BUILD_REPEATER=1` | Volledige relay; `PKT_CHAT` en `PKT_DATA` worden gepoort door de Rivr Fabric-congestiescore |
+| **Cliënt** (`client_esp32devkit_e22_900`) | `RIVR_ROLE_CLIENT=1`, `RIVR_FABRIC_REPEATER=0` | Ontvangt `PKT_CHAT`/`PKT_DATA` lokaal; relay wordt **onderdrukt**; bestuurpakketten (`BEACON`, `ROUTE_REQ/RPL`, `ACK`, `PROG_PUSH`) worden normaal doorgestuurd |
+
+Per macro is er een `#ifndef`-bewaker in de variantheader, zodat een
+`-D`-bouwvlag altijd wint.
 
 ---
 

@@ -310,6 +310,129 @@ rivr_inject_event(&(rivr_event_t){ ... });         // feed local pipeline
 
 ---
 
+## Rivr Fabric API
+
+`firmware_core/rivr_fabric.h` provides congestion-aware relay suppression.
+It is active only when `RIVR_FABRIC_REPEATER=1`; all functions compile to
+no-ops otherwise.
+
+### Lifecycle
+
+```c
+void rivr_fabric_init(void);          // call once in app_main after platform_init
+void rivr_fabric_tick(uint32_t now_ms); // call every main-loop iteration
+```
+
+### Traffic events (feed from radio / tx path)
+
+```c
+void rivr_fabric_on_rx(void);            // called after each received frame
+void rivr_fabric_on_tx_enqueued(void);   // relay frame entered the TX queue
+void rivr_fabric_on_tx_ok(void);         // TX completed successfully
+void rivr_fabric_on_tx_fail(void);       // TX failed (timeout / PA error)
+void rivr_fabric_on_tx_blocked_dc(void); // TX dropped by duty-cycle guard
+```
+
+### Relay decision
+
+```c
+fabric_decision_t rivr_fabric_decide_relay(uint8_t pkt_type, uint32_t now_ms);
+```
+
+Returns one of:
+
+| Value | Meaning |
+|---|---|
+| `FABRIC_SEND_NOW` | Relay immediately |
+| `FABRIC_DELAY` | Add jitter delay (score ≥ `RIVR_FABRIC_DELAY_THRESHOLD`) |
+| `FABRIC_DROP` | Suppress relay entirely (score ≥ `RIVR_FABRIC_DROP_THRESHOLD`) |
+
+Only `PKT_CHAT` and `PKT_DATA` are gated; all other types always return
+`FABRIC_SEND_NOW`.  When the score reaches `RIVR_FABRIC_BLACKOUT_GUARD_SCORE`
+the return value is clamped to `FABRIC_DELAY` (max delay) to prevent a
+complete relay blackout.
+
+### Debug / display
+
+```c
+typedef struct {
+    uint8_t  score;           // 0–100 congestion score
+    uint8_t  band;            // 0=OK 1=LIGHT_DLY 2=DLY 3=DROP
+    uint32_t rx_per_s;        // RX frames averaged over 60 s window
+    uint32_t blocked_per_s;   // duty-cycle blocks averaged over window
+    uint32_t fail_per_s;      // TX failures averaged over window
+    uint32_t relay_drop_total;
+    uint32_t relay_delay_total;
+} fabric_debug_t;
+
+void rivr_fabric_get_debug(uint32_t now_ms, fabric_debug_t *out);
+```
+
+### Scalar getters
+
+```c
+uint8_t  rivr_fabric_get_score(void);
+uint32_t rivr_fabric_get_relay_delayed(void);
+uint32_t rivr_fabric_get_relay_dropped(void);
+uint32_t rivr_fabric_get_relay_total(void);
+uint32_t rivr_fabric_get_tx_blocked(void);
+uint32_t rivr_fabric_get_rx_total(void);
+```
+
+### Threshold macros (all `#ifndef`-guarded)
+
+| Macro | Default | Description |
+|---|---|---|
+| `RIVR_FABRIC_DROP_THRESHOLD` | `80` | Score ≥ this → DROP |
+| `RIVR_FABRIC_DELAY_THRESHOLD` | `50` | Score ≥ this → DELAY |
+| `RIVR_FABRIC_LIGHT_DELAY_THRESHOLD` | `20` | Score ≥ this → short jitter |
+| `RIVR_FABRIC_MAX_EXTRA_DELAY_MS` | `1000` | Maximum DELAY in milliseconds |
+| `RIVR_FABRIC_BLACKOUT_GUARD_SCORE` | `95` | Clamp DROP → DELAY at this score |
+
+### Periodic log
+
+When `RIVR_FABRIC_REPEATER=1`, `main.c` logs a `[FAB]` line every 5 s:
+
+```
+I (...) MAIN: [FAB] score=34 rx=12 relay=8 delay=2 drop=0 dc_block=1
+```
+
+---
+
+## Node variants
+
+RIVR supports compile-time role selection through variant headers.  Each
+variant header lives in `variants/<board>/config.h` and is force-included
+by PlatformIO via `-include`.  Every macro is wrapped in `#ifndef` so any
+`-D` flag overrides it.
+
+### Available roles
+
+| Macro | Role |
+|---|---|
+| *(none set)* | Standard node — full relay of all packet types |
+| `RIVR_BUILD_REPEATER=1` + `RIVR_FABRIC_REPEATER=1` | Repeater — full relay with Fabric congestion gating for `PKT_CHAT`/`PKT_DATA` |
+| `RIVR_ROLE_CLIENT=1` | Client — receives `PKT_CHAT`/`PKT_DATA` locally, suppresses their relay; control frames still forwarded |
+
+### Client relay suppression
+
+In `rivr_layer/rivr_sources.c`, the following guard skips enqueuing relay
+frames for chat and data packets when compiled as a client:
+
+```c
+#ifdef RIVR_ROLE_CLIENT
+    if (fwd_type == PKT_CHAT || fwd_type == PKT_DATA) {
+        goto skip_enqueue;   // suppress relay; deliver locally only
+    }
+#endif
+```
+
+Control frames (`PKT_BEACON`, `PKT_ROUTE_REQ`, `PKT_ROUTE_RPL`, `PKT_ACK`,
+`PKT_PROG_PUSH`) are not affected and relay normally so mesh routing stays
+intact.
+
+---
+
 ## Simulation mode
 
 Compile-time flags that replace real hardware:

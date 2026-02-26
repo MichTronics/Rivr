@@ -71,6 +71,19 @@ rivrc mijn_programma.rivr
 
 ## Stap 2a — Bouwen via PlatformIO *(aanbevolen)*
 
+### Bouwervaringen
+
+| Omgeving | Rol | Belangrijkste vlaggen |
+|---|---|---|
+| `esp32_sim` | Simulatie — geen SX1262 vereist | `RIVR_SIM_MODE=1`, `RIVR_SIM_TX_PRINT=1` |
+| `esp32_hw` | Standaard hardwareknoop | `FEATURE_DISPLAY=1` |
+| `repeater_esp32devkit_e22_900` | Dedicated relay met Rivr Fabric | `RIVR_FABRIC_REPEATER=1`, `RIVR_BUILD_REPEATER=1`, `FEATURE_DISPLAY=1` |
+| `client_esp32devkit_e22_900` | Chat-/data-ontvanger; geen relay | `RIVR_ROLE_CLIENT=1`, `FEATURE_DISPLAY=1` |
+
+De repeater- en cliënt-omgevingen bevatten via `-include` een boardspecifieke variantheader:  
+`variants/esp32devkit_e22_900_repeater/config.h` respectievelijk  
+`variants/esp32devkit_e22_900_client/config.h`.
+
 ### Simulatiemodus (geen SX1262-hardware vereist)
 
 ```powershell
@@ -180,7 +193,13 @@ toe voor `.rivr`-bestanden.
 
 ## SX1262-pinbezetting
 
-Standaardbedrading uit `firmware_core/platform_esp32.h`:
+Standaardbedrading — geldt voor alle omgevingen.  Voor de repeater- en
+cliënt-varianten staan de pinnen in de variantheader
+(`variants/esp32devkit_e22_900_repeater/config.h` of
+`variants/esp32devkit_e22_900_client/config.h`), omsloten door `#ifndef`,
+zodat je elk pin kunt overschrijven met `-DPIN_SX1262_SCK=<gpio>` in
+`platformio.ini` of op de commandoregel.  Voor `esp32_hw` en `esp32_sim`
+staan de pins in `firmware_core/platform_esp32.h`.
 
 | Signaal | ESP32 GPIO | Opmerking |
 |---|---|---|
@@ -194,7 +213,66 @@ Standaardbedrading uit `firmware_core/platform_esp32.h`:
 | RXEN | 14 | Antenneschakelaar — HOOG = ontvangen |
 | TXEN | 13 | Antenneschakelaar — HOOG = zenden (ook via SX1262 DIO2) |
 
-Pas de pin-defines aan in `platform_esp32.h` voor jouw board.
+Pas de pin-defines aan in de variantheader of geef `-DPIN_SX1262_NSS=<gpio>`
+mee als bouwvlag — het `#ifndef`-bewaker past de overschrijving toe.
+
+---
+
+## Variantheaders
+
+Variantheaders staan onder `variants/<board>/config.h` en worden door
+PlatformIO via `-include` als bouwvlag geïnjecteerd.  Elke macro is
+omsloten door `#ifndef`, zodat een `-D`-overschrijving altijd wint.
+
+Maak een nieuw variantheader om naar een ander board te porten:
+
+```c
+// variants/mijn_board/config.h
+#ifndef RIVR_RF_FREQ_HZ
+#  define RIVR_RF_FREQ_HZ  915000000UL   // AU915
+#endif
+#ifndef PIN_SX1262_SCK
+#  define PIN_SX1262_SCK   18
+#endif
+// … overige pins …
+#ifndef RIVR_FABRIC_REPEATER
+#  define RIVR_FABRIC_REPEATER 0
+#endif
+```
+
+Voeg daarna een omgeving toe aan `platformio.ini`:
+
+```ini
+[env:mijn_board]
+extends = base_hw
+build_flags =
+    ${base_hw.build_flags}
+    -include variants/mijn_board/config.h
+```
+
+---
+
+## Rivr Fabric instelbare macro's
+
+Deze macro's sturen het congestiebeleid wanneer `RIVR_FABRIC_REPEATER=1`.
+Stel ze in via de variantheader of als `-D`-bouwvlag.
+
+| Macro | Standaard | Beschrijving |
+|---|---|---|
+| `RIVR_FABRIC_DROP_THRESHOLD` | `80` | Score ≥ waarde → **DROP** (geen relay) |
+| `RIVR_FABRIC_DELAY_THRESHOLD` | `50` | Score ≥ waarde → **DELAY** met maximaal `MAX_EXTRA_DELAY_MS` |
+| `RIVR_FABRIC_LIGHT_DELAY_THRESHOLD` | `20` | Score ≥ waarde → korte jitter-vertraging (lage congestie) |
+| `RIVR_FABRIC_MAX_EXTRA_DELAY_MS` | `1000` | Maximale extra vertraging in milliseconden |
+| `RIVR_FABRIC_BLACKOUT_GUARD_SCORE` | `95` | Vanaf deze score wordt DROP vervangen door DELAY (anti-blackout) |
+
+De score wordt berekend over een schuivend venster van 60 seconden:
+```
+score = clamp(rx_per_s×2 + dc_blocked_per_s×25 + tx_fail_per_s×10, 0, 100)
+```
+
+Alleen `PKT_CHAT`- en `PKT_DATA`-relay wordt geblokkeerd door Fabric.  Alle
+andere pakkettypen (`PKT_BEACON`, `ROUTE_REQ`, `ROUTE_RPL`, `PKT_ACK`,
+`PKT_PROG_PUSH`) worden altijd doorgelaten.
 
 ---
 
