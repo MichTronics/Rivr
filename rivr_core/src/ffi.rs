@@ -412,6 +412,20 @@ fn value_to_c(v: &Value) -> CValue {
                 data: CValUnion { as_str: CFixedStr { buf, len } },
             }
         }
+        Value::Bytes(b) => {
+            // ByteBuf = FixedBytes<64>; the C side accepts up to 256 bytes.
+            let slice: &[u8] = b.as_ref();
+            let len = slice.len().min(256) as u16;
+            let mut buf = [0u8; 256];
+            buf[..len as usize].copy_from_slice(&slice[..len as usize]);
+            CValue {
+                tag: 4, _pad: [0;3],
+                data: CValUnion { as_bytes: CFixedBytes { buf, len } },
+            }
+        }
+        // Value::Unit and Value::Window(alloc) have no useful wire representation;
+        // tag=0 causes the C sink to log a warning and discard them, which is
+        // the correct behaviour (a Unit or Window value should never reach rf_tx).
         _ => CValue { tag: 0, _pad: [0;3], data: CValUnion { as_int: 0 } },
     }
 }
