@@ -125,6 +125,47 @@ Default air parameters: **869.480 MHz · SF8 · BW 125 kHz · CR 4/8 · preamble
 
 See [docs/en/build-guide.md](docs/en/build-guide.md) for full cross-compilation, pin wiring, and E22-900M30S TCXO/PA setup.
 
+### 4 — Repeater build (E22-900M30S/M33S + Rivr Fabric)
+
+A dedicated repeater variant is provided for headless relay nodes.  It enables
+[RIVR Fabric](firmware_core/rivr_fabric.h) congestion-aware suppression for
+relayed `PKT_CHAT` and `PKT_DATA` frames (`RIVR_FABRIC_REPEATER=1`).  All other
+packet types (`PKT_ACK`, `PKT_BEACON`, `ROUTE_REQ/RPL`, `PROG_PUSH`) always
+pass through unaffected.
+
+```bash
+# Build & flash
+~/.platformio/penv/bin/pio run -e repeater_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio device monitor -e repeater_esp32devkit_e22_900
+```
+
+**Default pins** (ESP32 DevKit + E22 wiring; change in
+`variants/esp32devkit_e22_900_repeater/config.h` or via `-D` build flag):
+
+| Signal | GPIO |
+|---|---|
+| SCK | 18 |
+| MOSI | 23 |
+| MISO | 19 |
+| NSS/CS | 5 |
+| BUSY | 32 |
+| RESET | 25 |
+| DIO1 | 33 |
+| RXEN | 14 |
+| TXEN | 13 |
+
+**Default frequency:** 869.480 MHz (EU868).  Override at build time:
+
+```bash
+# AU915 example
+~/.platformio/penv/bin/pio run -e repeater_esp32devkit_e22_900 \
+  --build-option='build_flags=-DRIVR_RF_FREQ_HZ=915000000'
+```
+
+Or add `-DRIVR_RF_FREQ_HZ=...` as the first line of the `build_flags` in
+`platformio.ini` before the `-include` line — the `#ifndef` guard in the
+variant header will leave it untouched.
+
 ---
 
 ## Project Layout
