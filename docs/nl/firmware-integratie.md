@@ -142,6 +142,14 @@ Elke hoofdlustitratie aangeroepen vanuit `rivr_tick()`.
 **Hoofdluspatroon (uit `rivr_embed.c`):**
 
 ```c
+// Roep radio_service_rx() AAN vóór rivr_tick() elke iteratie.
+// De ISR (radio_isr) zet alleen s_dio1_pending; alle SPI-werk gebeurt hier.
+void main_loop_body(void) {
+    radio_service_rx();      // lees DIO1-events via SPI (alleen hoofdtaak)
+    rivr_tick();             // ring-buffer → engine → emit
+    tx_drain_loop();         // verstuur TX-frames met duty-cycle-bewaker
+}
+
 void rivr_tick(void) {
     sources_rf_rx_drain();   // injecteer radio-frames
     sources_cli_drain();     // injecteer CLI-events

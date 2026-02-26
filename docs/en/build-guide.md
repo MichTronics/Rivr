@@ -193,15 +193,17 @@ for `.rivr` files.
 
 Default wiring from `firmware_core/platform_esp32.h`:
 
-| Signal | ESP32 GPIO |
-|---|---|
-| SCK | 18 |
-| MOSI | 27 |
-| MISO | 19 |
-| NSS (CS) | 5 |
-| BUSY | 26 |
-| RESET | 14 |
-| DIO1 (IRQ) | 33 |
+| Signal | ESP32 GPIO | Notes |
+|---|---|---|
+| SCK | 18 | VSPI_CLK |
+| MOSI | 23 | VSPI_MOSI |
+| MISO | 19 | VSPI_MISO |
+| NSS (CS) | 5 | Active low |
+| BUSY | 32 | SX1262 ready flag |
+| RESET | 25 | Active low |
+| DIO1 (IRQ) | 33 | TxDone / RxDone / Timeout |
+| RXEN | 14 | Antenna switch — HIGH = receive |
+| TXEN | 13 | Antenna switch — HIGH = transmit (also via SX1262 DIO2) |
 
 Adjust pin defines in `platform_esp32.h` to match your board.
 
@@ -209,12 +211,35 @@ Adjust pin defines in `platform_esp32.h` to match your board.
 
 ## Switching from simulation to hardware
 
-1. Wire the SX1262 per the pin table above.
+1. Wire the SX1262 / E22-900M30S per the pin table above.
 2. Remove `-DRIVR_SIM_MODE=1` and `-DRIVR_SIM_TX_PRINT=1` (or use `esp32_hw`).
 3. Review `// TODO(SX1262):` comments in:
    - `firmware_core/main.c` — replace `radio_sim_init()` with `radio_init()`
    - `firmware_core/radio_sx1262.c` — remove `radio_init_buffers_only()` guard
 4. Flash: `pio run -e esp32_hw -t upload`
+
+### E22-900M30S module specifics
+
+The E22-900M30S (Ebyte) requires three extra init steps compared to a bare SX1262:
+
+| Step | SX1262 command | Why |
+|---|---|---|
+| `SetDio3AsTcxoCtrl(1.8 V, 5 ms)` | `0x97` | TCXO reference oscillator is powered via DIO3 |
+| `Calibrate(0xFF)` | `0x89` | Full RF calibration after TCXO is stable |
+| `SetPaConfig(0x04, 0x07, 0x00, 0x01)` | `0x95` | High-power PA: enables ~30 dBm output |
+
+All three are already included in `radio_init()` in `firmware_core/radio_sx1262.c`.
+
+### Default LoRa air parameters
+
+| Parameter | Value |
+|---|---|
+| Frequency | 869.480 MHz |
+| Spreading factor | SF8 |
+| Bandwidth | 125 kHz (BW byte `0x04`) |
+| Coding rate | 4/8 |
+| Output power | +22 dBm (≈ +30 dBm after E22 PA) |
+| Preamble | 8 symbols |
 
 ---
 
@@ -222,6 +247,7 @@ Adjust pin defines in `platform_esp32.h` to match your board.
 
 | Symptom | Cause / Fix |
 |---|---|
+| `Interrupt wdt timeout on CPU0` (crash at ~30 s) | ISR tried to do SPI — ensure `radio_service_rx()` is the only SPI path; never call `sx1262_cmd` from `radio_isr()` |
 | `FATAL_ERROR: librivr_core.a not found` | Run `cargo build --features ffi` first |
 | `rivr_engine_init failed: code 1` | Parse error (`RIVR_ERR_PARSE`) — check `RIVR_ACTIVE_PROGRAM` or NVS program |
 | `rivr_engine_init failed: code 2` | Compile error (`RIVR_ERR_COMPILE`) — check program semantics (undefined source, etc.) |

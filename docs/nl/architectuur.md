@@ -53,7 +53,7 @@
 |---|---|
 | `main.c` | `app_main`, initialisatie, SIM-frame-injectie, hoofdlus |
 | `platform_esp32.c` | Klokdivisie, SPI-bus, GPIO-initialisatie |
-| `radio_sx1262.c` | SX1262 op-/afzet, ring-buffer, TX-wachtrij |
+| `radio_sx1262.c` | SX1262-stuurprogramma; `radio_isr()` zet alleen vlag (geen SPI in ISR); `radio_service_rx()` doet alle SPI vanuit de hoofdlus |
 | `protocol.c` | Binaire frame-encode/decode met CRC-16 |
 | `routing.c` | Dedupe-cache, hop-limietcontrole, buurttabel |
 
@@ -73,9 +73,14 @@
 ```
 SX1262 RX-IRQ
    ↓
-radio_sx1262_rx_isr()          schrijft bytes naar rx_ring_buf
+radio_isr()  [IRAM_ATTR]
+   s_dio1_pending = true   ← alleen vlag; SPI-semaforen zijn illegaal in ISR
+   ↓ (volgende hoofd-lustitratie — vóór rivr_tick)
+radio_service_rx()
+   GetIrqStatus / ClearIrq / GetRxBufferStatus / ReadBuffer
+   → rb_try_push(&rf_rx_ringbuf, frame)
    ↓
-main_loop() / rx_drain_task()  leest frame uit ring-buffer
+main_loop() leest frame uit ring-buffer via sources_rf_rx_drain()
    ↓
 protocol_decode()              valideert CRC-16, ontleedt koptekst
    ↓

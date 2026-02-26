@@ -144,6 +144,14 @@ that the engine was still busy at the step limit (potential tick-storm).
 **Main loop pattern (from `rivr_embed.c`):**
 
 ```c
+// Call radio_service_rx() BEFORE rivr_tick() every iteration.
+// The ISR (radio_isr) only sets s_dio1_pending; all SPI work happens here.
+void main_loop_body(void) {
+    radio_service_rx();      // drain DIO1 events via SPI (main task only)
+    rivr_tick();             // drain ring-buffer → engine → emit
+    tx_drain_loop();         // send queued TX frames with duty-cycle gate
+}
+
 void rivr_tick(void) {
     sources_rf_rx_drain();   // inject radio frames
     sources_cli_drain();     // inject CLI events
@@ -282,7 +290,7 @@ int routing_should_forward(const rivr_pkt_hdr_t *hdr);
 void routing_update_neighbour(uint32_t node_id, int8_t rssi, int8_t snr);
 ```
 
-Typical usage in the LoRa RX interrupt handler / main loop:
+Typical usage in the main loop (**not** in the ISR — SPI calls are illegal from interrupt context on ESP32):
 
 ```c
 rivr_pkt_hdr_t hdr;

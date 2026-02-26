@@ -182,15 +182,17 @@ toe voor `.rivr`-bestanden.
 
 Standaardbedrading uit `firmware_core/platform_esp32.h`:
 
-| Signaal | ESP32 GPIO |
-|---|---|
-| SCK | 18 |
-| MOSI | 27 |
-| MISO | 19 |
-| NSS (CS) | 5 |
-| BUSY | 26 |
-| RESET | 14 |
-| DIO1 (IRQ) | 33 |
+| Signaal | ESP32 GPIO | Opmerking |
+|---|---|---|
+| SCK | 18 | VSPI_CLK |
+| MOSI | 23 | VSPI_MOSI |
+| MISO | 19 | VSPI_MISO |
+| NSS (CS) | 5 | Actief laag |
+| BUSY | 32 | SX1262 gereed-vlag |
+| RESET | 25 | Actief laag |
+| DIO1 (IRQ) | 33 | TxDone / RxDone / Timeout |
+| RXEN | 14 | Antenneschakelaar — HOOG = ontvangen |
+| TXEN | 13 | Antenneschakelaar — HOOG = zenden (ook via SX1262 DIO2) |
 
 Pas de pin-defines aan in `platform_esp32.h` voor jouw board.
 

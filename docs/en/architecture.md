@@ -9,8 +9,12 @@
 │  ┌──────────────────────────────────────────────────────────┐ │
 │  │  app_main() — main loop (1 ms yield)                      │ │
 │  │                                                          │ │
+│  │  radio_service_rx()  ← checks s_dio1_pending flag        │ │
+│  │   └─ GetIrqStatus / ClearIrq / ReadBuffer                │ │
+│  │      → rb_try_push(&rf_rx_ringbuf, frame)                │ │
+│  │                                                          │ │
 │  │  rivr_tick()                                             │ │
-│  │   ├─ sources_rf_rx_drain()  ← ISR → rf_rx_ringbuf        │ │
+│  │   ├─ sources_rf_rx_drain()  ← rf_rx_ringbuf              │ │
 │  │   │      protocol_decode() → Value::Bytes               │ │
 │  │   │      rivr_inject_event("rf_rx", event)              │ │
   │   ├─ sources_cli_drain()                                 │ │
@@ -27,10 +31,14 @@
 │  │   └─ rb_pop(rf_tx_queue) → dutycycle_check() → TX        │ │
 │  └──────────────────────────────────────────────────────────┘ │
 │                                                               │
+│  DIO1 ISR (radio_isr): s_dio1_pending = true  ← flag only    │
+│  SPI calls from ISR context are ILLEGAL on ESP32 (semaphores) │
+│                                                               │
 │  ┌─────────────┐     SPI     ┌─────────────────┐             │
-│  │  ESP32 SoC  │ ──────────► │  SX1262 LoRa    │             │
-│  │  DIO1 ISR   │ ◄────────── │  RxDone / TxDone│             │
-│  └─────────────┘             └─────────────────┘             │
+│  │  ESP32 SoC  │ ──────────► │  E22-900M30S    │             │
+│  │  DIO1 IRQ   │ ◄────────── │  SX1262 LoRa    │             │
+│  └─────────────┘     8 MHz   └─────────────────┘             │
+│  869.480 MHz · SF8 · BW125kHz · CR4/8 · +22dBm (~30dBm PA)  │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,13 +51,13 @@
 | File | Responsibility |
 |---|---|
 | `main.c` | `app_main()`, main loop, simulation mode |
-| `radio_sx1262.c` | SX1262 SPI driver, ISR, ring-buffer management |
+| `radio_sx1262.c` | SX1262 SPI driver; `radio_isr()` sets `s_dio1_pending` flag only (SPI is illegal from ISR); `radio_service_rx()` does all SPI from main loop |
 | `timebase.c` | `tb_millis()` (mono clock), `tb_lmp_advance()` (Lamport) |
 | `dutycycle.c` | Sliding-window duty-cycle tracker (C-layer guard) |
 | `platform_esp32.c` | GPIO, SPI bus, LED initialisation |
 | `ringbuf.h` | Lock-free SPSC ring buffer (ISR-safe) |
 | `protocol.c` | Binary packet encode/decode, CRC-16/CCITT |
-| `routing.c` | Dedupe cache (LRU ring), TTL decrement, neighbour table |
+| `routing.c` | Dedupe cache (LRU ring), TTL decrement, neighbour table (with callsign) |
 
 ### 2. `rivr_layer/` — Glue layer (C)
 
@@ -57,7 +65,7 @@
 |---|---|
 | `rivr_embed.c` | `rivr_embed_init()`, `rivr_tick()`, emit dispatch wiring, NVS load/store, `rivr_embed_reload()` |
 | `rivr_sources.c` | Drain ring-buffers → construct `rivr_event_t` → inject; multi-timer table (`sources_timer_drain`) |
-| `rivr_sinks.c` | Receive emitted values → encode → hardware queues; `beacon_sink_cb` for `io.lora.beacon` |
+| `rivr_sinks.c` | Receive emitted values → encode → hardware queues; `beacon_sink_cb` builds `PKT_BEACON` (callsign + net_id + hop_count) for `io.lora.beacon` |
 | `default_program.h` | Built-in RIVR program strings (`RIVR_DEFAULT_PROGRAM`, `RIVR_BEACON_PROGRAM`, `RIVR_MESH_PROGRAM`) |
 
 ### 3. `rivr_core/` — Language runtime (Rust)
@@ -90,10 +98,16 @@
 SX1262 RxDone IRQ
        │
        ▼
- radio_isr()
- rb_try_push(&rf_rx_ringbuf, frame)       ← ISR, no RIVR, no alloc
+ radio_isr()  [IRAM_ATTR]
+ s_dio1_pending = true              ← flag only; SPI semaphores are illegal in ISR
        │
-       ▼ (next rivr_tick)
+       ▼ (next main-loop iteration — before rivr_tick)
+ radio_service_rx()
+   GetIrqStatus(0x12) → ClearIrqStatus(0x02)
+   GetRxBufferStatus(0x13) → ReadBuffer(0x1E)
+   rb_try_push(&rf_rx_ringbuf, frame)
+       │
+       ▼
  sources_rf_rx_drain()
    protocol_decode(frame.data, frame.len)  ← validate magic + CRC
    tb_lmp_advance(seq & 0xFFFF)            ← advance Lamport clock
