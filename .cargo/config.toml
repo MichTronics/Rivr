@@ -1,0 +1,14 @@
+# Cargo workspace configuration for cross-compilation to ESP32.
+#
+# The xtensa-esp32-espidf standard library is not pre-compiled in the espup
+# toolchain bundle on this machine, so it must be built from source via
+# -Z build-std.  The correct one-liner to rebuild librivr_core.a is:
+#
+#   source ~/export-esp.sh
+#   cargo +esp build -p rivr_core \
+#     --target xtensa-esp32-espidf \
+#     --features ffi --release \
+#     -Z build-std=std,panic_abort
+#
+# DO NOT add a global [build] target here — it would break `rivr_host`
+# and other crates that build for the host (x86-64) target.
