@@ -113,8 +113,11 @@
 #endif
 
 /* ── Display ────────────────────────────────────────────────────────────── */
-/* Repeater nodes typically run headless; leave FEATURE_DISPLAY undefined   */
-/* unless a display is physically wired.                                     */
-/* To add a display: pass -DFEATURE_DISPLAY=1 before -include.              */
+/* Enabled by default for debug visibility (score, rates, relay counts on   */
+/* page 7 of the OLED).  To build headless: -DFEATURE_DISPLAY=0 before      */
+/* the -include on the build command line.                                   */
+#ifndef FEATURE_DISPLAY
+#  define FEATURE_DISPLAY 1
+#endif
 
 #endif /* RIVR_VARIANT_ESP32DEVKIT_E22_900_REPEATER_H */

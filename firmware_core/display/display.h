@@ -65,7 +65,7 @@ extern "C" {
 #define DISPLAY_PAGE_ROTATE_MS  3000u
 
 /** Total number of display pages. */
-#define DISPLAY_PAGES           6u
+#define DISPLAY_PAGES           7u
 
 /** Number of neighbour slots carried in the stats snapshot for page 6. */
 #define DISPLAY_NEIGHBOR_MAX    3u
@@ -127,6 +127,14 @@ typedef struct {
         uint8_t  hop_count;    /**< Minimum hop distance                     */
         bool     valid;        /**< true when slot contains live data         */
     } neighbors[DISPLAY_NEIGHBOR_MAX];
+
+    /* Page 6 – Fabric debug (from rivr_fabric_get_debug; zero when RIVR_FABRIC_REPEATER=0) */
+    uint8_t  fabric_score;              /**< Congestion score 0..100                    */
+    uint16_t fabric_rx_per_s_x100;      /**< RX rate × 100  (e.g. 150 = 1.50/s)         */
+    uint16_t fabric_blocked_per_s_x100; /**< DC-blocked rate × 100                      */
+    uint16_t fabric_fail_per_s_x100;    /**< TX-fail rate × 100                         */
+    uint32_t fabric_relay_drop;         /**< Lifetime relay DROP count                  */
+    uint32_t fabric_relay_delay;        /**< Lifetime relay DELAY count                 */
 } display_stats_t;
 
 /* ── API ─────────────────────────────────────────────────────────────────── */

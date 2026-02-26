@@ -438,6 +438,54 @@ static void render_page_neighbors(const display_stats_t *s)
     fb_str_right(7u, pg);
 }
 
+static void render_page_fabric(const display_stats_t *s)
+{
+    char buf[22];
+
+    fb_str(0u, 0u, "FABRIC");
+    fb_hline(1u);
+
+    /* Row 2: score + decision band */
+    const char *band =
+        (s->fabric_score >= 80u) ? "DROP" :
+        (s->fabric_score >= 50u) ? "DLY+" :
+        (s->fabric_score >= 20u) ? "DLY " : "OK  ";
+    snprintf(buf, sizeof(buf), "SCR:%3u %s", s->fabric_score, band);
+    fb_str(0u, 2u, buf);
+
+    /* Row 3: RX rate over last 60 s */
+    snprintf(buf, sizeof(buf), "RX/s  %u.%02u",
+             (unsigned)(s->fabric_rx_per_s_x100 / 100u),
+             (unsigned)(s->fabric_rx_per_s_x100 % 100u));
+    fb_str(0u, 3u, buf);
+
+    /* Row 4: DC-blocked rate */
+    snprintf(buf, sizeof(buf), "BLK/s %u.%02u",
+             (unsigned)(s->fabric_blocked_per_s_x100 / 100u),
+             (unsigned)(s->fabric_blocked_per_s_x100 % 100u));
+    fb_str(0u, 4u, buf);
+
+    /* Row 5: TX-fail rate */
+    snprintf(buf, sizeof(buf), "FAIL/s %u.%02u",
+             (unsigned)(s->fabric_fail_per_s_x100 / 100u),
+             (unsigned)(s->fabric_fail_per_s_x100 % 100u));
+    fb_str(0u, 5u, buf);
+
+    /* Row 6: lifetime relay drop (D) and delay (Y) totals */
+    snprintf(buf, sizeof(buf), "D:%lu Y:%lu",
+             (unsigned long)s->fabric_relay_drop,
+             (unsigned long)s->fabric_relay_delay);
+    fb_str(0u, 6u, buf);
+
+    /* Last-page indicator: "7/7" bottom-right */
+    char pg[5];
+    pg[0] = (char)('0' + (char)(s_page + 1u));
+    pg[1] = '/';
+    pg[2] = (char)('0' + (char)DISPLAY_PAGES);
+    pg[3] = '\0';
+    fb_str_right(7u, pg);
+}
+
 /** Render a boot screen (called once from display_init). */
 static void render_boot(const display_stats_t *s)
 {
@@ -593,6 +641,7 @@ static void display_update(const display_stats_t *stats)
         case 3u: render_page_dutycycle(stats);  break;
         case 4u: render_page_vm(stats);         break;
         case 5u: render_page_neighbors(stats);  break;
+        case 6u: render_page_fabric(stats);     break;
         default: render_page_overview(stats);   break;
     }
 

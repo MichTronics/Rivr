@@ -66,6 +66,17 @@ typedef enum {
     FABRIC_DROP     = 2,   /**< Suppress relay entirely                       */
 } fabric_decision_t;
 
+/** Debug snapshot filled by rivr_fabric_get_debug().  All fields zero when
+ *  RIVR_FABRIC_REPEATER == 0.  Embed directly in display_stats_t. */
+typedef struct {
+    uint8_t  score;               /**< Current congestion score 0..100       */
+    uint16_t rx_per_s_x100;       /**< RX rate × 100  (e.g. 150 = 1.50/s)   */
+    uint16_t blocked_per_s_x100;  /**< DC-blocked rate × 100                 */
+    uint16_t fail_per_s_x100;     /**< TX-fail rate × 100                    */
+    uint32_t relay_drop_total;    /**< Relays suppressed — lifetime counter   */
+    uint32_t relay_delay_total;   /**< Relays delayed   — lifetime counter   */
+} fabric_debug_t;
+
 /* ── API ─────────────────────────────────────────────────────────────────── */
 
 /** Initialise sliding-window state.  Call once at boot. */
@@ -110,6 +121,16 @@ fabric_decision_t rivr_fabric_decide_relay(
     uint32_t              toa_us,
     uint32_t             *out_extra_delay_ms
 );
+
+/**
+ * @brief  Fill a debug snapshot of current fabric state.
+ * @param  now_ms  Current monotonic time (advances the sliding-window ring).
+ * @param  out     Must not be NULL; filled on return.
+ *
+ * Cost: one 60-bucket sweep — safe to call every main-loop iteration.
+ * With RIVR_FABRIC_REPEATER=0 all fields in @p out are zero.
+ */
+void rivr_fabric_get_debug(uint32_t now_ms, fabric_debug_t *out);
 
 #ifdef __cplusplus
 }

@@ -87,9 +87,14 @@ typedef struct {
     uint32_t        last_bucket_sec;    /* second index of last update       */
 } fabric_state_t;
 
+#if RIVR_FABRIC_REPEATER
 static fabric_state_t s_fab;
+static uint32_t s_relay_drop_total  = 0u;  /**< lifetime DROP  counter */
+static uint32_t s_relay_delay_total = 0u;  /**< lifetime DELAY counter */
+#endif
 
-/* ── Helpers ────────────────────────────────────────────────────────────── */
+/* ── Helpers (only emitted in repeater builds) ──────────────────────────── */
+#if RIVR_FABRIC_REPEATER
 
 /** Advance the ring: zero any buckets that have aged out since last call. */
 static void fabric_advance(uint32_t now_ms)
@@ -148,6 +153,8 @@ static uint8_t fabric_score(uint32_t now_ms)
     if (score100 > 10000u) score100 = 10000u;
     return (uint8_t)(score100 / 100u);
 }
+
+#endif /* RIVR_FABRIC_REPEATER — static helpers */
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
@@ -244,6 +251,7 @@ fabric_decision_t rivr_fabric_decide_relay(
         ESP_LOGD(TAG_FABRIC,
                  "drop relay pkt_type=%u src=0x%08lx score=%u",
                  pkt->pkt_type, (unsigned long)pkt->src_id, score);
+        s_relay_drop_total++;
         return FABRIC_DROP;
     }
 
@@ -255,6 +263,7 @@ fabric_decision_t rivr_fabric_decide_relay(
                  "delay relay pkt_type=%u src=0x%08lx score=%u extra=%lu ms",
                  pkt->pkt_type, (unsigned long)pkt->src_id, score,
                  (unsigned long)extra);
+        s_relay_delay_total++;
         return FABRIC_DELAY;
     }
 
@@ -266,9 +275,35 @@ fabric_decision_t rivr_fabric_decide_relay(
                  "delay relay pkt_type=%u src=0x%08lx score=%u extra=%lu ms",
                  pkt->pkt_type, (unsigned long)pkt->src_id, score,
                  (unsigned long)extra);
+        s_relay_delay_total++;
         return FABRIC_DELAY;
     }
 
     return FABRIC_SEND_NOW;
 #endif /* RIVR_FABRIC_REPEATER */
+}
+
+void rivr_fabric_get_debug(uint32_t now_ms, fabric_debug_t *out)
+{
+    if (!out) return;
+#if RIVR_FABRIC_REPEATER
+    fabric_advance(now_ms);
+    uint32_t rx_total      = 0u;
+    uint32_t fail_total    = 0u;
+    uint32_t blocked_total = 0u;
+    for (uint8_t i = 0u; i < FABRIC_BUCKETS; i++) {
+        rx_total      += s_fab.buckets[i].rx_count;
+        fail_total    += s_fab.buckets[i].tx_fail_count;
+        blocked_total += s_fab.buckets[i].tx_blocked_dc;
+    }
+    out->score              = fabric_score(now_ms);
+    out->rx_per_s_x100      = (uint16_t)(rx_total      * 100u / FABRIC_BUCKETS);
+    out->blocked_per_s_x100 = (uint16_t)(blocked_total * 100u / FABRIC_BUCKETS);
+    out->fail_per_s_x100    = (uint16_t)(fail_total     * 100u / FABRIC_BUCKETS);
+    out->relay_drop_total   = s_relay_drop_total;
+    out->relay_delay_total  = s_relay_delay_total;
+#else
+    (void)now_ms;
+    memset(out, 0, sizeof(*out));
+#endif
 }

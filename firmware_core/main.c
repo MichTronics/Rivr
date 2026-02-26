@@ -629,6 +629,17 @@ void app_main(void)
             disp.vm_cycles      = g_vm_total_cycles;
             disp.error_code     = g_vm_last_error;
             /* last_event: not yet plumbed — leave as "" */
+            /* ── Fabric debug page ── */
+            {
+                fabric_debug_t fab_dbg;
+                rivr_fabric_get_debug(now, &fab_dbg);
+                disp.fabric_score              = fab_dbg.score;
+                disp.fabric_rx_per_s_x100      = fab_dbg.rx_per_s_x100;
+                disp.fabric_blocked_per_s_x100 = fab_dbg.blocked_per_s_x100;
+                disp.fabric_fail_per_s_x100    = fab_dbg.fail_per_s_x100;
+                disp.fabric_relay_drop         = fab_dbg.relay_drop_total;
+                disp.fabric_relay_delay        = fab_dbg.relay_delay_total;
+            }
             display_post_stats(&disp);
         }
 #endif
