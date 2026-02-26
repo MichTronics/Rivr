@@ -62,15 +62,19 @@ Mesh routing layer
 
 | Feature | Detail |
 |---|---|
-| RIVR language | Reactive stream-graph; `.filter()`, `.map()`, `emit rf_tx(…)` |
-| Packet types | CHAT · BEACON · DATA · ROUTE_REQ · ROUTE_RPL · ACK |
+| RIVR language | Reactive stream-graph DSL; `filter`, `budget`, `throttle`, `window`, `merge`, `emit` |
+| Packet types | CHAT · BEACON · DATA · ROUTE_REQ · ROUTE_RPL · ACK · PROG_PUSH |
 | Flood routing | TTL + hop decrement, deduplication ring (src_id, seq) |
 | Unicast routing | Reverse-path route cache, ROUTE_REQ / ROUTE_RPL discovery |
-| Pending queue | 16-slot hold for unicast frames while waiting for a route replied |
+| Pending queue | 16-slot hold for unicast frames while waiting for a route reply |
 | Forward jitter | `routing_forward_delay_ms()` — xorshift32 per (src, seq, type); up to 200 ms |
 | Duty-cycle cap | Per-minute sliding window + per-hour cap (36 s/h ≈ 1 % EU868) |
 | Drop statistics | Per-packet-type forward-drop counters in `forward_budget_t` |
 | Unicast failover | TX queue full → fallback flood with `PKT_FLAG_FALLBACK`, TTL = 3 |
+| Neighbour table | RSSI/SNR + callsign per peer; displayed on OLED page 6 |
+| OLED display | SSD1306 128×64; 6 pages: node info, mesh stats, duty cycle, routing, RX quality, neighbours |
+| Deferred-ISR RX | `radio_isr()` sets a flag only; all SPI work done in `radio_service_rx()` from main loop |
+| OTA program push | `PKT_PROG_PUSH` delivers a new RIVR program over the mesh; stored in NVS, hot-reloaded |
 | Sim mode | Full 8-round mesh simulation without SX1262 hardware (`RIVR_SIM_MODE`) |
 
 ---
@@ -110,13 +114,16 @@ Expected output shows **8 simulation rounds**:
 | R7 | Pre-loaded pending msg for NODE_D + injected ROUTE_RPL → queue drain |
 | R8 | TX queue full + unicast to NODE_A → `PKT_FLAG_FALLBACK` flood |
 
-### 3 — Real hardware
+### 3 — Real hardware (E22-900M30S)
 
-```powershell
-pio run -e esp32_hw -t upload && pio device monitor
+```bash
+~/.platformio/penv/bin/pio run -e esp32_hw -t upload
+~/.platformio/penv/bin/pio device monitor --baud 115200
 ```
 
-See [BUILDING.md](BUILDING.md) for full cross-compilation and ESP-IDF instructions.
+Default air parameters: **869.480 MHz · SF8 · BW 125 kHz · CR 4/8 · preamble 8** → ~30 dBm via the E22 HP PA.
+
+See [docs/en/build-guide.md](docs/en/build-guide.md) for full cross-compilation, pin wiring, and E22-900M30S TCXO/PA setup.
 
 ---
 
@@ -131,15 +138,16 @@ Rivr/
 │
 ├── firmware_core/          — C hardware drivers
 │   ├── main.c              — app_main(), tx_drain_loop(), sim rounds
-│   ├── radio_sx1262.c/.h   — SX1262 ring-buffered driver
-│   ├── routing.c/.h        — flood forward, jitter, budget caps
+│   ├── radio_sx1262.c/.h   — SX1262 driver; ISR sets flag only, radio_service_rx() does SPI
+│   ├── routing.c/.h        — flood forward, jitter, budget caps, neighbour callsigns
 │   ├── route_cache.c/.h    — unicast reverse-path cache
 │   ├── pending_queue.c/.h  — 16-slot pending queue (cache-miss hold)
 │   ├── protocol.c/.h       — RIVR binary wire format, CRC-16
 │   ├── dutycycle.c/.h      — EU868 airtime tracker
 │   ├── timebase.c/.h       — monotonic + Lamport clocks
-│   ├── platform_esp32.c/.h — GPIO / SPI / LED init
-│   └── ringbuf.h           — lock-free SPSC ring buffer
+│   ├── platform_esp32.c/.h — GPIO / SPI / LED init (RXEN + TXEN antenna switch)
+│   ├── ringbuf.h           — lock-free SPSC ring buffer
+│   └── display/            — SSD1306 OLED driver (6-page UI)
 │
 ├── rivr_layer/             — RIVR ↔ C firmware glue
 │   ├── rivr_embed.c/.h     — engine init, rivr_tick(), global state
@@ -171,20 +179,21 @@ Rivr/
 ## RIVR Language — Quick Look
 
 ```rivr
--- Relay all incoming chat packets, applying forward jitter
-let chat = source rf_rx()
-  | filter.pkt_type(PKT_CHAT)
-  | filter.ttl_ok()
-  | map.relay();
+source rf_rx @lmp = rf;
+source beacon_tick = timer(30000);
 
-emit rf_tx(chat);
+let chat = rf_rx
+  |> filter.pkt_type(1)                        -- pass only PKT_CHAT
+  |> budget.toa_us(280000, 0.10, 280000)       -- 10 % duty-cycle guard
+  |> throttle.ticks(1);                        -- at most once per Lamport tick
 
--- Also print to USB serial
-emit usb_print(chat | map.format_chat());
+emit { io.lora.tx(chat); }                     -- re-broadcast over LoRa
+emit { io.lora.beacon(beacon_tick); }          -- send PKT_BEACON every 30 s
 ```
 
 Programs are parsed and compiled at boot time by `rivr_embed_init()`, then evaluated once per
-`rivr_tick()` call in the main loop.
+`rivr_tick()` call in the main loop.  A new program can be pushed OTA as a `PKT_PROG_PUSH` frame
+and will be hot-reloaded from NVS without a reboot.
 
 ---
 
@@ -209,5 +218,5 @@ Full documentation is in [`docs/`](docs/README.md) — available in English and 
 | Overview | [en/overview.md](docs/en/overview.md) | [nl/overzicht.md](docs/nl/overzicht.md) |
 | Architecture | [en/architecture.md](docs/en/architecture.md) | [nl/architectuur.md](docs/nl/architectuur.md) |
 | Language reference | [en/language-reference.md](docs/en/language-reference.md) | [nl/taalreferentie.md](docs/nl/taalreferentie.md) |
-| Build guide | [BUILDING.md](BUILDING.md) | [nl/bouwhandleiding.md](docs/nl/bouwhandleiding.md) |
+| Build guide | [en/build-guide.md](docs/en/build-guide.md) | [nl/bouwhandleiding.md](docs/nl/bouwhandleiding.md) |
 | Firmware integration | [en/firmware-integration.md](docs/en/firmware-integration.md) | [nl/firmware-integratie.md](docs/nl/firmware-integratie.md) |
