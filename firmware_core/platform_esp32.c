@@ -25,8 +25,10 @@ void platform_init(void)
     gpio_config_t out_cfg = {
         .pin_bit_mask = (1ULL << PIN_SX1262_NSS)   |
                         (1ULL << PIN_SX1262_RESET)  |
+#if RIVR_RFSWITCH_ENABLE
                         (1ULL << PIN_SX1262_RXEN)   |
                         (1ULL << PIN_SX1262_TXEN)   |
+#endif
                         (1ULL << PIN_LED_STATUS),
         .mode         = GPIO_MODE_OUTPUT,
         .pull_up_en   = GPIO_PULLUP_DISABLE,
@@ -37,7 +39,10 @@ void platform_init(void)
 
     /* ── GPIO inputs ── */
     gpio_config_t in_cfg = {
-        .pin_bit_mask = (1ULL << PIN_SX1262_BUSY) |
+        .pin_bit_mask =
+#if !RIVR_RADIO_SX1276
+                        (1ULL << PIN_SX1262_BUSY) |
+#endif
                         (1ULL << PIN_SX1262_DIO1),
         .mode         = GPIO_MODE_INPUT,
         .pull_up_en   = GPIO_PULLUP_DISABLE,
@@ -49,8 +54,10 @@ void platform_init(void)
     /* Start with NSS high, RESET high, LED off, antenna switch idle (both low) */
     gpio_set_level(PIN_SX1262_NSS,   1);
     gpio_set_level(PIN_SX1262_RESET, 1);
+#if RIVR_RFSWITCH_ENABLE
     gpio_set_level(PIN_SX1262_RXEN,  0);
     gpio_set_level(PIN_SX1262_TXEN,  0);
+#endif
     gpio_set_level(PIN_LED_STATUS,   0);
 
     /* ── VSPI bus ── */
@@ -134,8 +141,12 @@ void platform_sx1262_reset(void)
  */
 void platform_sx1262_set_rxen(bool enable)
 {
+#if RIVR_RFSWITCH_ENABLE
     gpio_set_level(PIN_SX1262_RXEN, enable ? 1 : 0);
     gpio_set_level(PIN_SX1262_TXEN, enable ? 0 : 1);
+#else
+    (void)enable;   /* SX1276 / boards without external RF switch */
+#endif
 }
 
 /* ── LED ─────────────────────────────────────────────────────────────────── */

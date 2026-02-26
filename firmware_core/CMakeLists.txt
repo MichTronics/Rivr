@@ -4,12 +4,23 @@
 # Sources are in firmware_core/ (hardware layer) and rivr_layer/ (RIVR glue).
 # Include dirs are anchored at the project root: #include "firmware_core/xxx.h"
 
+# Select radio driver at CMake configure time.
+# Pass  -DRIVR_RADIO_SX1276=1  via board_build.cmake_extra_args in platformio.ini
+# to compile radio_sx1276.c instead of the default radio_sx1262.c.
+if(RIVR_RADIO_SX1276)
+    set(_RADIO_SRC "radio_sx1276.c")
+    message(STATUS "RIVR: using SX1276 driver (radio_sx1276.c)")
+else()
+    set(_RADIO_SRC "radio_sx1262.c")
+    message(STATUS "RIVR: using SX1262 driver (radio_sx1262.c)")
+endif()
+
 idf_component_register(
     SRCS
         "main.c"
         "platform_esp32.c"
         "display/display.c"
-        "radio_sx1262.c"
+        ${_RADIO_SRC}
         "timebase.c"
         "dutycycle.c"
         "protocol.c"
