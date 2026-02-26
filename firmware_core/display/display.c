@@ -252,14 +252,30 @@ static void ssd1306_flush(void)
     return;
 
 flush_err:
-    /* Reset the I2C bus first — driver may be in INVALID_STATE after a timeout. */
+    /* Level-1 recovery: reset the I2C master driver state.
+     * This clears any stuck bus condition or driver state-machine error.
+     * After a high-power TX event (E22 +30 dBm) the supply can glitch
+     * enough to desync the I2C driver.                                    */
     i2c_master_bus_reset(s_bus);
     s_flush_fail_cnt++;
     ESP_LOGW(TAG, "ssd1306_flush error (%s) — fail %u/3",
              esp_err_to_name(err), (unsigned)s_flush_fail_cnt);
+
     if (s_flush_fail_cnt >= 3u) {
-        ESP_LOGE(TAG, "ssd1306_flush: 3 consecutive failures — disabling display");
-        s_ok = false;
+        /* Level-2 recovery: the SSD1306 may have lost its register state
+         * (page-address mode, charge pump, contrast) after a power glitch.
+         * Bus reset alone cannot restore it — a full init sequence is needed. */
+        vTaskDelay(pdMS_TO_TICKS(50));   /* let supply / bus settle */
+        esp_err_t rinit = ssd1306_hw_init();
+        if (rinit == ESP_OK) {
+            ESP_LOGI(TAG, "ssd1306 recovered after %u flush failures — display active",
+                     (unsigned)s_flush_fail_cnt);
+            s_flush_fail_cnt = 0u;       /* reset counter; display stays active */
+        } else {
+            ESP_LOGE(TAG, "ssd1306 re-init failed (%s) — display disabled",
+                     esp_err_to_name(rinit));
+            s_ok = false;                /* only disable if reinit also fails */
+        }
     }
 }
 
