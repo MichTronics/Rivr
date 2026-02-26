@@ -14,7 +14,7 @@ use alloc::{string::String, vec::Vec, format};
 
 use super::bounded::BoundedVec;
 use super::event::Event;
-use super::value::Value;
+use super::value::{Value, StrBuf};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Identifiers and policies
@@ -71,6 +71,10 @@ pub enum NodeKind {
 
     // ── Text / filter ──────────────────────────────────────────────────────
     MapUpper,
+    /// Lowercase all `Str` payloads (ASCII).
+    MapLower,
+    /// Strip leading and trailing ASCII whitespace from `Str` payloads.
+    MapTrim,
     FilterNonempty,
     /// Pass only events whose `Value::kind_tag()` equals `kind`.
     /// `kind == "*"` passes everything.
@@ -84,6 +88,12 @@ pub enum NodeKind {
 
     // ── Aggregation ────────────────────────────────────────────────────────
     FoldCount { count: u64 },
+    /// Running sum of `Int` payloads.  Emits the accumulated total.
+    /// Non-integer events contribute 0 (not dropped).
+    FoldSum { sum: i64 },
+    /// Last-value latch.  Emits the most recently received `Value` on every
+    /// event.  Before the first event it emits `Value::Unit`.
+    FoldLast { last: Option<Value> },
 
     // ── Tick-domain operators (canonical) ──────────────────────────────────
     /// Tumbling window keyed on `event.stamp.tick`.
@@ -233,6 +243,18 @@ impl Node {
                 let v = if let Value::Str(s) = ev.v { Value::Str(s.to_ascii_uppercase()) } else { ev.v };
                 vec![Event { v, ..ev }]
             }
+            NodeKind::MapLower => {
+                let v = if let Value::Str(s) = ev.v { Value::Str(s.to_ascii_lowercase()) } else { ev.v };
+                vec![Event { v, ..ev }]
+            }
+            NodeKind::MapTrim => {
+                let v = if let Value::Str(s) = ev.v {
+                    // AsRef<str> is ambiguous when StrBuf == String; cast through &str explicitly.
+                    let trimmed: &str = (&s as &dyn core::ops::Deref<Target = str>).trim();
+                    Value::Str(StrBuf::from(trimmed))
+                } else { ev.v };
+                vec![Event { v, ..ev }]
+            }
             NodeKind::FilterNonempty => {
                 let keep = match &ev.v {
                     Value::Str(s) => !s.trim().is_empty(),
@@ -266,6 +288,20 @@ impl Node {
                 *count += 1;
                 let n = *count;
                 vec![Event::new(ev.stamp, Value::Int(n as i64))]
+            }
+
+            // ── fold.sum ──────────────────────────────────────────────────
+            NodeKind::FoldSum { sum } => {
+                if let Value::Int(n) = ev.v { *sum += n; }
+                let s = *sum;
+                vec![Event::new(ev.stamp, Value::Int(s))]
+            }
+
+            // ── fold.last ─────────────────────────────────────────────────
+            NodeKind::FoldLast { last } => {
+                let out_val = last.clone().unwrap_or(Value::Unit);
+                *last = Some(ev.v);
+                vec![Event::new(ev.stamp, out_val)]
             }
 
             // ── window.ticks ──────────────────────────────────────────────

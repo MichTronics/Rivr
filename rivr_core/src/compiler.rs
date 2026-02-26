@@ -11,6 +11,8 @@
 //!   in the runtime.
 //! - `budget.airtime(window_ticks, duty)` compiles to `NodeKind::AirtimeBudget`.
 //! - `filter.kind("TAG")` compiles to `NodeKind::FilterKind`.
+//! - `map.lower()`, `map.trim()` compile to `NodeKind::MapLower / MapTrim`.
+//! - `fold.sum()`, `fold.last()` compile to `NodeKind::FoldSum / FoldLast`.
 //! - Static type-check pass validates sources, clocks, and emit bindings.
 
 #[cfg(not(feature = "std"))]
@@ -96,8 +98,12 @@ impl Compiler {
     fn compile_op(&mut self, op: &PipeOp) -> (String, NodeKind) {
         match op {
             PipeOp::MapUpper       => ("map.upper".into(),      NodeKind::MapUpper),
+            PipeOp::MapLower       => ("map.lower".into(),      NodeKind::MapLower),
+            PipeOp::MapTrim        => ("map.trim".into(),       NodeKind::MapTrim),
             PipeOp::FilterNonempty => ("filter.nonempty".into(), NodeKind::FilterNonempty),
             PipeOp::FoldCount      => ("fold.count".into(),      NodeKind::FoldCount { count: 0 }),
+            PipeOp::FoldSum        => ("fold.sum".into(),        NodeKind::FoldSum   { sum: 0 }),
+            PipeOp::FoldLast       => ("fold.last".into(),       NodeKind::FoldLast  { last: None }),
 
             PipeOp::FilterKind(k)  => (
                 format!("filter.kind({})", k),

@@ -113,6 +113,72 @@ bool rivr_nvs_store_program(const char *src)
     return true;
 }
 
+/* ── NVS identity storage ────────────────────────────────────────────────── */
+
+#define RIVR_NVS_KEY_CALLSIGN  "callsign"
+#define RIVR_NVS_KEY_NETID     "netid"
+
+void rivr_nvs_load_identity(void)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(RIVR_NVS_NAMESPACE, NVS_READONLY, &h);
+    if (err != ESP_OK) return;  /* NVS not yet provisioned — keep compile-time defaults */
+
+    /* Callsign: stored as NUL-terminated string, max 11 chars + NUL */
+    char cs[12];
+    size_t len = sizeof(cs);
+    if (nvs_get_str(h, RIVR_NVS_KEY_CALLSIGN, cs, &len) == ESP_OK && len > 1u) {
+        strncpy(g_callsign, cs, sizeof(g_callsign) - 1u);
+        g_callsign[sizeof(g_callsign) - 1u] = '\0';
+        ESP_LOGI(TAG, "NVS callsign loaded: %s", g_callsign);
+    }
+
+    /* Net ID: stored as 16-bit unsigned integer */
+    uint16_t nid = 0u;
+    if (nvs_get_u16(h, RIVR_NVS_KEY_NETID, &nid) == ESP_OK) {
+        g_net_id = nid;
+        ESP_LOGI(TAG, "NVS net_id loaded: 0x%04X", (unsigned)g_net_id);
+    }
+
+    nvs_close(h);
+}
+
+bool rivr_nvs_store_identity(const char *callsign, uint16_t net_id)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(RIVR_NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open (identity) failed: %d", (int)err);
+        return false;
+    }
+
+    bool ok = true;
+    if (callsign && callsign[0] != '\0') {
+        err = nvs_set_str(h, RIVR_NVS_KEY_CALLSIGN, callsign);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "NVS set callsign failed: %d", (int)err);
+            ok = false;
+        }
+    }
+
+    err = nvs_set_u16(h, RIVR_NVS_KEY_NETID, net_id);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS set netid failed: %d", (int)err);
+        ok = false;
+    }
+
+    if (ok) { err = nvs_commit(h); }
+    nvs_close(h);
+
+    if (ok && err == ESP_OK) {
+        ESP_LOGI(TAG, "NVS identity stored: %s / 0x%04X",
+                 callsign ? callsign : "(unchanged)", (unsigned)net_id);
+        return true;
+    }
+    ESP_LOGE(TAG, "NVS identity commit failed: %d", (int)err);
+    return false;
+}
+
 /* u64 trampoline: rivr_foreach_timer_source gives uint64_t; sources API uses uint32_t */
 static void s_timer_reg_cb(const char *name, uint64_t interval_ms)
 {

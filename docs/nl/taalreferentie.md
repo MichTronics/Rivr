@@ -72,6 +72,8 @@ source beacon_tick = timer(30000);  // vuurt elke 30 s, klok 0
 | Operator | Beschrijving |
 |---|---|
 | `map.upper()` | Converteer `Str`-payload naar ASCII-hoofdletters |
+| `map.lower()` | Converteer `Str`-payload naar ASCII-kleine letters |
+| `map.trim()` | Verwijder voor- en achterliggende ASCII-witruimte van `Str`-payload |
 | `filter.nonempty()` | Gooi events met lege of spatie-only `Str`-payload weg |
 
 ### Filteren
@@ -97,7 +99,9 @@ Pakket-type constanten voor `filter.pkt_type`:
 
 | Operator | Beschrijving |
 |---|---|
-| `fold.count()` | Vervang elk event door een lopende integerteller |
+| `fold.count()` | Vervang elk event door een lopende integerteller (start bij 1) |
+| `fold.sum()` | Vervang elk event door de lopende som van alle `Int`-payloads |
+| `fold.last()` | Zend de waarde van het *vorige* event (stuurt `Unit` vóór het eerste event) |
 
 ### Vensters (ms-domein, klok 0)
 
@@ -238,6 +242,7 @@ source lora = lora;
 
 let beide = merge(usb, lora)
   |> map.upper()
+  |> map.trim()
   |> filter.nonempty();
 
 emit { io.usb.print(beide); }

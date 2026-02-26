@@ -72,6 +72,8 @@ source beacon_tick = timer(30000); // fires every 30 s, clock 0
 | Operator | Description |
 |---|---|
 | `map.upper()` | Convert `Str` payload to ASCII uppercase |
+| `map.lower()` | Convert `Str` payload to ASCII lowercase |
+| `map.trim()` | Strip leading and trailing ASCII whitespace from `Str` payload |
 | `filter.nonempty()` | Drop events with empty or whitespace-only `Str` payload |
 
 ### Filtering
@@ -97,7 +99,25 @@ Packet type constants for `filter.pkt_type`:
 
 | Operator | Description |
 |---|---|
-| `fold.count()` | Replace each event with a running integer count |
+| `fold.count()` | Replace each event with a running integer count (starts at 1) |
+| `fold.sum()` | Replace each event with the running sum of all `Int` payloads seen so far |
+| `fold.last()` | Emit the value from the *previous* event (emits `Unit` before the first event) |
+
+**`fold.sum` example** — count bytes received:
+
+```rivr
+source rf @lmp = rf;
+let bytes = rf |> fold.sum();
+emit { io.usb.print(bytes); }
+```
+
+**`fold.last` example** — always expose the most recent sensor reading:
+
+```rivr
+source sensor = programmatic;
+let reading = sensor |> fold.last();   // re-emits previous value each tick
+emit { io.usb.print(reading); }
+```
 
 ### Windowing (ms-domain, clock 0)
 
@@ -247,6 +267,7 @@ source lora = lora;
 
 let both = merge(usb, lora)
   |> map.upper()
+  |> map.trim()
   |> filter.nonempty();
 
 emit { io.usb.print(both); }
@@ -273,10 +294,14 @@ emit { io.usb.print(both); }
 |---|---|---|
 | `Source` | 0x00 | source pass-through |
 | `MapUpper` | 0x10 | `map.upper()` |
+| `MapLower` | 0x14 | `map.lower()` |
+| `MapTrim` | 0x15 | `map.trim()` |
 | `FilterNonempty` | 0x11 | `filter.nonempty()` |
 | `FilterKind` | 0x12 | `filter.kind("K")` |
 | `FilterPktType` | 0x13 | `filter.pkt_type(N)` |
 | `FoldCount` | 0x20 | `fold.count()` |
+| `FoldSum` | 0x21 | `fold.sum()` |
+| `FoldLast` | 0x22 | `fold.last()` |
 | `WindowTicks` | 0x30 | `window.ticks(N)` |
 | `ThrottleTicks` | 0x31 | `throttle.ticks(N)` |
 | `DelayTicks` | 0x32 | `delay.ticks(N)` |

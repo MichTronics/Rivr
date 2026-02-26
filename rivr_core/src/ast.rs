@@ -5,6 +5,8 @@
 //! - Tick-domain operators (`window.ticks`, `delay.ticks`, `throttle.ticks`)
 //! - `budget.airtime` – radio duty-cycle limiter (unique to RIVR)
 //! - `filter.kind`    – payload-type discriminator for radio frames
+//! - `map.lower`, `map.trim` – string normalisation transforms
+//! - `fold.sum`, `fold.last` – stateful aggregation operators
 
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, vec::Vec};
@@ -42,6 +44,10 @@ pub enum PipeOp {
     // ── Text / filter ───────────────────────────────────────────────────
     /// Uppercase all `Str` payloads.
     MapUpper,
+    /// Lowercase all `Str` payloads.
+    MapLower,
+    /// Strip leading and trailing ASCII whitespace from `Str` payloads.
+    MapTrim,
     /// Drop events whose `Str` value is empty/whitespace.
     FilterNonempty,
     /// Drop events not matching the given kind tag.
@@ -54,6 +60,15 @@ pub enum PipeOp {
     // ── Aggregation ─────────────────────────────────────────────────────
     /// Running event counter; emits an `Int` on every event.
     FoldCount,
+    /// Running sum of `Int` payloads; emits the accumulated total on every event.
+    /// Non-integer events are treated as zero (not dropped).
+    FoldSum,
+    /// Stateful last-value holder; re-emits the most recently seen event value
+    /// on every incoming event.  Useful as a "current reading" latch:
+    /// ```rivr
+    /// let latest = sensor |> fold.last();
+    /// ```
+    FoldLast,
 
     // ── Time-domain (millisecond API – for wall-clock-aware host use) ────
     /// Tumbling window of `N` milliseconds  (host alias: maps to ticks).

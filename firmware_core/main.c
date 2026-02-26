@@ -494,11 +494,14 @@ void app_main(void)
 #endif
 
     /* ── RIVR engine init ── */
-    /* Publish identity globals before init so beacon_sink_cb and NVS helpers
+    /* Apply compile-time identity defaults first, then override from NVS so
+       nodes can be provisioned in the field without reflashing.
+       Publish identity globals before init so beacon_sink_cb and NVS helpers
        can read callsign and net_id from the moment the engine starts. */
     g_net_id = (uint16_t)RIVR_NET_ID;
     strncpy(g_callsign, RIVR_CALLSIGN, sizeof(g_callsign) - 1u);
     g_callsign[sizeof(g_callsign) - 1u] = '\0';
+    rivr_nvs_load_identity();   /* NVS values silently override compile-time defaults */
     rivr_embed_init();
 
 #if RIVR_ROLE_CLIENT
@@ -511,8 +514,8 @@ void app_main(void)
         display_stats_t boot_stats;
         memset(&boot_stats, 0, sizeof(boot_stats));
         boot_stats.node_id = g_my_node_id;
-        boot_stats.net_id  = (uint16_t)RIVR_NET_ID;
-        strncpy(boot_stats.callsign, RIVR_CALLSIGN, sizeof(boot_stats.callsign) - 1u);
+        boot_stats.net_id  = g_net_id;
+        strncpy(boot_stats.callsign, g_callsign, sizeof(boot_stats.callsign) - 1u);
 #ifndef RIVR_SIM_MODE
         display_task_start(&boot_stats);
 #endif

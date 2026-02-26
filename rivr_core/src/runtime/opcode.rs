@@ -60,11 +60,20 @@ pub enum OpCode {
 
     // ── Text / filter ────────────────────────────────────────────────────
     MapUpper         = 0x10,
+    /// map.lower() — ASCII lowercase
+    MapLower         = 0x14,
+    /// map.trim()  — strip leading/trailing ASCII whitespace
+    MapTrim          = 0x15,
     FilterNonempty   = 0x11,
-    FilterKind       = 0x12,    /// filter.pkt_type(N) — inspect byte [3] of Value::Bytes (binary header)
+    FilterKind       = 0x12,
+    /// filter.pkt_type(N) — inspect byte [3] of Value::Bytes (binary header)
     FilterPktType    = 0x13,
     // ── Aggregation ──────────────────────────────────────────────────────
     FoldCount        = 0x20,
+    /// fold.sum() — running sum of Int payloads
+    FoldSum          = 0x21,
+    /// fold.last() — emit the most recently seen value
+    FoldLast         = 0x22,
 
     // ── Tick-domain ──────────────────────────────────────────────────────
     WindowTicks      = 0x30,
@@ -95,10 +104,14 @@ impl OpCode {
         match self {
             OpCode::Source        => "source",
             OpCode::MapUpper      => "map.upper",
+            OpCode::MapLower      => "map.lower",
+            OpCode::MapTrim       => "map.trim",
             OpCode::FilterNonempty=> "filter.nonempty",
             OpCode::FilterKind    => "filter.kind",
             OpCode::FilterPktType => "filter.pkt_type",
             OpCode::FoldCount     => "fold.count",
+            OpCode::FoldSum       => "fold.sum",
+            OpCode::FoldLast      => "fold.last",
             OpCode::WindowTicks   => "window.ticks",
             OpCode::ThrottleTicks => "throttle.ticks",
             OpCode::DelayTicks    => "delay.ticks",
@@ -147,10 +160,14 @@ impl NodeKind {
         match self {
             NodeKind::Source { .. }        => OpCode::Source,
             NodeKind::MapUpper             => OpCode::MapUpper,
+            NodeKind::MapLower             => OpCode::MapLower,
+            NodeKind::MapTrim              => OpCode::MapTrim,
             NodeKind::FilterNonempty       => OpCode::FilterNonempty,
             NodeKind::FilterKind { .. }    => OpCode::FilterKind,
             NodeKind::FilterPktType { .. } => OpCode::FilterPktType,
             NodeKind::FoldCount { .. }     => OpCode::FoldCount,
+            NodeKind::FoldSum { .. }       => OpCode::FoldSum,
+            NodeKind::FoldLast { .. }      => OpCode::FoldLast,
             NodeKind::WindowTicks { .. }   => OpCode::WindowTicks,
             NodeKind::ThrottleTicks { .. } => OpCode::ThrottleTicks,
             NodeKind::DelayTicks { .. }    => OpCode::DelayTicks,

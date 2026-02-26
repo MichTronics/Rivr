@@ -247,6 +247,30 @@ bool rivr_embed_reload(void);
  */
 bool rivr_nvs_store_program(const char *src);
 
+/**
+ * @brief Load callsign and net_id from NVS into g_callsign / g_net_id.
+ *
+ * Call once during boot AFTER setting the compile-time defaults but BEFORE
+ * rivr_embed_init().  NVS values silently override the compile-time macros
+ * RIVR_CALLSIGN / RIVR_NET_ID so nodes can be provisioned in the field
+ * without reflashing.
+ *
+ * If the NVS namespace or the individual keys do not exist (fresh chip or
+ * unused partition) the function returns without modifying the globals.
+ */
+void rivr_nvs_load_identity(void);
+
+/**
+ * @brief Persist callsign and net_id to NVS and update the live globals.
+ *
+ * @param callsign  NUL-terminated string, 1–11 characters.  Pass NULL or ""
+ *                  to leave the stored callsign unchanged.
+ * @param net_id    16-bit network discriminator to store.
+ * @return true on success, false if NVS write fails (globals are still
+ *         updated in RAM for the current session).
+ */
+bool rivr_nvs_store_identity(const char *callsign, uint16_t net_id);
+
 /** Print engine diagnostics to the UART log channel. */
 void rivr_embed_print_stats(void);
 

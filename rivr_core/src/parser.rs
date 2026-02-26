@@ -5,6 +5,7 @@
 //! - `window.ticks(N)`, `delay.ticks(N)`, `throttle.ticks(N)`
 //! - `budget.airtime(WINDOW_TICKS, DUTY)`
 //! - `filter.kind("TAG")`
+//! - `map.lower()`, `map.trim()`, `fold.sum()`, `fold.last()`
 
 #[cfg(not(feature = "std"))]
 use alloc::string::{String, ToString};
@@ -195,8 +196,12 @@ impl<'s> Parser<'s> {
 
         match name.as_str() {
             "map.upper"       => { self.expect("()")?; Ok(PipeOp::MapUpper) }
+            "map.lower"       => { self.expect("()")?; Ok(PipeOp::MapLower) }
+            "map.trim"        => { self.expect("()")?; Ok(PipeOp::MapTrim) }
             "filter.nonempty" => { self.expect("()")?; Ok(PipeOp::FilterNonempty) }
             "fold.count"      => { self.expect("()")?; Ok(PipeOp::FoldCount) }
+            "fold.sum"        => { self.expect("()")?; Ok(PipeOp::FoldSum) }
+            "fold.last"       => { self.expect("()")?; Ok(PipeOp::FoldLast) }
 
             "filter.kind" => {
                 self.expect("(")?;

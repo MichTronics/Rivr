@@ -1,6 +1,6 @@
 /**
  * @file  display/display.c
- * @brief Non-blocking SSD1306 128×64 I2C OLED driver — 5-page rotating status.
+ * @brief Non-blocking SSD1306 128×64 I2C OLED driver — 7-page rotating status.
  *
  * ARCHITECTURE
  * ────────────

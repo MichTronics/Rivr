@@ -26,9 +26,11 @@
  *
  * COMMANDS
  * ────────
- *   chat <message>  broadcast a PKT_CHAT frame to all mesh nodes
- *   id              print this node's 32-bit identifier
- *   help            print command list
+ *   chat <message>        broadcast a PKT_CHAT frame to all mesh nodes
+ *   id                    print this node's 32-bit ID, callsign and net ID
+ *   set callsign <CS>     set and persist callsign (max 11 chars, A-Z a-z 0-9 -)
+ *   set netid <HEX>       set and persist network ID (hex 0..FFFF)
+ *   help                  print command list
  *
  * TX PATH
  * ───────
@@ -51,6 +53,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdlib.h>   /* strtoul */
 
 #include "driver/uart.h"
 #include "esp_log.h"
@@ -111,10 +114,12 @@ void rivr_cli_init(void)
            "╔══════════════════════════════════╗\r\n"
            "║   Rivr Client Node — Serial CLI  ║\r\n"
            "╚══════════════════════════════════╝\r\n"
-           "Node ID : 0x%08lX\r\n"
-           "Net ID  : 0x%04X\r\n"
-           "Commands: chat <msg> | id | help\r\n",
+           "Node ID  : 0x%08lX\r\n"
+           "Callsign : %s\r\n"
+           "Net ID   : 0x%04X\r\n"
+           "Commands : chat <msg> | id | set callsign <CS> | set netid <HEX> | help\r\n",
            (unsigned long)g_my_node_id,
+           g_callsign,
            (unsigned)g_net_id);
     cli_print_prompt();
 }
@@ -216,17 +221,79 @@ static void cli_handle_line(void)
     /* ── "help" ── */
     if (strncmp(p, "help", 4u) == 0 && (p[4] == '\0' || p[4] == ' ')) {
         printf("Commands:\r\n"
-               "  chat <message>   broadcast text to the mesh\r\n"
-               "  id               print this node's 32-bit ID\r\n"
-               "  help             show this list\r\n");
+               "  chat <message>        broadcast text to the mesh\r\n"
+               "  id                    print node ID, callsign and net ID\r\n"
+               "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
+               "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
+               "  help                  show this list\r\n");
         fflush(stdout);
         return;
     }
 
     /* ── "id" ── */
     if (strncmp(p, "id", 2u) == 0 && (p[2] == '\0' || p[2] == ' ')) {
-        printf("Node ID : 0x%08lX  Net ID : 0x%04X\r\n",
-               (unsigned long)g_my_node_id, (unsigned)g_net_id);
+        printf("Node ID  : 0x%08lX\r\nCallsign : %s\r\nNet ID   : 0x%04X\r\n",
+               (unsigned long)g_my_node_id, g_callsign, (unsigned)g_net_id);
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "set callsign <CS>" ── */
+    if (strncmp(p, "set callsign", 12u) == 0 && (p[12] == ' ' || p[12] == '\0')) {
+        char *arg = p + 12;
+        while (*arg == ' ') { arg++; }
+        /* Strip trailing whitespace */
+        size_t clen = strlen(arg);
+        while (clen > 0u && arg[clen - 1u] == ' ') { clen--; }
+        arg[clen] = '\0';
+        if (clen == 0u || clen > 11u) {
+            printf("ERR: callsign must be 1-11 characters\r\n");
+            fflush(stdout);
+            return;
+        }
+        /* Validate: A-Z a-z 0-9 dash only */
+        for (size_t i = 0u; i < clen; i++) {
+            char c = arg[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                  (c >= '0' && c <= '9') || c == '-')) {
+                printf("ERR: callsign may only contain A-Z a-z 0-9 -\r\n");
+                fflush(stdout);
+                return;
+            }
+        }
+        strncpy(g_callsign, arg, sizeof(g_callsign) - 1u);
+        g_callsign[sizeof(g_callsign) - 1u] = '\0';
+        if (!rivr_nvs_store_identity(g_callsign, g_net_id)) {
+            printf("WARN: NVS write failed – callsign updated for this session only\r\n");
+        } else {
+            printf("OK callsign set to %s\r\n", g_callsign);
+        }
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "set netid <HEX>" ── */
+    if (strncmp(p, "set netid", 9u) == 0 && (p[9] == ' ' || p[9] == '\0')) {
+        char *arg = p + 9;
+        while (*arg == ' ') { arg++; }
+        if (*arg == '\0') {
+            printf("ERR: usage: set netid <hex>\r\n");
+            fflush(stdout);
+            return;
+        }
+        char *end = NULL;
+        unsigned long nid = strtoul(arg, &end, 16);
+        if (end == arg || nid > 0xFFFFu) {
+            printf("ERR: net ID must be a hex value 0..FFFF\r\n");
+            fflush(stdout);
+            return;
+        }
+        g_net_id = (uint16_t)nid;
+        if (!rivr_nvs_store_identity(g_callsign, g_net_id)) {
+            printf("WARN: NVS write failed – net ID updated for this session only\r\n");
+        } else {
+            printf("OK net ID set to 0x%04X\r\n", (unsigned)g_net_id);
+        }
         fflush(stdout);
         return;
     }
