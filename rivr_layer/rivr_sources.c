@@ -294,6 +294,18 @@ uint32_t sources_rf_rx_drain(void)
         /* ── 7. Phase-A relay: re-encode modified header + enqueue with deterministic jitter ── */
         maybe_relay:
         if (fwd == RIVR_FWD_FORWARD) {
+#if RIVR_ROLE_CLIENT
+            /* Client nodes do not relay PKT_CHAT or PKT_DATA — those frames
+             * originate here or are consumed here, never re-broadcast.
+             * Control frames (BEACON, ROUTE_REQ, ROUTE_RPL, ACK, PROG_PUSH)
+             * are relayed normally so the mesh routing layer stays intact. */
+            if (fwd_hdr.pkt_type == PKT_CHAT || fwd_hdr.pkt_type == PKT_DATA) {
+                ESP_LOGD(TAG,
+                    "rf_rx: client no-relay pkt_type=%u src=0x%08lx",
+                    fwd_hdr.pkt_type, (unsigned long)fwd_hdr.src_id);
+                goto skip_enqueue_client;
+            }
+#endif /* RIVR_ROLE_CLIENT */
             /* routing_forward_delay_ms() gives a deterministic delay in
              * [0..FORWARD_JITTER_MAX_MS] seeded from (src_id, seq, pkt_type).
              * Storing due_ms in the request lets tx_drain_loop() hold the
@@ -351,6 +363,9 @@ uint32_t sources_rf_rx_drain(void)
 
 #if RIVR_FABRIC_REPEATER
             skip_enqueue:;
+#endif
+#if RIVR_ROLE_CLIENT
+            skip_enqueue_client:;
 #endif
         } else if (fwd == RIVR_FWD_DROP_TTL) {
             ESP_LOGD(TAG, "rf_rx: TTL=0 src=0x%08lx – not relayed",

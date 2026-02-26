@@ -166,6 +166,23 @@ Or add `-DRIVR_RF_FREQ_HZ=...` as the first line of the `build_flags` in
 `platformio.ini` before the `-include` line — the `#ifndef` guard in the
 variant header will leave it untouched.
 
+### 5 — Client node (E22-900M30S/M33S, chat-first)
+
+A lightweight client variant for nodes that **send and receive** `PKT_CHAT`
+but do not act as relay infrastructure.  `PKT_CHAT` and `PKT_DATA` frames
+received from other nodes are delivered to the RIVR engine locally and NOT
+re-broadcast.  Control frames (`BEACON`, `ROUTE_REQ/RPL`, `ACK`, `PROG_PUSH`)
+are still relayed normally so the mesh routing layer stays intact.
+Rivr Fabric is completely disabled (`RIVR_FABRIC_REPEATER=0`).
+
+```bash
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900
+```
+
+Same default pin wiring and frequency override pattern as the repeater variant
+above.  Variant header: `variants/esp32devkit_e22_900_client/config.h`.
+
 ---
 
 ## Project Layout
