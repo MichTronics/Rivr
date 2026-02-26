@@ -4,6 +4,13 @@
  *
  * See rivr_fabric.h for the full design description.
  *
+ * FUTURE:
+ * - Optionally embed fabric score into BEACON payload for neighbour-aware
+ *   load sharing (do not implement until routing is stable).
+ * - Allow neighbour score comparison to prefer less-congested relay paths.
+ * - Add CAD busy-channel ratio as an additional congestion input for more
+ *   accurate detection on very dense networks.
+ *
  * ── IMPLEMENTATION NOTES ────────────────────────────────────────────────────
  *
  * Sliding window
@@ -89,8 +96,14 @@ typedef struct {
 
 #if RIVR_FABRIC_REPEATER
 static fabric_state_t s_fab;
-static uint32_t s_relay_drop_total  = 0u;  /**< lifetime DROP  counter */
-static uint32_t s_relay_delay_total = 0u;  /**< lifetime DELAY counter */
+static uint32_t s_relay_drop_total  = 0u;  /**< lifetime relay DROP  counter */
+static uint32_t s_relay_delay_total = 0u;  /**< lifetime relay DELAY counter */
+static uint32_t s_fabric_relay_total   = 0u;  /**< all CHAT/DATA relay decisions */
+static uint32_t s_fabric_tx_blocked_dc = 0u;  /**< dutycycle blocks (lifetime)  */
+static uint32_t s_fabric_tx_fail       = 0u;  /**< TX failures (lifetime)        */
+static uint32_t s_fabric_tx_ok         = 0u;  /**< TX successes (lifetime)       */
+static uint32_t s_fabric_rx_total      = 0u;  /**< decoded RX frames (lifetime)  */
+static uint8_t  s_fabric_last_score    = 0u;  /**< score from last decide call   */
 #endif
 
 /* ── Helpers (only emitted in repeater builds) ──────────────────────────── */
@@ -180,6 +193,7 @@ void rivr_fabric_on_rx(uint32_t now_ms, int8_t rssi_dbm, uint8_t len)
 #if RIVR_FABRIC_REPEATER
     (void)rssi_dbm; (void)len;
     fabric_current(now_ms)->rx_count++;
+    s_fabric_rx_total++;
 #else
     (void)now_ms; (void)rssi_dbm; (void)len;
 #endif
@@ -200,6 +214,7 @@ void rivr_fabric_on_tx_ok(uint32_t now_ms, uint32_t toa_us)
 #if RIVR_FABRIC_REPEATER
     (void)toa_us;
     fabric_current(now_ms)->tx_ok_count++;
+    s_fabric_tx_ok++;
 #else
     (void)now_ms; (void)toa_us;
 #endif
@@ -210,6 +225,7 @@ void rivr_fabric_on_tx_fail(uint32_t now_ms, uint32_t toa_us)
 #if RIVR_FABRIC_REPEATER
     (void)toa_us;
     fabric_current(now_ms)->tx_fail_count++;
+    s_fabric_tx_fail++;
 #else
     (void)now_ms; (void)toa_us;
 #endif
@@ -220,6 +236,7 @@ void rivr_fabric_on_tx_blocked_dc(uint32_t now_ms, uint32_t toa_us)
 #if RIVR_FABRIC_REPEATER
     (void)toa_us;
     fabric_current(now_ms)->tx_blocked_dc++;
+    s_fabric_tx_blocked_dc++;
 #else
     (void)now_ms; (void)toa_us;
 #endif
@@ -245,9 +262,24 @@ fabric_decision_t rivr_fabric_decide_relay(
         return FABRIC_SEND_NOW;
     }
 
+    s_fabric_relay_total++;           /* count every CHAT/DATA relay attempt */
     uint8_t score = fabric_score(now_ms);
+    s_fabric_last_score = score;
 
-    if (score >= 80u) {
+    /* Stability guard: at extreme saturation (score >= BLACKOUT_GUARD_SCORE)
+     * never fully DROP — convert to maximum delay to keep the mesh alive.
+     * Without this, a brief storm of DC blocks could silence the repeater
+     * entirely for the full 60-second window. */
+    if (score >= (uint8_t)RIVR_FABRIC_BLACKOUT_GUARD_SCORE) {
+        *out_extra_delay_ms = (uint32_t)RIVR_FABRIC_MAX_EXTRA_DELAY_MS;
+        ESP_LOGD(TAG_FABRIC,
+                 "guard delay pkt_type=%u src=0x%08lx score=%u (blackout guard)",
+                 pkt->pkt_type, (unsigned long)pkt->src_id, score);
+        s_relay_delay_total++;
+        return FABRIC_DELAY;
+    }
+
+    if (score >= (uint8_t)RIVR_FABRIC_DROP_THRESHOLD) {
         ESP_LOGD(TAG_FABRIC,
                  "drop relay pkt_type=%u src=0x%08lx score=%u",
                  pkt->pkt_type, (unsigned long)pkt->src_id, score);
@@ -255,9 +287,10 @@ fabric_decision_t rivr_fabric_decide_relay(
         return FABRIC_DROP;
     }
 
-    if (score >= 50u) {
-        uint32_t extra = 250u + (uint32_t)(score - 50u) * 10u;
-        if (extra > 1000u) extra = 1000u;
+    if (score >= (uint8_t)RIVR_FABRIC_DELAY_THRESHOLD) {
+        uint32_t extra = 250u + (uint32_t)(score - (uint8_t)RIVR_FABRIC_DELAY_THRESHOLD) * 10u;
+        if (extra > (uint32_t)RIVR_FABRIC_MAX_EXTRA_DELAY_MS)
+            extra = (uint32_t)RIVR_FABRIC_MAX_EXTRA_DELAY_MS;
         *out_extra_delay_ms = extra;
         ESP_LOGD(TAG_FABRIC,
                  "delay relay pkt_type=%u src=0x%08lx score=%u extra=%lu ms",
@@ -267,8 +300,8 @@ fabric_decision_t rivr_fabric_decide_relay(
         return FABRIC_DELAY;
     }
 
-    if (score >= 20u) {
-        uint32_t extra = (uint32_t)(score - 20u) * 10u;
+    if (score >= (uint8_t)RIVR_FABRIC_LIGHT_DELAY_THRESHOLD) {
+        uint32_t extra = (uint32_t)(score - (uint8_t)RIVR_FABRIC_LIGHT_DELAY_THRESHOLD) * 10u;
         if (extra > 300u) extra = 300u;
         *out_extra_delay_ms = extra;
         ESP_LOGD(TAG_FABRIC,
@@ -307,3 +340,82 @@ void rivr_fabric_get_debug(uint32_t now_ms, fabric_debug_t *out)
     memset(out, 0, sizeof(*out));
 #endif
 }
+
+uint8_t rivr_fabric_get_score(void)
+{
+#if RIVR_FABRIC_REPEATER
+    return s_fabric_last_score;
+#else
+    return 0u;
+#endif
+}
+
+uint32_t rivr_fabric_get_relay_delayed(void)
+{
+#if RIVR_FABRIC_REPEATER
+    return s_relay_delay_total;
+#else
+    return 0u;
+#endif
+}
+
+uint32_t rivr_fabric_get_relay_dropped(void)
+{
+#if RIVR_FABRIC_REPEATER
+    return s_relay_drop_total;
+#else
+    return 0u;
+#endif
+}
+
+uint32_t rivr_fabric_get_relay_total(void)
+{
+#if RIVR_FABRIC_REPEATER
+    return s_fabric_relay_total;
+#else
+    return 0u;
+#endif
+}
+
+uint32_t rivr_fabric_get_tx_blocked(void)
+{
+#if RIVR_FABRIC_REPEATER
+    return s_fabric_tx_blocked_dc;
+#else
+    return 0u;
+#endif
+}
+
+uint32_t rivr_fabric_get_rx_total(void)
+{
+#if RIVR_FABRIC_REPEATER
+    return s_fabric_rx_total;
+#else
+    return 0u;
+#endif
+}
+
+/*
+ * ── Test plan (Scenarios A–F, repeater build only) ────────────────────────────
+ *
+ * 1) Under idle network — verify score remains near 0; [FAB] log shows
+ *    relay_total = 0, drop = 0, delay = 0.
+ *
+ * 2) Under sustained spam traffic (≥ 10 RX frames/s) — verify score rises;
+ *    relay CHAT/DATA enter DELAY band before DROP band.
+ *
+ * 3) When dutycycle blocks occur (≥ 2 blocks/s) — verify score rises sharply
+ *    (weight 25× per block vs 2× per RX frame).
+ *
+ * 4) Verify relay delay increases before drop kicks in:
+ *    score 20..49 → DELAY up to 300 ms
+ *    score 50..79 → DELAY up to RIVR_FABRIC_MAX_EXTRA_DELAY_MS
+ *    score 80..94 → DROP
+ *    score ≥ 95   → stability guard: DELAY (max) instead of DROP.
+ *
+ * 5) Control packets (ACK, BEACON, ROUTE_REQ/RPL, PROG_PUSH) — verify they
+ *    never appear in FABRIC delay/drop log lines.
+ *
+ * 6) Non-repeater build (RIVR_FABRIC_REPEATER=0) — verify all getters return 0
+ *    and decide_relay always returns FABRIC_SEND_NOW.
+ * ───────────────────────────────────────────────────────────────────────────── */

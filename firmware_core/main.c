@@ -525,6 +525,7 @@ void app_main(void)
     ESP_LOGI(TAG, "entering main loop");
 
     uint32_t last_stats_ms = 0;
+    uint32_t last_fabric_log_ms = 0;
     uint32_t loop_count    = 0;
     display_stats_t disp;       /* stats snapshot updated each iteration */
     memset(&disp, 0, sizeof(disp));
@@ -561,6 +562,21 @@ void app_main(void)
             ESP_LOGI(TAG, "  tx_drops             : %u", rb_drops(&rf_tx_queue));
             rivr_embed_print_stats();
         }
+
+        /* ─ 3b. Periodic Fabric metrics (repeater builds only) ─ */
+#if RIVR_FABRIC_REPEATER
+        if (now - last_fabric_log_ms >= 5000u) {
+            last_fabric_log_ms = now;
+            ESP_LOGI(TAG,
+                "[FAB] score=%u rx=%lu relay=%lu delay=%lu drop=%lu dc_block=%lu",
+                (unsigned)rivr_fabric_get_score(),
+                (unsigned long)rivr_fabric_get_rx_total(),
+                (unsigned long)rivr_fabric_get_relay_total(),
+                (unsigned long)rivr_fabric_get_relay_delayed(),
+                (unsigned long)rivr_fabric_get_relay_dropped(),
+                (unsigned long)rivr_fabric_get_tx_blocked());
+        }
+#endif /* RIVR_FABRIC_REPEATER */
 
         /* ─ 4. Publish display stats snapshot (task picks it up at its own pace) ─ */
 #ifndef RIVR_SIM_MODE

@@ -59,6 +59,38 @@ extern "C" {
 #  define RIVR_FABRIC_REPEATER 0
 #endif
 
+/* ── Tunable decision thresholds ─────────────────────────────────────────── *
+ *
+ * Override any value via -DRIVR_FABRIC_XXX=<n> in build_flags.
+ * All values are in the same 0..100 score space.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/** Score at which relay of CHAT/DATA is dropped (unless score >= 95). */
+#ifndef RIVR_FABRIC_DROP_THRESHOLD
+#  define RIVR_FABRIC_DROP_THRESHOLD        80
+#endif
+
+/** Score at which the heavy delay band activates (extra up to MAX_EXTRA_DELAY_MS). */
+#ifndef RIVR_FABRIC_DELAY_THRESHOLD
+#  define RIVR_FABRIC_DELAY_THRESHOLD       50
+#endif
+
+/** Score at which the light delay band activates (extra up to 300 ms). */
+#ifndef RIVR_FABRIC_LIGHT_DELAY_THRESHOLD
+#  define RIVR_FABRIC_LIGHT_DELAY_THRESHOLD 20
+#endif
+
+/** Maximum extra relay delay (ms) in the heavy delay band. */
+#ifndef RIVR_FABRIC_MAX_EXTRA_DELAY_MS
+#  define RIVR_FABRIC_MAX_EXTRA_DELAY_MS    1000
+#endif
+
+/** Stability guard: when score reaches this level, DROP is converted to MAX
+ *  DELAY to prevent total relay blackout.  Must be > DROP_THRESHOLD. */
+#ifndef RIVR_FABRIC_BLACKOUT_GUARD_SCORE
+#  define RIVR_FABRIC_BLACKOUT_GUARD_SCORE  95
+#endif
+
 /* ── Decision enum ───────────────────────────────────────────────────────── */
 typedef enum {
     FABRIC_SEND_NOW = 0,   /**< Forward immediately (or after base jitter)    */
@@ -131,6 +163,26 @@ fabric_decision_t rivr_fabric_decide_relay(
  * With RIVR_FABRIC_REPEATER=0 all fields in @p out are zero.
  */
 void rivr_fabric_get_debug(uint32_t now_ms, fabric_debug_t *out);
+
+/* ── Scalar getters (all return 0 when RIVR_FABRIC_REPEATER == 0) ─────────── */
+
+/** Last computed congestion score (0..100).  Updated every decide_relay call. */
+uint8_t  rivr_fabric_get_score(void);
+
+/** Lifetime count of relay decisions that added extra delay. */
+uint32_t rivr_fabric_get_relay_delayed(void);
+
+/** Lifetime count of relay decisions that suppressed the frame. */
+uint32_t rivr_fabric_get_relay_dropped(void);
+
+/** Lifetime count of calls to rivr_fabric_decide_relay() for CHAT/DATA. */
+uint32_t rivr_fabric_get_relay_total(void);
+
+/** Lifetime count of calls to rivr_fabric_on_tx_blocked_dc(). */
+uint32_t rivr_fabric_get_tx_blocked(void);
+
+/** Lifetime count of decoded inbound frames seen by the fabric. */
+uint32_t rivr_fabric_get_rx_total(void);
 
 #ifdef __cplusplus
 }
