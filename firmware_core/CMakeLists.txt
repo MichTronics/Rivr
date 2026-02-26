@@ -21,6 +21,7 @@ idf_component_register(
         "../rivr_layer/rivr_embed.c"
         "../rivr_layer/rivr_sinks.c"
         "../rivr_layer/rivr_sources.c"
+        "../rivr_layer/rivr_cli.c"
 
     INCLUDE_DIRS
         ".."    # project root – enables #include "firmware_core/xxx.h"

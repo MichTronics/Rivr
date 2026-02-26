@@ -58,6 +58,7 @@
 #include "firmware_core/rivr_fabric.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
+#include "rivr_layer/rivr_cli.h"
 #include "firmware_core/display/display.h"
 
 #define TAG              "MAIN"
@@ -500,6 +501,11 @@ void app_main(void)
     g_callsign[sizeof(g_callsign) - 1u] = '\0';
     rivr_embed_init();
 
+#if RIVR_ROLE_CLIENT
+    /* Start serial CLI — installs UART driver, prints boot banner.           */
+    rivr_cli_init();
+#endif
+
     /* ── Display task (spawns low-priority FreeRTOS task; never blocks main) ── */
     {
         display_stats_t boot_stats;
@@ -533,6 +539,12 @@ void app_main(void)
     disp.net_id = (uint16_t)RIVR_NET_ID;
 
     for (;;) {
+#if RIVR_ROLE_CLIENT
+        /* ─ CLI poll MUST be first — consumes UART0 bytes before rivr_tick()
+         * calls sources_cli_drain(), preventing any byte-ownership race.     */
+        rivr_cli_poll();
+#endif
+
         /* ─ 0. Service DIO1 events (RxDone / TxDone) ─
          * Must come BEFORE rivr_tick so any received frame is already in the
          * ring-buffer when RIVR drains it.  SPI is illegal from ISR context,

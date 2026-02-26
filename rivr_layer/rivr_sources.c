@@ -5,6 +5,7 @@
 
 #include "rivr_sources.h"
 #include "rivr_embed.h"
+#include "rivr_cli.h"
 #include <inttypes.h>   /* PRIu32 */
 #include "../firmware_core/platform_esp32.h"  /* UART_CLI_BAUD + pin defs */
 #include "../firmware_core/radio_sx1262.h"
@@ -308,6 +309,15 @@ uint32_t sources_rf_rx_drain(void)
                 ESP_LOGW(TAG, "rf_rx: inject failed code=%" PRIu32, rc.code);
             }
         }
+
+        /* ── 6b. Display received chat messages on the client serial console ── */
+#if RIVR_ROLE_CLIENT
+        if (pkt_hdr.pkt_type == PKT_CHAT
+                && payload_ptr != NULL
+                && pkt_hdr.payload_len > 0u) {
+            rivr_cli_on_chat_rx(pkt_hdr.src_id, payload_ptr, pkt_hdr.payload_len);
+        }
+#endif /* RIVR_ROLE_CLIENT */
 
         /* ── 7. Phase-A relay: re-encode modified header + enqueue with deterministic jitter ── */
         maybe_relay:
