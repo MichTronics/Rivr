@@ -309,13 +309,17 @@ bool radio_transmit(const rf_tx_request_t *req)
 
     platform_sx1262_wait_busy(10);
 
-    /* WriteBuffer: 0x0E + offset=0 + payload */
-    uint8_t tx_cmd[3 + RF_MAX_PAYLOAD_LEN];
+    /* WriteBuffer: 0x0E + offset=0 + payload
+     * NOTE: WriteBuffer takes [opcode][offset][data…] with NO NOP byte
+     * between offset and data — unlike ReadBuffer which needs one.
+     * A spurious 0x00 here would prepend a null byte to every TX frame,
+     * corrupting byte[0] of the RIVR magic and causing all receivers to
+     * reject the frame as "bad magic (foreign device?)". */
+    uint8_t tx_cmd[2 + RF_MAX_PAYLOAD_LEN];
     tx_cmd[0] = 0x0E;   /* WriteBuffer */
-    tx_cmd[1] = 0x00;   /* offset */
-    tx_cmd[2] = 0x00;   /* NOP */
-    memcpy(tx_cmd + 3, req->data, req->len);
-    platform_spi_transfer(tx_cmd, NULL, 3 + req->len);
+    tx_cmd[1] = 0x00;   /* offset into SX1262 TX ring buffer */
+    memcpy(tx_cmd + 2, req->data, req->len);
+    platform_spi_transfer(tx_cmd, NULL, 2 + req->len);
     platform_sx1262_wait_busy(5);
 
     /* SetStandby before TX — chip may still be in RX mode */
