@@ -55,6 +55,7 @@
 #include "firmware_core/routing.h"
 #include "firmware_core/route_cache.h"
 #include "firmware_core/pending_queue.h"
+#include "firmware_core/rivr_fabric.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
 #include "firmware_core/display/display.h"
@@ -377,6 +378,7 @@ static void tx_drain_loop(void)
            filtered the pipeline, but this is the final hardware guard) */
         if (!dutycycle_check(&g_dc, now_ms, req.toa_us)) {
             ESP_LOGW(TAG, "TX frame dropped by C duty-cycle gate (toa=%u us)", req.toa_us);
+            rivr_fabric_on_tx_blocked_dc(now_ms, req.toa_us);
             continue;
         }
 
@@ -423,17 +425,22 @@ static void tx_drain_loop(void)
                     req.len, req.toa_us);
             }
         }
+        rivr_fabric_on_tx_enqueued(now_ms, req.toa_us);
+        rivr_fabric_on_tx_ok(tb_millis(), req.toa_us);
         dutycycle_record(&g_dc, tb_millis(), req.toa_us);
 #else
         /* ── Real hardware TX path ──────────────────────────────────────── */
+        rivr_fabric_on_tx_enqueued(now_ms, req.toa_us);
         platform_led_on();
         bool tx_ok = radio_transmit(&req);
         platform_led_off();
 
         if (tx_ok) {
             dutycycle_record(&g_dc, tb_millis(), req.toa_us);
+            rivr_fabric_on_tx_ok(tb_millis(), req.toa_us);
             ESP_LOGD(TAG, "TX ok: %u bytes, toa=%u us", req.len, req.toa_us);
         } else {
+            rivr_fabric_on_tx_fail(tb_millis(), req.toa_us);
             ESP_LOGE(TAG, "TX failed");
         }
 #endif  /* RIVR_SIM_TX_PRINT */

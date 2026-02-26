@@ -16,6 +16,7 @@ idf_component_register(
         "routing.c"
         "route_cache.c"
         "pending_queue.c"
+        "rivr_fabric.c"
         # RIVR glue layer (relative to firmware_core/)
         "../rivr_layer/rivr_embed.c"
         "../rivr_layer/rivr_sinks.c"

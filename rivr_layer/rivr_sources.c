@@ -12,6 +12,7 @@
 #include "../firmware_core/timebase.h"
 #include "../firmware_core/routing.h"
 #include "../firmware_core/route_cache.h"
+#include "../firmware_core/rivr_fabric.h"
 #include "esp_log.h"
 #include <stdbool.h>
 #include <string.h>
@@ -301,6 +302,33 @@ uint32_t sources_rf_rx_drain(void)
             uint32_t delay_ms = routing_forward_delay_ms(
                 pkt_hdr.src_id, pkt_hdr.seq, pkt_hdr.pkt_type);
 
+            /* ── Fabric relay gate (repeater-only, CHAT/DATA only) ─────────────
+             * rivr_fabric_decide_relay() is a no-op (SEND_NOW) unless
+             * RIVR_FABRIC_REPEATER=1 was set at compile time AND the
+             * packet type is PKT_CHAT or PKT_DATA.  All other types
+             * (BEACON, ROUTE_REQ, ROUTE_RPL, ACK, PROG_PUSH) are always
+             * SEND_NOW per the guards inside rivr_fabric_decide_relay().   */
+#if RIVR_FABRIC_REPEATER
+            uint32_t fabric_extra_ms = 0u;
+            fabric_decision_t fab_dec = rivr_fabric_decide_relay(
+                &fwd_hdr, now_ms, toa_us, &fabric_extra_ms);
+            if (fab_dec == FABRIC_DROP) {
+                ESP_LOGD(TAG,
+                    "rf_rx: FABRIC drop relay pkt_type=%u src=0x%08lx",
+                    fwd_hdr.pkt_type, (unsigned long)fwd_hdr.src_id);
+                /* skip enqueue — frame relay suppressed by fabric */
+                goto skip_enqueue;
+            }
+            if (fab_dec == FABRIC_DELAY) {
+                delay_ms += fabric_extra_ms;
+                ESP_LOGD(TAG,
+                    "rf_rx: FABRIC delay relay pkt_type=%u src=0x%08lx "
+                    "extra=%lu ms",
+                    fwd_hdr.pkt_type, (unsigned long)fwd_hdr.src_id,
+                    (unsigned long)fabric_extra_ms);
+            }
+#endif /* RIVR_FABRIC_REPEATER */
+
             rf_tx_request_t fwd_req;
             memset(&fwd_req, 0, sizeof(fwd_req));
             int enc = protocol_encode(&fwd_hdr, payload_ptr,
@@ -320,6 +348,10 @@ uint32_t sources_rf_rx_drain(void)
                     ESP_LOGW(TAG, "rf_rx: relay tx_queue full – dropped");
                 }
             }
+
+#if RIVR_FABRIC_REPEATER
+            skip_enqueue:;
+#endif
         } else if (fwd == RIVR_FWD_DROP_TTL) {
             ESP_LOGD(TAG, "rf_rx: TTL=0 src=0x%08lx – not relayed",
                      (unsigned long)pkt_hdr.src_id);
