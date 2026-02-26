@@ -42,7 +42,25 @@ uint32_t sources_rf_rx_drain(void)
         rivr_pkt_hdr_t pkt_hdr;
         const uint8_t *payload_ptr = NULL;
         if (!protocol_decode(frame.data, frame.len, &pkt_hdr, &payload_ptr)) {
-            ESP_LOGW(TAG, "rf_rx: invalid frame (len=%u) – dropped", frame.len);
+            /* Diagnose failure reason so we can distinguish foreign LoRa
+             * devices (bad magic) from corrupted RIVR frames (CRC fail). */
+            const char *why;
+            if (frame.len < RIVR_PKT_MIN_FRAME) {
+                why = "too short";
+            } else {
+                uint16_t m = (uint16_t)(frame.data[0]
+                                       | ((uint16_t)frame.data[1] << 8));
+                if (m != RIVR_MAGIC) {
+                    why = "bad magic (foreign device?)";
+                } else {
+                    uint8_t pl   = frame.data[21];   /* payload_len byte */
+                    uint8_t need = (uint8_t)(RIVR_PKT_HDR_LEN + pl
+                                            + RIVR_PKT_CRC_LEN);
+                    why = (frame.len < need) ? "length mismatch" : "CRC fail";
+                }
+            }
+            ESP_LOGW(TAG, "rf_rx: invalid frame (len=%u rssi=%d) – %s",
+                     frame.len, frame.rssi_dbm, why);
             continue;
         }
         /* \u2500\u2500 Display stats: count every valid RF reception \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 *
