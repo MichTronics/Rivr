@@ -345,8 +345,12 @@ bool radio_transmit(const rf_tx_request_t *req)
     s_in_rx = false;
     platform_sx1262_set_rxen(false);
 
-    /* SetTx with timeout = ToA × 1.5 converted to SX1262 ticks (15.625 µs/tick) */
-    uint32_t timeout_ticks = (req->toa_us * 3u / 2u) / 16u;
+    /* SetTx with timeout = ToA × 2 converted to SX1262 ticks.
+     * SX1262 timer resolution = 15.625 µs/tick → N = toa_us × 2 / 15.625
+     *   = toa_us × 2 × 64 / 1000 = toa_us × 128 / 1000 = toa_us × 16 / 125
+     * Using 2× (not 1.5×) gives 73 ms extra headroom on a 156 ms frame
+     * without risking a premature hardware-timeout interrupt.               */
+    uint32_t timeout_ticks = (req->toa_us * 16u) / 125u;
     uint8_t tx_timeout[3] = {
         (uint8_t)(timeout_ticks >> 16),
         (uint8_t)(timeout_ticks >>  8),
