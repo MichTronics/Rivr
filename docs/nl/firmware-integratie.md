@@ -139,12 +139,15 @@ rivr_result_t rivr_engine_run(uint32_t max_steps);
 
 Elke hoofdlustitratie aangeroepen vanuit `rivr_tick()`.
 
-**Hoofdluspatroon (uit `rivr_embed.c`):**
+**Hoofdluspatroon (uit `rivr_embed.c` / `main.c`):**
 
 ```c
-// Roep radio_service_rx() AAN vóór rivr_tick() elke iteratie.
-// De ISR (radio_isr) zet alleen s_dio1_pending; alle SPI-werk gebeurt hier.
+// rivr_cli_poll() MÖET als eerste komen zodat UART0-bytes worden gelezen
+// vóór rivr_tick() sources_cli_drain() aanroept.
 void main_loop_body(void) {
+#if RIVR_ROLE_CLIENT
+    rivr_cli_poll();         // interactieve seriële CLI (cliënt-builds)
+#endif
     radio_service_rx();      // lees DIO1-events via SPI (alleen hoofdtaak)
     rivr_tick();             // ring-buffer → engine → emit
     tx_drain_loop();         // verstuur TX-frames met duty-cycle-bewaker
@@ -152,7 +155,7 @@ void main_loop_body(void) {
 
 void rivr_tick(void) {
     sources_rf_rx_drain();   // injecteer radio-frames
-    sources_cli_drain();     // injecteer CLI-events
+    sources_cli_drain();     // injecteer CLI-events (no-op op echte hardware)
     sources_timer_drain();   // vuur vervallen timer-bronnen
     rivr_engine_run(256);    // voer DAG uit
 }
@@ -405,16 +408,51 @@ In `rivr_layer/rivr_sources.c` zorgt de volgende bewaker ervoor dat
 relay-frames voor chat en data worden overgeslagen bij een cli\u00ebnt-build:
 
 ```c
-#ifdef RIVR_ROLE_CLIENT
-    if (fwd_type == PKT_CHAT || fwd_type == PKT_DATA) {
+#if RIVR_ROLE_CLIENT
+    if (fwd_hdr.pkt_type == PKT_CHAT || fwd_hdr.pkt_type == PKT_DATA) {
         goto skip_enqueue;   // relay onderdrukken; alleen lokaal afleveren
     }
 #endif
 ```
 
 Bestuurpakketten (`PKT_BEACON`, `PKT_ROUTE_REQ`, `PKT_ROUTE_RPL`, `PKT_ACK`,
-`PKT_PROG_PUSH`) worden niet ge\u00efnvloed en worden normaal doorgestuurd zodat
+`PKT_PROG_PUSH`) worden niet geïnvloed en worden normaal doorgestuurd zodat
 mesh-routering intact blijft.
+
+### Seriële CLI (`RIVR_ROLE_CLIENT=1`)
+
+`rivr_layer/rivr_cli.h` biedt een API met drie functies.  In alle niet-cliënt
+builds compileert elke functie tot een zero-cost inline no-op.
+
+```c
+#include "rivr_layer/rivr_cli.h"
+
+void rivr_cli_init(void);
+// Eenmalig aanroepen vanuit app_main() na rivr_embed_init().
+// Drukt de opstartbanner en de begin-"> "-prompt af.
+
+void rivr_cli_poll(void);
+// Aanroepen als EERSTE regel van de hoofdlus (vóór radio_service_rx()).
+// Niet-blokkerend: leest UART0 RX-bytes, echoet invoer, verwerkt BS/DEL.
+// Bij newline worden de volgende commando’s afgehandeld:
+//   chat <bericht>  — bouw + zet PKT_CHAT in wachtrij; print "TX CHAT: <bericht>"
+//   id              — druk node-ID en net-ID af
+//   help            — toon commando’s
+
+void rivr_cli_on_chat_rx(uint32_t src_id,
+                          const uint8_t *payload, uint8_t len);
+// Aangeroepen vanuit rivr_sources.c (sectie 6b) na decodering van PKT_CHAT.
+// Drukt af: "\r[CHAT][XXXXXXXX]: <bericht>\n> "
+// Het \r wist de gedeeltelijke promptregel; "> " herstartte de prompt.
+```
+
+**UART-driver-opmerking** — `rivr_cli_init()` roept `uart_is_driver_installed()`
+aan vóór `uart_driver_install()`, zodat het veilig is te roepen zelfs als de
+VFS-console de driver al heeft geïnstalleerd.  De poll-functie gebruikt
+`uart_read_bytes(UART_NUM_0, &ch, 1, 0)` met een nul-time-out voor volledig
+niet-blokkerende werking.  Maximale berichtlengte is `RIVR_PKT_MAX_PAYLOAD`
+(231 bytes); de regelsbuffer is 128 bytes, dus overloop-tekens worden stil
+verworpen.
 
 ---
 

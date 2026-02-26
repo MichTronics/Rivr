@@ -49,8 +49,7 @@ Rivr/
 ├── rivr_layer/               # C — lijmlaag RIVR↔firmware
 │   ├── rivr_embed.c/h        # engine_init, tick, NVS opslaan/laden, hot-reload
 │   ├── rivr_sources.c/h      # bronregistratie (rf, usb, timer…)
-│   ├── rivr_sinks.c/h        # sink-callbacks (rf_tx, usb_print, beacon)
-│   └── default_program.h     # selecteerbare RIVR-programma's via #define
+│   ├── rivr_sinks.c/h        # sink-callbacks (rf_tx, usb_print, beacon)│   ├── rivr_cli.c/h          # seriële CLI-chatinterface (alleen cliënt-builds)│   └── default_program.h     # selecteerbare RIVR-programma's via #define
 └── tools/
     └── vscode-rivr/          # VS Code-extensie (syntaxis + snippets)
 ```

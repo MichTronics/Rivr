@@ -84,6 +84,44 @@ De repeater- en cliënt-omgevingen bevatten via `-include` een boardspecifieke v
 `variants/esp32devkit_e22_900_repeater/config.h` respectievelijk  
 `variants/esp32devkit_e22_900_client/config.h`.
 
+### Seriële CLI van de cliëntknoop
+
+De cliëntfirmware (`client_esp32devkit_e22_900`) activeert een interactieve
+chatshell over UART0 op 115200 baud.  Open de seriële monitor na het flashen:
+
+```bash
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900
+```
+
+**Opstartbanner:**
+```
+Rivr Client Node Ready
+Type 'help' for commands
+Node ID : 0xdeadbeef  Net ID : 0x0000
+> 
+```
+
+**Beschikbare commando’s:**
+
+| Commando | Effect |
+|---|---|
+| `chat <bericht>` | Codeer en verzend een `PKT_CHAT`-frame via LoRa |
+| `id` | Druk het 32-bits node-ID en net-ID af |
+| `help` | Toon beschikbare commando’s |
+
+**Inkomende berichten** van andere meshnodes worden automatisch afgedrukt:
+
+```
+[CHAT][cafebabe]: hallo van de repeater
+> 
+```
+
+De `> `-prompt wordt opnieuw afgedrukt na elk inkomend bericht, zodat
+in-uitvoering-zijnd invoer zichtbaar blijft.  Maximale berichtlengte: 128
+tekens (regelsbuffer); berichten worden gecodeerd via het standaard binaire
+`PKT_CHAT`-formaat.
+
 ### Simulatiemodus (geen SX1262-hardware vereist)
 
 ```powershell

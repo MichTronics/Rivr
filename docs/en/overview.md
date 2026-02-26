@@ -70,6 +70,7 @@ rivr/
     ├── rivr_embed.c/.h     Engine init, rivr_tick(), rivr_register_sink()
     ├── rivr_sinks.c/.h     rf_tx, usb_print, log sinks
     ├── rivr_sources.c/.h   rf_rx, CLI, timer sources
+    ├── rivr_cli.c/.h       Serial CLI chat interface (client builds only)
     └── rivr_programs/
         └── default_program.h  Built-in RIVR program string
 ```

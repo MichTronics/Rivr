@@ -95,6 +95,43 @@ The repeater and client environments include a board-specific variant header via
 `variants/esp32devkit_e22_900_repeater/config.h` and  
 `variants/esp32devkit_e22_900_client/config.h` respectively.
 
+### Client node serial CLI
+
+The client firmware (`client_esp32devkit_e22_900`) activates an interactive
+chat shell over UART0 at 115200 baud.  After flashing, open the serial monitor:
+
+```bash
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900
+```
+
+**Boot banner:**
+```
+Rivr Client Node Ready
+Type 'help' for commands
+Node ID : 0xdeadbeef  Net ID : 0x0000
+> 
+```
+
+**Commands:**
+
+| Command | Effect |
+|---|---|
+| `chat <message>` | Encode and broadcast a `PKT_CHAT` frame over LoRa |
+| `id` | Print this node’s 32-bit ID and net ID |
+| `help` | List available commands |
+
+**Incoming messages** from other mesh nodes are printed automatically:
+
+```
+[CHAT][cafebabe]: hello from the repeater
+> 
+```
+
+The `> ` prompt is reprinted after every incoming message so in-progress
+input is not lost.  Maximum message length is 128 characters (line buffer);
+messages are encoded using the standard `PKT_CHAT` binary wire format.
+
 ### Simulation mode (no SX1262 hardware required)
 
 ```powershell

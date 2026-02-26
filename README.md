@@ -75,6 +75,7 @@ Mesh routing layer
 | OLED display | SSD1306 128×64; 7 pages: node info, mesh stats, duty cycle, routing, RX quality, neighbours, Fabric debug |
 | Rivr Fabric | Congestion-aware relay suppression for repeater nodes (`RIVR_FABRIC_REPEATER=1`) — 60 s sliding-window score, DELAY / DROP policy for `PKT_CHAT` and `PKT_DATA` |
 | Client node | `RIVR_ROLE_CLIENT=1` — receives `CHAT`/`DATA` locally, does not relay them; control frames still forwarded |
+| Serial CLI | Interactive UART0 chat shell on client builds — `chat <msg>` broadcasts `PKT_CHAT`; received chats printed as `[CHAT][XXXXXXXX]: …`; `id` / `help` commands |
 | Deferred-ISR RX | `radio_isr()` sets a flag only; all SPI work done in `radio_service_rx()` from main loop |
 | OTA program push | `PKT_PROG_PUSH` delivers a new RIVR program over the mesh; stored in NVS, hot-reloaded |
 | Sim mode | Full 8-round mesh simulation without SX1262 hardware (`RIVR_SIM_MODE`) |
@@ -185,6 +186,25 @@ Rivr Fabric is completely disabled (`RIVR_FABRIC_REPEATER=0`).
 Same default pin wiring and frequency override pattern as the repeater variant
 above.  Variant header: `variants/esp32devkit_e22_900_client/config.h`.
 
+**Serial CLI** — the client firmware activates an interactive chat shell over
+UART0 (115200 baud).  Open the serial monitor and type:
+
+| Command | Effect |
+|---|---|
+| `chat <message>` | Broadcast a `PKT_CHAT` frame over LoRa |
+| `id` | Print this node's 32-bit ID and net ID |
+| `help` | List available commands |
+
+Received `PKT_CHAT` frames from remote nodes are printed automatically:
+
+```
+[CHAT][deadbeef]: hello from node B
+> 
+```
+
+The `> ` prompt is re-printed after each incoming message so mid-type input is
+not lost.
+
 ---
 
 ## Project Layout
@@ -218,6 +238,7 @@ Rivr/
 │   ├── rivr_embed.c/.h     — engine init, rivr_tick(), global state
 │   ├── rivr_sinks.c/.h     — rf_tx / USB-print / log sinks
 │   ├── rivr_sources.c/.h   — rf_rx / CLI / timer sources
+│   ├── rivr_cli.c/.h       — serial CLI chat interface (client builds only)
 │   └── rivr_programs/
 │       └── default_program.h — compiled-in RIVR program
 │

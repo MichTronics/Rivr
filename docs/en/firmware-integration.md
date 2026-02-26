@@ -141,12 +141,15 @@ Called inside `rivr_tick()` every main-loop iteration.
 `rc.cycles_used` reports actual work done; `rc.gas_remaining == 0` signals
 that the engine was still busy at the step limit (potential tick-storm).
 
-**Main loop pattern (from `rivr_embed.c`):**
+**Main loop pattern (from `rivr_embed.c` / `main.c`):**
 
 ```c
-// Call radio_service_rx() BEFORE rivr_tick() every iteration.
-// The ISR (radio_isr) only sets s_dio1_pending; all SPI work happens here.
+// rivr_cli_poll() MUST come first to consume UART0 bytes before rivr_tick()
+// calls sources_cli_drain() — both use uart_read_bytes(timeout=0).
 void main_loop_body(void) {
+#if RIVR_ROLE_CLIENT
+    rivr_cli_poll();         // interactive serial CLI (client builds)
+#endif
     radio_service_rx();      // drain DIO1 events via SPI (main task only)
     rivr_tick();             // drain ring-buffer → engine → emit
     tx_drain_loop();         // send queued TX frames with duty-cycle gate
@@ -154,7 +157,7 @@ void main_loop_body(void) {
 
 void rivr_tick(void) {
     sources_rf_rx_drain();   // inject radio frames
-    sources_cli_drain();     // inject CLI events
+    sources_cli_drain();     // inject CLI events (no-op on real hardware)
     sources_timer_drain();   // fire due timer sources
     rivr_engine_run(256);    // run DAG
 }
@@ -420,8 +423,8 @@ In `rivr_layer/rivr_sources.c`, the following guard skips enqueuing relay
 frames for chat and data packets when compiled as a client:
 
 ```c
-#ifdef RIVR_ROLE_CLIENT
-    if (fwd_type == PKT_CHAT || fwd_type == PKT_DATA) {
+#if RIVR_ROLE_CLIENT
+    if (fwd_hdr.pkt_type == PKT_CHAT || fwd_hdr.pkt_type == PKT_DATA) {
         goto skip_enqueue;   // suppress relay; deliver locally only
     }
 #endif
@@ -430,6 +433,65 @@ frames for chat and data packets when compiled as a client:
 Control frames (`PKT_BEACON`, `PKT_ROUTE_REQ`, `PKT_ROUTE_RPL`, `PKT_ACK`,
 `PKT_PROG_PUSH`) are not affected and relay normally so mesh routing stays
 intact.
+
+### Serial CLI (`RIVR_ROLE_CLIENT=1` only)
+
+`rivr_layer/rivr_cli.h` provides a three-function API.  In all non-client
+builds every function compiles to a zero-cost inline no-op.
+
+```c
+#include "rivr_layer/rivr_cli.h"
+
+void rivr_cli_init(void);
+// Call once from app_main() after rivr_embed_init().
+// Prints the boot banner and the initial '> ' prompt.
+
+void rivr_cli_poll(void);
+// Call as the FIRST statement of the main loop (before radio_service_rx()).
+// Non-blocking: drains UART0 RX bytes, echoes input, handles BS/DEL.
+// On newline dispatches:
+//   chat <message>  — build + enqueue PKT_CHAT; prints "TX CHAT: <message>"
+//   id              — print node ID and net ID
+//   help            — list commands
+
+void rivr_cli_on_chat_rx(uint32_t src_id,
+                          const uint8_t *payload, uint8_t len);
+// Called from rivr_sources.c (section 6b) after a PKT_CHAT frame is decoded.
+// Prints: "\r[CHAT][XXXXXXXX]: <message>\n> "
+// The \r clears any partial prompt line; '> ' re-prompts the user.
+```
+
+**TX frame building** — `rivr_cli_poll()` assembles outgoing chat frames using
+the same path as the mesh relay:
+
+```c
+rivr_pkt_hdr_t hdr = {
+    .pkt_type   = PKT_CHAT,
+    .ttl        = RIVR_PKT_DEFAULT_TTL,
+    .hop        = 0,
+    .net_id     = g_net_id,
+    .src_id     = g_my_node_id,
+    .dst_id     = 0,          // broadcast
+    .seq        = ++g_ctrl_seq,
+    .payload_len = (uint8_t)msg_len,
+};
+rf_tx_request_t req;
+int enc = protocol_encode(&hdr, msg, msg_len, req.data, sizeof(req.data));
+if (enc > 0) {
+    req.len    = enc;
+    req.toa_us = RF_TOA_APPROX_US(req.len);
+    req.due_ms = 0;
+    rb_try_push(&rf_tx_queue, &req);
+}
+```
+
+**UART driver note** — `rivr_cli_init()` calls `uart_is_driver_installed()`
+before `uart_driver_install()`, so it is safe to call even if the VFS console
+has already installed the driver.  The poll function uses
+`uart_read_bytes(UART_NUM_0, &ch, 1, 0)` with a zero timeout for fully
+non-blocking operation.  Maximum message length is `RIVR_PKT_MAX_PAYLOAD`
+(231 bytes); the line buffer is 128 bytes so overflow characters are silently
+discarded.
 
 ---
 
