@@ -301,6 +301,60 @@ build_flags =
 
 ---
 
+## OLED display wiring (SSD1306 128×64)
+
+All hardware environments enable the SSD1306 display driver (`FEATURE_DISPLAY=1`).
+The driver runs as a low-priority FreeRTOS task on CPU1 and handles all I²C
+traffic without blocking the main task.
+
+### Default I²C pins
+
+| Signal | ESP32 GPIO | Notes |
+|---|---|---|
+| SDA | 21 | Override with `-DPIN_DISPLAY_SDA=<gpio>` |
+| SCL | 22 | Override with `-DPIN_DISPLAY_SCL=<gpio>` |
+| VCC | 3.3 V | Do **not** connect to 5 V; SSD1306 I²C lines are 3.3 V |
+| GND | GND | |
+
+Pull-ups (4.7 kΩ to 3.3 V) are required on SDA and SCL; most SSD1306 breakout
+boards include them.  The ESP-IDF I²C master driver also enables weak internal
+pull-ups automatically.
+
+### I²C parameters
+
+| Parameter | Value |
+|---|---|
+| Speed | 400 kHz (fast mode) |
+| Addressing mode | Horizontal (Adafruit-compatible); entire 1024-byte GDDRAM flushed in a single 1025-byte burst |
+| Address detection | Auto; tries 0x3C (“SA0 low”) then 0x3D (“SA0 high”) at boot |
+| Refresh rate | Max 5 Hz (200 ms guard); page auto-rotates every 3 s |
+
+### Feature gate
+
+```c
+// Enable in platformio.ini build_flags:
+-DFEATURE_DISPLAY=1
+
+// Or in a variant header:
+#define FEATURE_DISPLAY 1
+```
+
+Without `FEATURE_DISPLAY=1` all display functions compile to zero-cost inline
+no-ops; no I²C bus is initialised.
+
+### Boot sequence
+
+1. I²C bus created; 150 ms VCC settling delay.
+2. Address auto-detected (0x3C probed first).
+3. Full init sequence sent (display off → clock div → mux → charge pump →
+   horizontal mode → segment remap → COM scan → contrast → display on).
+4. **Self-test** (400 ms): `0xA5` forces all pixels ON — display shows solid white.
+   If the screen stays black here the hardware path between ESP32 and OLED has a fault.
+5. Boot screen displayed (node ID, net ID, callsign).
+6. Normal 5 Hz refresh begins.
+
+---
+
 ## Rivr Fabric tunable macros
 
 These macros control the congestion-aware relay policy active when
@@ -373,3 +427,7 @@ All three are already included in `radio_init()` in `firmware_core/radio_sx1262.
 | ESP32 crash at boot in sim mode | `platform_init()` was called — correct for hardware builds only |
 | CRC failures in `protocol_decode` | Frame corrupted in ring-buffer copy; check `frame.len` bounds |
 | NVS program not loading | Run `nvs_flash_erase()` once to reset partition; check `nvs_open("rivr", ...)` return value |
+| OLED shows nothing after boot | Check SDA/SCL wiring (default GPIO21/22), 3.3 V VCC, and 4.7 kΩ pull-ups on SDA+SCL |
+| `SSD1306 not found on SDA=GPIO21 SCL=GPIO22` | Chip not ACKing at 0x3C or 0x3D; check SA0 pin on module and power supply |
+| OLED shows white at boot then shows boot screen | **Normal —** 400 ms all-pixels-ON self-test, then boot screen displays |
+| OLED freezes / goes blank after TX | Supply glitch from high-power PA; driver auto-reinits after 3 flush failures; add bulk decoupling near OLED VCC |

@@ -7,8 +7,8 @@
  *  • Static 1024-byte framebuffer (128 columns × 8 pages, 1 bit/pixel).
  *  • Classic 5×8 pixel ASCII font (characters 0x20–0x7E, ~480 bytes flash).
  *  • Each text row = one SSD1306 page (8 px tall).  21 chars/row, 8 rows.
- *  • Flush sends 8 × 133-byte I2C transactions (page-addressed mode).
- *    At 400 kHz this takes ≈ 25 ms; happens at most every 200 ms.
+ *  • Flush sends one 1025-byte I2C transfer (horizontal addressing mode).
+ *    At 400 kHz this takes ≈ 23 ms; happens at most every 200 ms.
  *  • ISR (DIO1) fires unconditionally during I2C flush; radio ring-buffer
  *    is filled normally.  No radio frames are lost.
  *
@@ -35,11 +35,11 @@
 /* ── Config ──────────────────────────────────────────────────────────────── */
 
 #define I2C_BUS_PORT       I2C_NUM_0
-#define I2C_BUS_SPEED_HZ   100000u   /**< 100 kHz — reliable with all SSD1306 clones */
-#define I2C_TIMEOUT_MS     20        /**< Per-transaction timeout ms; keep short to     *
-                                      * avoid blocking main task > WDT period.          *
-                                      * At 100 kHz a 3-byte tx ≈ 0.3 ms; 20 ms is     *
-                                      * already very generous.                          */
+#define I2C_BUS_SPEED_HZ   400000u   /**< 400 kHz — standard fast-mode, works on all    *
+                                      * genuine SSD1306 and typical clones.            */
+#define I2C_TIMEOUT_MS     50        /**< Per-transaction timeout ms.                  *
+                                      * At 400 kHz the 1025-byte flush burst ≈ 23 ms;  *
+                                      * 50 ms gives 2× headroom for clock stretching.  */
 #define SELFTEST_MS        400       /**< All-pixels-ON test duration at boot           */
 #define FB_COLS            128u
 #define FB_PAGES           8u               /**< SSD1306 row pages            */
@@ -160,7 +160,7 @@ static esp_err_t ssd1306_hw_init(void)
     ssd1306_cmd2(0xD3u, 0x00u);   /* display offset = 0                       */
     ssd1306_cmd1(0x40u);          /* start line = 0                           */
     ssd1306_cmd2(0x8Du, 0x14u);   /* charge pump: enable                      */
-    ssd1306_cmd2(0x20u, 0x02u);   /* page addressing mode (most compatible)   */
+    ssd1306_cmd2(0x20u, 0x00u);   /* horizontal addressing mode               */
     ssd1306_cmd1(0xA1u);          /* segment remap: col127→SEG0              */
     ssd1306_cmd1(0xC8u);          /* COM scan: descending                     */
     ssd1306_cmd2(0xDAu, 0x12u);   /* COM pins: alt, no remap (128×64)         */
@@ -222,32 +222,30 @@ static void fb_clear(void)
 
 /** Flush the complete framebuffer to the SSD1306.
  *
- *  Uses page-addressing mode (set in init via 0x20, 0x02).
- *  For each of the 8 pages:
- *    1. B0h|page  — set page start address
- *    2. 0x00      — set column lower nibble = 0
- *    3. 0x10      — set column upper nibble = 0
- *    4. 0x40 + 128 bytes of pixel data      (129 bytes in one transfer)
- *  8 × 129-byte writes — no single large burst needed.
+ *  Uses horizontal addressing mode (set in init via 0x20, 0x00).
+ *  The controller auto-increments column then page, so the entire
+ *  1024-byte GDDRAM can be written in one I2C burst:
+ *    1. 0x22, 0x00, 0x07  — PAGEADDR: pages 0..7
+ *    2. 0x21, 0x00, 0x7F  — COLUMNADDR: columns 0..127
+ *    3. 0x40 + 1024 bytes — full framebuffer in one transfer
+ *  Total: 3 command transactions + 1 × 1025-byte data write.
  */
 static void ssd1306_flush(void)
 {
     esp_err_t err;
-    for (uint8_t pg = 0u; pg < FB_PAGES; pg++) {
-        /* Commands: set page, column-low=0, column-high=0 */
-        err = ssd1306_cmd1((uint8_t)(0xB0u | pg));
-        if (err != ESP_OK) goto flush_err;
-        err = ssd1306_cmd1(0x00u);
-        if (err != ESP_OK) goto flush_err;
-        err = ssd1306_cmd1(0x10u);
-        if (err != ESP_OK) goto flush_err;
 
-        /* Data: control byte 0x40 + 128 pixels for this page */
-        s_flush_buf[0] = 0x40u;
-        memcpy(s_flush_buf + 1u, s_fb + (uint16_t)pg * FB_COLS, FB_COLS);
-        err = i2c_master_transmit(s_dev, s_flush_buf, 1u + FB_COLS, I2C_TIMEOUT_MS);
-        if (err != ESP_OK) goto flush_err;
-    }
+    /* Set page and column address windows to cover the full display */
+    err = ssd1306_cmd3(0x22u, 0x00u, (uint8_t)(FB_PAGES - 1u));   /* PAGEADDR   */
+    if (err != ESP_OK) goto flush_err;
+    err = ssd1306_cmd3(0x21u, 0x00u, (uint8_t)(FB_COLS - 1u));    /* COLUMNADDR */
+    if (err != ESP_OK) goto flush_err;
+
+    /* Single bulk data write: control byte 0x40 + all 1024 framebuffer bytes */
+    s_flush_buf[0] = 0x40u;
+    memcpy(s_flush_buf + 1u, s_fb, FB_BYTES);
+    err = i2c_master_transmit(s_dev, s_flush_buf, 1u + FB_BYTES, I2C_TIMEOUT_MS);
+    if (err != ESP_OK) goto flush_err;
+
     s_flush_fail_cnt = 0u;  /* successful flush — reset error counter */
     return;
 
@@ -263,7 +261,7 @@ flush_err:
 
     if (s_flush_fail_cnt >= 3u) {
         /* Level-2 recovery: the SSD1306 may have lost its register state
-         * (page-address mode, charge pump, contrast) after a power glitch.
+         * (horizontal-addressing mode, charge pump, contrast) after a power glitch.
          * Bus reset alone cannot restore it — a full init sequence is needed. */
         vTaskDelay(pdMS_TO_TICKS(50));   /* let supply / bus settle */
         esp_err_t rinit = ssd1306_hw_init();

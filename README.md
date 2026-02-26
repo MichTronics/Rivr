@@ -72,7 +72,7 @@ Mesh routing layer
 | Drop statistics | Per-packet-type forward-drop counters in `forward_budget_t` |
 | Unicast failover | TX queue full → fallback flood with `PKT_FLAG_FALLBACK`, TTL = 3 |
 | Neighbour table | RSSI/SNR + callsign per peer; displayed on OLED page 6 |
-| OLED display | SSD1306 128×64; 7 pages: node info, mesh stats, duty cycle, routing, RX quality, neighbours, Fabric debug |
+| OLED display | SSD1306 128×64 I²C (400 kHz, horizontal addressing mode, single 1025-byte bulk flush per refresh); auto-detects address 0x3C/0x3D; 7 auto-rotating pages: overview, RF stats, routing, duty cycle, RIVR VM, neighbours, Fabric debug |
 | Rivr Fabric | Congestion-aware relay suppression for repeater nodes (`RIVR_FABRIC_REPEATER=1`) — 60 s sliding-window score, DELAY / DROP policy for `PKT_CHAT` and `PKT_DATA` |
 | Client node | `RIVR_ROLE_CLIENT=1` — receives `CHAT`/`DATA` locally, does not relay them; control frames still forwarded |
 | Serial CLI | Interactive UART0 chat shell on client builds — `chat <msg>` broadcasts `PKT_CHAT`; received chats printed as `[CHAT][XXXXXXXX]: …`; `id` / `help` commands |
@@ -228,7 +228,7 @@ Rivr/
 │   ├── platform_esp32.c/.h — GPIO / SPI / LED init (RXEN + TXEN antenna switch)
 │   ├── ringbuf.h           — lock-free SPSC ring buffer
 │   ├── rivr_fabric.c/.h    — Rivr Fabric: congestion score, relay policy (DELAY/DROP), lifetime counters
-│   └── display/            — SSD1306 OLED driver (7-page UI; page 7 = Fabric debug)
+│   └── display/            — SSD1306 128×64 I²C driver (400 kHz, horizontal addressing, single-burst flush; 7-page auto-rotating UI; FreeRTOS task on CPU1)
 │
 ├── variants/               — Board-specific compile-time config headers
 │   ├── esp32devkit_e22_900_repeater/config.h — repeater defaults (freq, pins, Fabric on, display on)

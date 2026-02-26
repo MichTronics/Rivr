@@ -5,8 +5,9 @@
  * DESIGN GOALS
  * ────────────
  *  • Non-blocking: display_update() returns in < 1 ms when the 200 ms
- *    inter-update guard has not elapsed.  The I2C flush itself (≈ 43 ms at
- *    400 kHz) only happens once every DISPLAY_REFRESH_MS.
+ *    inter-update guard has not elapsed.  The I2C flush itself (≈ 23 ms at
+ *    400 kHz, single 1025-byte burst in horizontal addressing mode) only
+ *    happens once every DISPLAY_REFRESH_MS.
  *  • No dynamic memory: entire framebuffer and I2C handle are BSS-static.
  *  • No delays: timing driven by tb_millis() comparison.
  *  • No radio-timing impact: ISR pushes to ring-buffer regardless of whether

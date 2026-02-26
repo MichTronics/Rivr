@@ -57,7 +57,7 @@
 | `protocol.c` | Binaire frame-encode/decode met CRC-16 |
 | `routing.c` | Dedupe-cache, hop-limietcontrole, buurttabel |
 | `rivr_fabric.c` | Congestie-bewuste relaybeslissingen: 60 s schuivend-venster-score, DELAY/DROP voor `PKT_CHAT`/`PKT_DATA`-relay; actief wanneer `RIVR_FABRIC_REPEATER=1` |
-| `display/` | SSD1306 OLED-stuurprogramma, 7-pagina-UI (knoopinfo, mesh-statistieken, duty-cycle, routering, RX-kwaliteit, buren, Fabric-debug); gecompileerd bij `FEATURE_DISPLAY=1` |
+| `display/` | SSD1306 128×64 OLED-stuurprogramma; I²C 400 kHz, horizontale adresseringsmodus, enkele 1025-byte bulk-overdracht per verversing; auto-detectie I²C-adres 0x3C / 0x3D; 7-pagina roterende UI (overzicht, RF-statistieken, routering, duty-cycle, RIVR VM, buren, Fabric-debug); draait als FreeRTOS-taak op CPU1 met prioriteit 1; feature-gate `FEATURE_DISPLAY=1` |
 
 ### `rivr_layer` (C)
 

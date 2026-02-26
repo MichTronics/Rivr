@@ -289,7 +289,59 @@ build_flags =
 ```
 
 ---
+## OLED-schermbedrading (SSD1306 128×64)
 
+Alle hardwareomgevingen schakelen het SSD1306-stuurprogramma in (`FEATURE_DISPLAY=1`).
+Het stuurprogramma draait als een taak met lage prioriteit op CPU1 en beheert
+alle I²C-communicatie zonder de hoofdtaak te blokkeren.
+
+### Standaard I²C-pinnen
+
+| Signaal | ESP32 GPIO | Opmerking |
+|---|---|---|
+| SDA | 21 | Overschrijven met `-DPIN_DISPLAY_SDA=<gpio>` |
+| SCL | 22 | Overschrijven met `-DPIN_DISPLAY_SCL=<gpio>` |
+| VCC | 3,3 V | **Niet** op 5 V aansluiten; SSD1306 I²C-lijnen zijn 3,3 V |
+| GND | GND | |
+
+Pull-ups (4,7 kΩ naar 3,3 V) zijn vereist op SDA en SCL; de meeste SSD1306-breakout-
+borden bevatten ze al.  De ESP-IDF I²C-master-driver schakelt ook zwakke interne
+pull-ups in.
+
+### I²C-parameters
+
+| Parameter | Waarde |
+|---|---|
+| Snelheid | 400 kHz (fast mode) |
+| Adresseringsmodus | Horizontaal (Adafruit-compatibel); volledige 1024-byte GDDRAM in één burst van 1025 bytes doorgezonden |
+| Adresdetectie | Automatisch; probeert 0x3C (“SA0 laag”) dan 0x3D (“SA0 hoog”) bij opstarten |
+| Verversingssnelheid | Max 5 Hz (200 ms bewaking); pagina roteert automatisch elke 3 s |
+
+### Feature-gate
+
+```c
+// Inschakelen in platformio.ini build_flags:
+-DFEATURE_DISPLAY=1
+
+// Of in een variantheader:
+#define FEATURE_DISPLAY 1
+```
+
+Zonder `FEATURE_DISPLAY=1` compileren alle displayfuncties naar lege inline
+no-ops; er wordt geen I²C-bus gestart.
+
+### Opstartsequentie
+
+1. I²C-bus aangemaakt; 150 ms VCC-stabilisatietijd.
+2. Adres auto-gedetecteerd (0x3C eerst geprobeerd).
+3. Volledige initsequentie verzonden (display uit → klokdeling → multiplexer →
+   laadbron → horizontale modus → segment-remap → COM-scan → contrast → display aan).
+4. **Zelftest** (400 ms): `0xA5` zet alle pixels aan — scherm toont effen wit.
+   Als het scherm hier zwart blijft, is er een hardware-probleem tussen ESP32 en OLED.
+5. Opstartscherm getoond (node-ID, net-ID, callsign).
+6. Normale 5 Hz-verversing begint.
+
+---
 ## Rivr Fabric instelbare macro's
 
 Deze macro's sturen het congestiebeleid wanneer `RIVR_FABRIC_REPEATER=1`.
@@ -337,3 +389,7 @@ andere pakkettypen (`PKT_BEACON`, `ROUTE_REQ`, `ROUTE_RPL`, `PKT_ACK`,
 | ESP32-crash bij opstarten in sim-modus | `platform_init()` werd aangeroepen — correct voor hardware-builds |
 | CRC-fouten in `protocol_decode` | Frame beschadigd in ring-buffer-kopie; controleer `frame.len`-grenzen |
 | NVS-programma laadt niet | Voer `nvs_flash_erase()` eenmalig uit; controleer retourwaarde van `nvs_open("rivr", ...)` |
+| OLED toont niets na opstarten | Controleer SDA/SCL-bedrading (standaard GPIO21/22), VCC 3,3 V en 4,7 kΩ pull-ups op SDA+SCL |
+| `SSD1306 not found on SDA=GPIO21 SCL=GPIO22` | Chip reageert niet op 0x3C of 0x3D; controleer SA0-pin van module en voeding |
+| OLED toont wit bij opstarten, daarna opstartscherm | **Normaal** — 400 ms zelftest (alle pixels aan), daarna opstartscherm |
+| OLED bevriest of gaat uit na TX | Voedingsglitch door hoog-vermogen PA; stuurprogramma herstelt automatisch na 3 flush-fouten; voeg bulk-ontkoppelcondensator toe bij OLED VCC |

@@ -59,7 +59,7 @@
 | `protocol.c` | Binary packet encode/decode, CRC-16/CCITT |
 | `routing.c` | Dedupe cache (LRU ring), TTL decrement, neighbour table (with callsign) |
 | `rivr_fabric.c` | Congestion-aware relay policy: 60 s sliding-window score, DELAY / DROP decisions for `PKT_CHAT` / `PKT_DATA` relay; enabled when `RIVR_FABRIC_REPEATER=1` |
-| `display/` | SSD1306 OLED driver, 7-page UI (node info, mesh stats, duty cycle, routing, RX quality, neighbours, Fabric debug); compiled in when `FEATURE_DISPLAY=1` |
+| `display/` | SSD1306 128×64 OLED driver; I²C 400 kHz, horizontal addressing mode, single 1025-byte bulk flush per refresh; auto-detects I²C address 0x3C / 0x3D; 7-page rotating UI (overview, RF stats, routing, duty cycle, RIVR VM, neighbours, Fabric debug); runs as FreeRTOS task on CPU1 at priority 1; feature-gated by `FEATURE_DISPLAY=1` |
 
 ### 2. `rivr_layer/` — Glue layer (C)
 
