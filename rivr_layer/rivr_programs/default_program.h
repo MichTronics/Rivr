@@ -14,23 +14,21 @@
  * ║  filter.pkt_type(1)      ← pass only PKT_CHAT (binary wire byte [3])    ║
  * ║    │                                                                     ║
  * ║    ▼                                                                     ║
- * ║  budget.toa_us(360000, 0.10, 360000)                                     ║
- * ║    │   window_ms = 360000 (6 minutes for demo; use 3600000 for 1 hour)  ║
- * ║    │   duty      = 0.10   (10% — RIVR-layer soft limit)                 ║
- * ║    │   toa_us    = 360000 (≈ 360 ms per SF9 BW125kHz 50-byte packet)    ║
- * ║    │   budget    = 360000ms × 0.10 × 1000 = 36,000,000 µs              ║
- * ║    │   max pkts  = 36,000,000 / 360,000   = 100 per 6-minute window     ║
+ * ║  budget.toa_us(280000, 0.10, 280000)   ← policy / rate accounting       ║
  * ║    │                                                                     ║
  * ║    ▼                                                                     ║
- * ║  throttle.ticks(1)       ← de-duplicate: at most 1 event per Lamport tk ║
+ * ║  throttle.ticks(1)       ← de-duplicate within one Lamport tick         ║
  * ║    │                                                                     ║
- * ║    ▼                                                                     ║
- * ║  emit { rf_tx(chat); }   ← push to rf_tx_queue via rf_tx_sink_cb()      ║
+ * ║    ▼  (no io.lora.tx emit — relay is handled exclusively by the          ║
+ * ║        C-layer maybe_relay path which correctly increments hop/TTL)      ║
  * ║                                                                          ║
  * ╠══════════════════════════════════════════════════════════════════════════╣
- * ║  EXTENSIBILITY NOTE                                                      ║
- * ║  To add mesh routing, add a second branch after filter.pkt_type(6) and  ║
- * ║  use a second emit { rf_tx(routed); } below.  No C changes required.    ║
+ * ║  RELAY ARCHITECTURE NOTE                                                 ║
+ * ║  io.lora.tx is for ORIGINATED traffic only (future sensor/data nodes).  ║
+ * ║  Received frames that need forwarding are relayed by rivr_sources.c      ║
+ * ║  (maybe_relay), which increments hop, decrements TTL, and applies        ║
+ * ║  deterministic jitter. Emitting raw received bytes via io.lora.tx would  ║
+ * ║  re-broadcast them with hop=0, creating phantom origins and relay loops. ║
  * ╚══════════════════════════════════════════════════════════════════════════╝
  */
 
@@ -80,6 +78,16 @@
  *
  * filter.pkt_type(1) passes only PKT_CHAT frames (byte [3] of binary header).
  */
+/* RIVR_DEFAULT_PROGRAM
+ * ─────────────────────
+ * The chat pipeline runs PKT_CHAT frames through budget + throttle so that
+ * RIVR tracks airtime consumption and provides policy metrics (clock[1],
+ * FAB score).  NO io.lora.tx emit — relay is performed exclusively by the
+ * C-layer (maybe_relay in rivr_sources.c) which increments hop/TTL and
+ * applies deterministic jitter.  Emitting raw received bytes via io.lora.tx
+ * would re-broadcast them with the original hop=0, creating phantom origins
+ * and relay loops.
+ */
 #define RIVR_DEFAULT_PROGRAM                                    \
     "source rf_rx @lmp = rf;\n"                                 \
     "source beacon_tick = timer(30000);\n"                      \
@@ -89,7 +97,6 @@
     "  |> budget.toa_us(280000, 0.10, 280000)\n"               \
     "  |> throttle.ticks(1);\n"                                 \
     "\n"                                                        \
-    "emit { io.lora.tx(chat); }\n"                              \
     "emit { io.lora.beacon(beacon_tick); }\n"
 
 /**
@@ -106,7 +113,6 @@
     "  |> budget.toa_us(280000, 0.10, 280000)\n"               \
     "  |> throttle.ticks(1);\n"                                \
     "\n"                                                        \
-    "emit { io.lora.tx(chat); }\n"                              \
     "emit { io.usb.print(chat); }\n"
 
 /** Auto-select program based on build mode.
@@ -146,8 +152,6 @@
     "  |> filter.pkt_type(6)\n"                                \
     "  |> throttle.ticks(1);\n"                                \
     "\n"                                                        \
-    "emit { io.lora.tx(chat); }\n"                              \
-    "emit { io.usb.print(chat); }\n"                           \
-    "emit { io.lora.tx(data); }\n"
+    "emit { io.usb.print(chat); }\n"
 
 #endif /* DEFAULT_PROGRAM_H */
