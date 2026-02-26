@@ -220,7 +220,9 @@ void radio_start_rx(void)
     /* SetRx with timeout=0xFFFFFF (continuous) */
     uint8_t timeout[3] = { 0xFF, 0xFF, 0xFF };
     sx1262_cmd(0x82, timeout, 3);   /* 0x82 = SetRx */
-    platform_sx1262_wait_busy(5);
+    platform_sx1262_wait_busy(20);  /* 20 ms: covers post-TX PA deassert settle
+                                     * (5 ms was too tight and triggered spurious
+                                     * BUSY timeout logs after every TX) */
     s_in_rx = true;
     ESP_LOGI(TAG, "RX mode started");
 }
@@ -285,6 +287,9 @@ void radio_service_rx(void)
 
     /* 5. ReadBuffer: command=0x1E, offset=start_addr, NOP, then payload */
     rf_rx_frame_t frame;
+    memset(&frame, 0, sizeof(frame));   /* from_id must be 0 on real hardware;
+                                         * the SX1262 has no notion of sender ID.
+                                         * Garbage here would poison route_cache. */
     {
         uint8_t tx_buf[4] = { 0x1E, start_addr, 0x00, 0x00 };   /* 0x1E = ReadBuffer */
         uint8_t rx_buf[4 + RF_MAX_PAYLOAD_LEN];
