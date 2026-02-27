@@ -64,6 +64,7 @@
 #include "../firmware_core/radio_sx1262.h"
 #include "../firmware_core/ringbuf.h"
 #include "../firmware_core/timebase.h"
+#include "../firmware_core/build_info.h"
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 
@@ -224,6 +225,8 @@ static void cli_handle_line(void)
         printf("Commands:\r\n"
                "  chat <message>        broadcast text to the mesh\r\n"
                "  id                    print node ID, callsign and net ID\r\n"
+               "  info                  print build info (env, sha, radio profile)\r\n"
+               "  supportpack           JSON dump: build info + metrics snapshot\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
@@ -311,6 +314,23 @@ static void cli_handle_line(void)
             return;
         }
         cli_enqueue_chat(msg, strlen(msg));
+        return;
+    }
+
+    /* ── "info" ── */
+    if (strncmp(p, "info", 4u) == 0 && (p[4] == '\0' || p[4] == ' ')) {
+        build_info_print_banner();
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "supportpack" ── */
+    if (strncmp(p, "supportpack", 11u) == 0 && (p[11] == '\0' || p[11] == ' ')) {
+        /* 320 bytes is sufficient for the full JSON (verified at review). */
+        char sp_buf[384];
+        int n = build_info_write_json(sp_buf, sizeof(sp_buf));
+        printf("[SUPPORTPACK]\r\n%.*s\r\n", n, sp_buf);
+        fflush(stdout);
         return;
     }
 

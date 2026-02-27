@@ -58,6 +58,7 @@
 #include "firmware_core/rivr_fabric.h"
 #include "firmware_core/rivr_metrics.h"
 #include "firmware_core/rivr_log.h"
+#include "firmware_core/build_info.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
 #include "rivr_layer/rivr_cli.h"
@@ -506,6 +507,9 @@ void app_main(void)
     rivr_nvs_load_identity();   /* NVS values silently override compile-time defaults */
     rivr_fabric_init();
     rivr_embed_init();
+
+    /* Emit single-line build identity banner (git SHA, env, radio profile). */
+    build_info_print_banner();
 
 #if RIVR_ROLE_CLIENT
     /* Start serial CLI — installs UART driver, prints boot banner.           */

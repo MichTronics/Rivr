@@ -30,6 +30,7 @@ idf_component_register(
         "rivr_fabric.c"
         "rivr_metrics.c"
         "rivr_log.c"
+        "build_info.c"
         # RIVR glue layer (relative to firmware_core/)
         "../rivr_layer/rivr_embed.c"
         "../rivr_layer/rivr_sinks.c"
