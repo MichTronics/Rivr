@@ -50,6 +50,11 @@
 #include "esp_log.h"
 #include "../firmware_core/rivr_log.h"
 
+/* Weak stub — overridden by strong symbol from Rust rivr_core when
+ * compiled with --features ffi.  Allows linking even against a
+ * librivr_core.a that predates alloc_guard.rs.                   */
+void __attribute__((weak)) rivr_runtime_freeze_alloc(void) {}
+
 #define TAG             "RIVR_EMBED"
 #define MAX_ENGINE_STEPS  256u   /* max scheduler cycles per rivr_tick() call */
 
@@ -301,7 +306,6 @@ void rivr_embed_init(void)
 
 #ifndef RIVR_SIM_MODE
     /* Mark runtime-init boundary — no heap allocation expected after this. */
-    extern void rivr_runtime_freeze_alloc(void);
     rivr_runtime_freeze_alloc();
 #endif
 

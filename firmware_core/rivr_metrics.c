@@ -1,6 +1,7 @@
 #include "rivr_metrics.h"
 #include "rivr_log.h"
 #include <stdio.h>
+#include <inttypes.h>
 
 rivr_metrics_t g_rivr_metrics = {0};
 
@@ -11,13 +12,13 @@ void rivr_metrics_print(void)
     }
 
     printf("@MET {"
-           "\"rx_fail\":%u,"
-           "\"rx_dup\":%u,"
-           "\"rx_ttl\":%u,"
-           "\"tx_full\":%u,"
-           "\"dc_blk\":%u,"
-           "\"fab_drop\":%u,"
-           "\"fab_delay\":%u"
+           "\"rx_fail\":%" PRIu32 ","
+           "\"rx_dup\":%" PRIu32 ","
+           "\"rx_ttl\":%" PRIu32 ","
+           "\"tx_full\":%" PRIu32 ","
+           "\"dc_blk\":%" PRIu32 ","
+           "\"fab_drop\":%" PRIu32 ","
+           "\"fab_delay\":%" PRIu32
            "}\n",
         g_rivr_metrics.rx_decode_fail,
         g_rivr_metrics.rx_dedupe_drop,
