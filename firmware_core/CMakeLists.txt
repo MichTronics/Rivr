@@ -23,6 +23,7 @@ idf_component_register(
         ${_RADIO_SRC}
         "timebase.c"
         "dutycycle.c"
+        "airtime_sched.c"
         "protocol.c"
         "routing.c"
         "route_cache.c"

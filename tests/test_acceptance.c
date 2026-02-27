@@ -43,6 +43,8 @@
 #include "pending_queue.h"
 #include "radio_sx1262.h"   /* rf_tx_request_t, rb_t, RF_TX_QUEUE_CAP */
 #include "timebase.h"       /* tb_millis() via g_mono_ms atom */
+#include "airtime_sched.h"  /* rivr_pkt_classify(), airtime_sched_check_consume() */
+#include "rivr_metrics.h"   /* g_rivr_metrics */
 
 /* ── External stubs (defined in test_stubs.c) ──────────────────────────────── */
 extern void test_stubs_init(void);
@@ -521,6 +523,165 @@ static void run4_link_scoring(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
+ * RUN 5 — Airtime token-bucket scheduler
+ * ══════════════════════════════════════════════════════════════════════════ */
+static void run5_airtime_sched(void)
+{
+    printf("\n── RUN 5: airtime token-bucket scheduler ─────────────────────────────\n");
+
+    /* Reset metrics and scheduler state for a clean baseline */
+    memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
+    airtime_sched_init();
+
+    uint32_t now = tb_millis();
+
+    /*
+     * Helper macro: build a 13-byte stub frame with the fields that
+     * airtime_sched_check_consume() inspects.
+     *
+     * Wire offsets (from protocol.h):
+     *   [3]     pkt_type       (PKT_TYPE_BYTE_OFFSET)
+     *   [4]     flags
+     *   [9..12] src_id (LE u32)
+     */
+#define MAKE_FRAME(buf, ptype, flags_val, src) do {               \
+    memset((buf), 0, 13u);                                         \
+    (buf)[3u]  = (uint8_t)(ptype);                                 \
+    (buf)[4u]  = (uint8_t)(flags_val);                             \
+    (buf)[9u]  = (uint8_t)(((uint32_t)(src)       ) & 0xFFu);     \
+    (buf)[10u] = (uint8_t)(((uint32_t)(src) >>  8u) & 0xFFu);     \
+    (buf)[11u] = (uint8_t)(((uint32_t)(src) >> 16u) & 0xFFu);     \
+    (buf)[12u] = (uint8_t)(((uint32_t)(src) >> 24u) & 0xFFu);     \
+} while (0)
+
+    uint8_t frame[13u];
+    bool    result;
+
+    /* ── 5a: CONTROL always passes even when bucket is empty ───────────── */
+    g_airtime.tokens_us      = 0u;
+    g_airtime.last_refill_ms = now;
+    MAKE_FRAME(frame, PKT_BEACON, 0u, 0u);
+    result = airtime_sched_check_consume(frame, 13u, 500000u, now);
+    CHECK(result,  "5a: PKT_BEACON (CONTROL) passes with zero global tokens");
+    CHECK(g_rivr_metrics.class_drops_ctrl == 0u,
+          "5a: class_drops_ctrl not incremented for CONTROL pass");
+    CHECK(g_airtime.tokens_us == 0u,
+          "5a: CONTROL does not consume global tokens");
+
+    /* ── 5b: CHAT passes when bucket has enough tokens ──────────────── */
+    g_airtime.tokens_us      = 2000000u;
+    g_airtime.last_refill_ms = now;
+    MAKE_FRAME(frame, PKT_CHAT, 0u, 0u);
+    result = airtime_sched_check_consume(frame, 13u, 500000u, now);
+    CHECK(result, "5b: PKT_CHAT passes with sufficient tokens (2000000 >= 500000)");
+    CHECK(g_airtime.tokens_us == 1500000u,
+          "5b: bucket decremented correctly (2000000 - 500000 = 1500000)");
+
+    /* ── 5c: repeated CHAT drains the bucket ─────────────────────────── */
+    MAKE_FRAME(frame, PKT_CHAT, 0u, 0u);
+    airtime_sched_check_consume(frame, 13u, 500000u, now);
+    airtime_sched_check_consume(frame, 13u, 500000u, now);
+    CHECK(g_airtime.tokens_us == 500000u,
+          "5c: bucket at 500000 after two more 500000-toa drains");
+
+    /* ── 5d: CHAT drops when budget exhausted; class counter increments ── */
+    memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
+    g_airtime.tokens_us = 100000u;   /* less than next toa */
+    MAKE_FRAME(frame, PKT_CHAT, 0u, 0u);
+    result = airtime_sched_check_consume(frame, 13u, 500000u, now);
+    CHECK(!result, "5d: PKT_CHAT dropped when tokens (100000) < toa_us (500000)");
+    CHECK(g_rivr_metrics.class_drops_chat == 1u,
+          "5d: class_drops_chat incremented to 1");
+    CHECK(g_rivr_metrics.class_drops_ctrl == 0u &&
+          g_rivr_metrics.class_drops_bulk == 0u,
+          "5d: no spurious drops in other class counters");
+
+    /* ── 5e: CONTROL passes after CHAT drop; tokens unchanged ────────── */
+    MAKE_FRAME(frame, PKT_ACK, 0u, 0u);
+    result = airtime_sched_check_consume(frame, 13u, 999999u, now);
+    CHECK(result,  "5e: PKT_ACK (CONTROL) passes after CHAT drop");
+    CHECK(g_airtime.tokens_us == 100000u,
+          "5e: CONTROL did not consume tokens (still 100000)");
+
+    /* ── 5f: airtime_tokens_low fires on crossing watermark ─────────── *
+     * Set bucket to watermark+1; consume 2 µs → crosses watermark.       */
+    memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
+    g_airtime.tokens_us      = AIRTIME_LOW_WATERMARK_US + 1u;
+    g_airtime.last_refill_ms = now;
+    MAKE_FRAME(frame, PKT_CHAT, 0u, 0u);
+    result = airtime_sched_check_consume(frame, 13u, 2u, now);
+    CHECK(result, "5f: CHAT passes (bucket just above watermark, toa=2)");
+    CHECK(g_rivr_metrics.airtime_tokens_low == 1u,
+          "5f: airtime_tokens_low incremented after crossing watermark");
+
+    /* ── 5g: tokens refill based on elapsed time ───────────────────── */
+    airtime_sched_init();
+    g_airtime.tokens_us      = 0u;
+    g_airtime.last_refill_ms = now;
+    test_advance_ms(1000u); /* +1 s → refill += 1000 * 100 = 100 000 µs */
+    uint32_t later = tb_millis();
+    MAKE_FRAME(frame, PKT_CHAT, 0u, 0u);
+    result = airtime_sched_check_consume(frame, 13u, 50000u, later);
+    CHECK(result, "5g: CHAT passes after 1000 ms refill adds 100000 tokens");
+    CHECK(g_airtime.tokens_us == 50000u,
+          "5g: bucket at 50000 after refill (100000) minus consume (50000)");
+
+    /* ── 5h: per-neighbour relay budget ───────────────────────────── */
+    airtime_sched_init();
+    g_airtime.last_refill_ms = later;
+    MAKE_FRAME(frame, PKT_CHAT, PKT_FLAG_RELAY, NODE_A);
+    /* First relay from NODE_A: nb bucket freshly allocated at full capacity */
+    result = airtime_sched_check_consume(frame, 13u, 100000u, later);
+    CHECK(result, "5h: first relay from NODE_A passes (nb bucket at capacity)");
+    /* Drain NODE_A’s per-neighbour bucket below next toa */
+    for (uint8_t k = 0u; k < AIRTIME_NB_MAX; k++) {
+        if (g_airtime.nb[k].node_id == (uint32_t)NODE_A) {
+            g_airtime.nb[k].tokens_us = 50000u;  /* less than 200000 */
+            break;
+        }
+    }
+    memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
+    result = airtime_sched_check_consume(frame, 13u, 200000u, later);
+    CHECK(!result, "5h: relay from NODE_A dropped when nb bucket exhausted");
+    CHECK(g_rivr_metrics.class_drops_chat == 1u,
+          "5h: class_drops_chat incremented when nb budget exhausted");
+
+    /* ── 5i: METRICS class tracked separately from CHAT ───────────── */
+    airtime_sched_init();
+    g_airtime.tokens_us      = 0u;
+    g_airtime.last_refill_ms = later;   /* anchor refill so no free tokens added */
+    memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
+    MAKE_FRAME(frame, PKT_DATA, 0u, 0u);
+    result = airtime_sched_check_consume(frame, 13u, 100000u, later);
+    CHECK(!result, "5i: PKT_DATA (METRICS) dropped when bucket empty");
+    CHECK(g_rivr_metrics.class_drops_metrics == 1u,
+          "5i: class_drops_metrics incremented (not chat or bulk)");
+    CHECK(g_rivr_metrics.class_drops_chat == 0u &&
+          g_rivr_metrics.class_drops_bulk == 0u,
+          "5i: no cross-class counter contamination");
+
+    /* ── 5j: classify() returns correct classes ───────────────────── */
+    CHECK(rivr_pkt_classify(PKT_CHAT)      == PKTCLASS_CHAT,
+          "5j: PKT_CHAT → PKTCLASS_CHAT");
+    CHECK(rivr_pkt_classify(PKT_BEACON)    == PKTCLASS_CONTROL,
+          "5j: PKT_BEACON → PKTCLASS_CONTROL");
+    CHECK(rivr_pkt_classify(PKT_ROUTE_REQ) == PKTCLASS_CONTROL,
+          "5j: PKT_ROUTE_REQ → PKTCLASS_CONTROL");
+    CHECK(rivr_pkt_classify(PKT_ROUTE_RPL) == PKTCLASS_CONTROL,
+          "5j: PKT_ROUTE_RPL → PKTCLASS_CONTROL");
+    CHECK(rivr_pkt_classify(PKT_ACK)       == PKTCLASS_CONTROL,
+          "5j: PKT_ACK → PKTCLASS_CONTROL");
+    CHECK(rivr_pkt_classify(PKT_PROG_PUSH) == PKTCLASS_CONTROL,
+          "5j: PKT_PROG_PUSH → PKTCLASS_CONTROL");
+    CHECK(rivr_pkt_classify(PKT_DATA)      == PKTCLASS_METRICS,
+          "5j: PKT_DATA → PKTCLASS_METRICS");
+    CHECK(rivr_pkt_classify(0xFFu)         == PKTCLASS_BULK,
+          "5j: unknown type 0xFF → PKTCLASS_BULK");
+
+#undef MAKE_FRAME
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ *
  * main
  * ══════════════════════════════════════════════════════════════════════════ */
 int main(void)
@@ -531,6 +692,7 @@ int main(void)
     run2_hybrid_route();
     run3_congestion_and_due_ms();
     run4_link_scoring();
+    run5_airtime_sched();
 
     printf("\n══════════════════════════════════════════\n");
     printf("  PASS: %lu   FAIL: %lu\n",

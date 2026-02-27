@@ -88,7 +88,12 @@ int build_info_write_json(char *buf, size_t buf_len)
             "\"no_route\":%" PRIu32 ","
             "\"rate_lim\":%" PRIu32 ","
             "\"ttl_rel\":%" PRIu32 ","
-            "\"txq_peak\":%" PRIu32
+            "\"txq_peak\":%" PRIu32 ","
+            "\"at_low\":%" PRIu32 ","
+            "\"cls_ctrl\":%" PRIu32 ","
+            "\"cls_chat\":%" PRIu32 ","
+            "\"cls_met\":%" PRIu32 ","
+            "\"cls_bulk\":%" PRIu32
         "}"
         "}",
         RIVR_BUILD_ENV,
@@ -130,7 +135,12 @@ int build_info_write_json(char *buf, size_t buf_len)
         g_rivr_metrics.drop_no_route,
         g_rivr_metrics.drop_rate_limited,
         g_rivr_metrics.drop_ttl_relay,
-        g_rivr_metrics.tx_queue_peak
+        g_rivr_metrics.tx_queue_peak,
+        g_rivr_metrics.airtime_tokens_low,
+        g_rivr_metrics.class_drops_ctrl,
+        g_rivr_metrics.class_drops_chat,
+        g_rivr_metrics.class_drops_metrics,
+        g_rivr_metrics.class_drops_bulk
     );
 
     /* snprintf returns the number of chars it *would* have written;

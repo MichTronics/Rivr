@@ -32,6 +32,7 @@ ACC_SRCS := \
     $(FW)/pending_queue.c \
     $(FW)/rivr_metrics.c  \
     $(FW)/rivr_log.c      \
+    $(FW)/airtime_sched.c \
     test_stubs.c           \
     test_acceptance.c
 

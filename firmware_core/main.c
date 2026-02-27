@@ -62,6 +62,7 @@
 #include "firmware_core/rivr_metrics.h"
 #include "firmware_core/rivr_log.h"
 #include "firmware_core/build_info.h"
+#include "firmware_core/airtime_sched.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
 #include "rivr_layer/rivr_cli.h"
@@ -381,6 +382,17 @@ static void tx_drain_loop(void)
             continue;   /* skip — try next frame; revisit this one next tick  */
         }
 
+        /* ── Airtime class+fairness gate ────────────────────────────────── *
+         * CONTROL always passes; CHAT/METRICS/BULK are rate-limited when  *
+         * the token bucket is depleted.  Per-relay-source sub-buckets     *
+         * enforce per-neighbour fairness for forwarded traffic.           *
+         * This fires BEFORE the duty-cycle gate so we never waste DC      *
+         * budget on frames that fairness would drop anyway.               */
+        if (!airtime_sched_check_consume(req.data, req.len, req.toa_us, now_ms)) {
+            ESP_LOGD(TAG, "TX frame dropped by airtime scheduler (toa=%u us)", req.toa_us);
+            continue;
+        }
+
         /* Hard duty-cycle gate (C-layer backup; RIVR budget.toa_us already
            filtered the pipeline, but this is the final hardware guard) */
         if (!dutycycle_check(&g_dc, now_ms, req.toa_us)) {
@@ -473,12 +485,14 @@ void app_main(void)
      * TODO(SX1262): replace with platform_init() once hardware is connected. */
     timebase_init();
     dutycycle_init(&g_dc);
+    airtime_sched_init();
     radio_sim_init();   /* initialises ringbufs, attempts SX1262 reset (safe to ignore) */
 #else
     platform_init();
     timebase_init();
     radio_init();
     dutycycle_init(&g_dc);
+    airtime_sched_init();
 
     /* Subscribe the main task to the ESP Task Watchdog.
      * Timeout is set by CONFIG_ESP_TASK_WDT_TIMEOUT_S in sdkconfig.defaults.

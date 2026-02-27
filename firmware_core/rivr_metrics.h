@@ -28,6 +28,12 @@ typedef struct {
     uint32_t drop_rate_limited;  /* RIVR_FWD_DROP_BUDGET: relay rate-limited    */
     uint32_t drop_ttl_relay;     /* RIVR_FWD_DROP_TTL: relay TTL=0 dropped      */
     uint32_t tx_queue_peak;      /* high-water mark of rf_tx_queue occupancy    */
+    /* ── Step 6: airtime token-bucket fairness ───────────────────────────── */
+    uint32_t airtime_tokens_low; /* times global bucket fell below low-watermark*/
+    uint32_t class_drops_ctrl;   /* CONTROL class drops (should always be 0)    */
+    uint32_t class_drops_chat;   /* CHAT frames dropped by token gate           */
+    uint32_t class_drops_metrics;/* METRICS frames dropped by token gate        */
+    uint32_t class_drops_bulk;   /* BULK frames dropped by token gate           */
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;
