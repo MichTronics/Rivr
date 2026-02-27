@@ -73,6 +73,7 @@ uint32_t sources_rf_rx_drain(void)
         g_rx_frame_count++;
         g_last_rssi_dbm = frame.rssi_dbm;
         g_last_snr_db   = frame.snr_db;
+        rivr_fabric_on_rx(now_ms, frame.rssi_dbm, frame.len);
         /* ── 2. Phase-A strict flood-forward decision ── *
          * Work on a copy so the original frame bytes are preserved for RIVR. */
         rivr_pkt_hdr_t fwd_hdr = pkt_hdr;

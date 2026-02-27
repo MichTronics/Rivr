@@ -504,6 +504,7 @@ void app_main(void)
     strncpy(g_callsign, RIVR_CALLSIGN, sizeof(g_callsign) - 1u);
     g_callsign[sizeof(g_callsign) - 1u] = '\0';
     rivr_nvs_load_identity();   /* NVS values silently override compile-time defaults */
+    rivr_fabric_init();
     rivr_embed_init();
 
 #if RIVR_ROLE_CLIENT
@@ -570,6 +571,7 @@ void app_main(void)
 
         /* ─ 3. Periodic diagnostics ─ */
         uint32_t now = tb_millis();
+        rivr_fabric_tick(now);
         if (now - last_stats_ms >= STATS_INTERVAL_MS) {
             last_stats_ms = now;
             RIVR_LOGI(TAG, "── stats (loop#%lu, uptime=%lu ms) ──",
