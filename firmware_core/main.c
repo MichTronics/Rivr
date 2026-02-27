@@ -533,6 +533,16 @@ void app_main(void)
 
     /* Emit single-line build identity banner (git SHA, env, radio profile). */
     build_info_print_banner();
+    /* Also emit @SUPPORTPACK at boot so the first log line is copy-paste ready. */
+    {
+        char sp_buf[512];
+        build_info_write_supportpack(sp_buf, sizeof(sp_buf),
+            0u, 0u, 0u,
+            (uint64_t)36000000u, 0u, 0u,   /* DC: full budget at boot */
+            0u, 0u, 0u);
+        printf("@SUPPORTPACK %s\r\n", sp_buf);
+        fflush(stdout);
+    }
 
 #if RIVR_ROLE_CLIENT
     /* Start serial CLI — installs UART driver, prints boot banner.           */
@@ -618,6 +628,24 @@ void app_main(void)
             RIVR_LOGI(TAG, "  tx_queue  available  : %u", rb_available(&rf_tx_queue));
             RIVR_LOGI(TAG, "  tx_drops             : %u", rb_drops(&rf_tx_queue));
             rivr_embed_print_stats();
+
+            /* Emit @SUPPORTPACK for log capture / GitHub bug reports */
+            {
+                char sp_buf[512];
+                build_info_write_supportpack(
+                    sp_buf, sizeof(sp_buf),
+                    routing_neighbor_count(&g_neighbor_table, now),
+                    route_cache_count(&g_route_cache, now),
+                    pending_queue_count(&g_pending_queue),
+                    dutycycle_remaining_us(&g_dc),
+                    g_dc.used_us,
+                    g_dc.blocked_count,
+                    now,
+                    g_rx_frame_count,
+                    g_tx_frame_count);
+                printf("@SUPPORTPACK %s\r\n", sp_buf);
+                fflush(stdout);
+            }
         }
 
         /* ─ 3b. Periodic Fabric metrics (repeater builds only) ─ */

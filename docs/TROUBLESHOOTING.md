@@ -298,20 +298,21 @@ A supportpack bundles everything needed to diagnose issues offline.
 
 ```bash
 # 1. Open serial monitor
-~/.platformio/penv/bin/pio device monitor -e repeater_esp32devkit_e22_900
+~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900
 
-# 2. Type the command
+# 2. Type the command (client builds only)
 > supportpack
 
-# 3. Copy the full @SUPPORTPACK block printed to the terminal
-@SUPPORTPACK {"ver":"1.4.2","build":"step7-659b981","flags":["RIVR_FABRIC_REPEATER","RIVR_RADIO_SX1262"],...,"metrics":{...}}
+# 3. Copy the single @SUPPORTPACK line
+@SUPPORTPACK {"env":"client_esp32devkit_e22_900","sha":"659b981","built":"Feb 27 2026 14:05:32","role":"client","radio":"SX1262","freq":869480000,"sf":8,"bw_khz":125,"cr":"4/8","fabric":0,"sim":0,"uptime_ms":12345,"rx_frames":42,"tx_frames":18,"routing":{"neighbors":2,"routes":3,"pending":0},"dc":{"remaining_us":35946200,"used_us":53800,"blocked":0},"met":{"rx_fail":0,"rx_dup":1,...}}
 ```
 
-Alternatively, pipe it directly:
+**Repeater builds** (no interactive CLI) emit `@SUPPORTPACK` automatically every 30 seconds.
+Capture it with:
 
 ```bash
-echo "supportpack" | ~/.platformio/penv/bin/pio device monitor \
-  -e repeater_esp32devkit_e22_900 | grep @SUPPORTPACK
+~/.platformio/penv/bin/pio device monitor \
+  -e repeater_esp32devkit_e22_900 | grep @SUPPORTPACK | head -1
 ```
 
 Include this output with every bug report. See

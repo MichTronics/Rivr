@@ -171,32 +171,47 @@ variant header will leave it untouched.
 
 ### 5 — Collecting a supportpack
 
-A **supportpack** is a single-line JSON blob that captures firmware version, build flags,
-radio parameters, and all 27 metric counters. Attach it to every bug report.
+A **supportpack** is a single JSON line that captures build identity, radio profile,
+routing summary, duty-cycle snapshot, and all 27 metric counters. Attach it to every
+bug report.
+
+**Client builds** (interactive CLI):
 
 ```bash
-# Open the serial monitor for your environment
-~/.platformio/penv/bin/pio device monitor -e repeater_esp32devkit_e22_900
+# Open serial monitor
+~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900
 
-# Type the command at the prompt
+# Type the command
 > supportpack
 
-# Output:
-@SUPPORTPACK {"ver":"1.4.2","build":"659b981","flags":["RIVR_FABRIC_REPEATER","RIVR_RADIO_SX1262"],"freq_hz":869480000,"metrics":{"rx_fail":0,"rx_dup":0,...}}
+# Output — one line, copy-paste ready:
+@SUPPORTPACK {"env":"client_esp32devkit_e22_900","sha":"659b981","built":"Feb 27 2026 14:05:32","role":"client","radio":"SX1262","freq":869480000,"sf":8,"bw_khz":125,"cr":"4/8","fabric":0,"sim":0,"uptime_ms":12345,"rx_frames":42,"tx_frames":18,"routing":{"neighbors":2,"routes":3,"pending":0},"dc":{"remaining_us":35946200,"used_us":53800,"blocked":0},"met":{"rx_fail":0,"rx_dup":0,...}}
 ```
 
-Or extract non-interactively:
+**Repeater builds** (no interactive CLI) emit `@SUPPORTPACK` automatically every 30 s:
 
 ```bash
-echo "supportpack" | ~/.platformio/penv/bin/pio device monitor \
-  -e repeater_esp32devkit_e22_900 | grep @SUPPORTPACK
+~/.platformio/penv/bin/pio device monitor \
+  -e repeater_esp32devkit_e22_900 | grep @SUPPORTPACK | head -1
 ```
 
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#collecting-a-supportpack) for full details.
 
 ---
 
-### 6 — Client node (E22-900M30S/M33S, chat-first)
+### 6 — How to report bugs
+
+1. Collect a supportpack (see above).
+2. Note the serial log lines surrounding the failure (~50 lines).
+3. Open a [GitHub issue](../../issues/new/choose) and select the **Bug report** template.
+4. Fill in the supportpack output, wiring details, and reproduction steps.
+
+The `@SUPPORTPACK` line is machine-readable and lets maintainers reproduce your exact
+build configuration without further back-and-forth.
+
+---
+
+### 7 — Client node (E22-900M30S/M33S, chat-first)
 
 A lightweight client variant for nodes that **send and receive** `PKT_CHAT`
 but do not act as relay infrastructure.  `PKT_CHAT` and `PKT_DATA` frames

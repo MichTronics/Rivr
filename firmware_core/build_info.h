@@ -121,6 +121,42 @@ void build_info_print_banner(void);
  */
 int build_info_write_json(char *buf, size_t buf_len);
 
+/**
+ * @brief Write the full @SUPPORTPACK JSON block into @p buf.
+ *
+ * Extends build_info_write_json() with a routing summary, duty-cycle snapshot,
+ * uptime, and RX/TX frame counts. The caller gathers live values from the
+ * relevant modules and passes them in — no global coupling in this module.
+ *
+ * Output prefix printed separately by the caller: "@SUPPORTPACK "
+ *
+ * Recommended minimum buffer size: 512 bytes.
+ *
+ * @param buf             Caller-supplied buffer
+ * @param buf_len         Size of buf in bytes
+ * @param neighbor_cnt    Live neighbour count (routing_neighbor_count())
+ * @param route_cnt       Live route count (route_cache_count())
+ * @param pending_cnt     Pending queue occupancy (pending_queue_count())
+ * @param dc_remaining_us Duty-cycle remaining budget µs (dutycycle_remaining_us())
+ * @param dc_used_us      Duty-cycle used this window µs (g_dc.used_us)
+ * @param dc_blocked      TX attempts blocked by DC gate (g_dc.blocked_count)
+ * @param uptime_ms       Node uptime in milliseconds (tb_millis())
+ * @param rx_frames       Total received frames (g_rx_frame_count)
+ * @param tx_frames       Total transmitted frames (g_tx_frame_count)
+ * @return                Number of bytes written (excluding NUL)
+ */
+int build_info_write_supportpack(char    *buf,
+                                 size_t   buf_len,
+                                 uint8_t  neighbor_cnt,
+                                 uint8_t  route_cnt,
+                                 uint8_t  pending_cnt,
+                                 uint64_t dc_remaining_us,
+                                 uint64_t dc_used_us,
+                                 uint32_t dc_blocked,
+                                 uint32_t uptime_ms,
+                                 uint32_t rx_frames,
+                                 uint32_t tx_frames);
+
 #ifdef __cplusplus
 }
 #endif

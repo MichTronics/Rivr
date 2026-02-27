@@ -66,6 +66,7 @@
 #include "../firmware_core/timebase.h"
 #include "../firmware_core/build_info.h"
 #include "../firmware_core/rivr_metrics.h"
+#include "../firmware_core/dutycycle.h"
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 
@@ -337,10 +338,20 @@ static void cli_handle_line(void)
 
     /* ── "supportpack" ── */
     if (strncmp(p, "supportpack", 11u) == 0 && (p[11] == '\0' || p[11] == ' ')) {
-        /* 320 bytes is sufficient for the full JSON (verified at review). */
-        char sp_buf[384];
-        int n = build_info_write_json(sp_buf, sizeof(sp_buf));
-        printf("[SUPPORTPACK]\r\n%.*s\r\n", n, sp_buf);
+        uint32_t now_ms = tb_millis();
+        char sp_buf[512];
+        int n = build_info_write_supportpack(
+            sp_buf, sizeof(sp_buf),
+            routing_neighbor_count(&g_neighbor_table, now_ms),
+            route_cache_count(&g_route_cache, now_ms),
+            pending_queue_count(&g_pending_queue),
+            dutycycle_remaining_us(&g_dc),
+            g_dc.used_us,
+            g_dc.blocked_count,
+            now_ms,
+            g_rx_frame_count,
+            g_tx_frame_count);
+        printf("@SUPPORTPACK %.*s\r\n", n, sp_buf);
         fflush(stdout);
         return;
     }
