@@ -169,7 +169,34 @@ Or add `-DRIVR_RF_FREQ_HZ=...` as the first line of the `build_flags` in
 `platformio.ini` before the `-include` line — the `#ifndef` guard in the
 variant header will leave it untouched.
 
-### 5 — Client node (E22-900M30S/M33S, chat-first)
+### 5 — Collecting a supportpack
+
+A **supportpack** is a single-line JSON blob that captures firmware version, build flags,
+radio parameters, and all 27 metric counters. Attach it to every bug report.
+
+```bash
+# Open the serial monitor for your environment
+~/.platformio/penv/bin/pio device monitor -e repeater_esp32devkit_e22_900
+
+# Type the command at the prompt
+> supportpack
+
+# Output:
+@SUPPORTPACK {"ver":"1.4.2","build":"659b981","flags":["RIVR_FABRIC_REPEATER","RIVR_RADIO_SX1262"],"freq_hz":869480000,"metrics":{"rx_fail":0,"rx_dup":0,...}}
+```
+
+Or extract non-interactively:
+
+```bash
+echo "supportpack" | ~/.platformio/penv/bin/pio device monitor \
+  -e repeater_esp32devkit_e22_900 | grep @SUPPORTPACK
+```
+
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#collecting-a-supportpack) for full details.
+
+---
+
+### 6 — Client node (E22-900M30S/M33S, chat-first)
 
 A lightweight client variant for nodes that **send and receive** `PKT_CHAT`
 but do not act as relay infrastructure.  `PKT_CHAT` and `PKT_DATA` frames
@@ -283,6 +310,22 @@ and will be hot-reloaded from NVS without a reboot.
 
 ---
 
+## Known Limitations
+
+| Area | Limitation | Workaround |
+|---|---|---|
+| **Encryption** | No payload encryption or authentication. `net_id` provides only network separation, not security. | Apply end-to-end encryption in the RIVR program layer before emitting frames. |
+| **Unicast reliability** | No ARQ / retransmit for unicast frames. `PKT_ACK` type is reserved but not yet implemented. | Use flood with TTL=3 for best-effort delivery; build ACK logic in the RIVR program. |
+| **Node ID provisioning** | Node IDs are derived from the ESP32 MAC at boot. No central registry or collision detection. | Manually assign `RIVR_NODE_ID` at build time for deterministic IDs. |
+| **Mesh size** | Neighbour table: 16 entries. Route cache: 16 entries. Pending queue: 16 slots. Large meshes will evict entries. | Increase `NEIGHBOR_TABLE_SIZE`, `ROUTE_CACHE_SIZE`, `PENDING_QUEUE_CAP` and rebuild. |
+| **Single channel** | All nodes in a network share one RF channel. Capacity limited by EU868 1 %/hour duty. | Use two networks on separate `RIVR_RF_FREQ_HZ` values for load splitting. |
+| **OTA push range** | `PKT_PROG_PUSH` is not relayed — must reach target within one radio hop. | Send via unicast or position a gateway within range of all nodes. |
+| **Display flicker** | SSD1306 driver does a full 1025-byte bulk I²C flush per refresh. At 400 kHz this takes ~20 ms. | For high-refresh applications, reduce the display task refresh interval. |
+| **`RIVR_SIM_MODE`** | Simulation runs 8 fixed rounds then idles. Not suitable for long-running soak tests. | Use the deterministic replay harness in `tests/` for offline simulation. |
+| **No frequency hopping** | Fixed channel; susceptible to sustained interference on the configured frequency. | Manual fallback: reflash with different `RIVR_RF_FREQ_HZ` if channel is jammed. |
+
+---
+
 ## `rivr_core` Feature Flags
 
 | Flag | Effect |
@@ -306,3 +349,12 @@ Full documentation is in [`docs/`](docs/README.md) — available in English and 
 | Language reference | [en/language-reference.md](docs/en/language-reference.md) | [nl/taalreferentie.md](docs/nl/taalreferentie.md) |
 | Build guide | [en/build-guide.md](docs/en/build-guide.md) | [nl/bouwhandleiding.md](docs/nl/bouwhandleiding.md) |
 | Firmware integration | [en/firmware-integration.md](docs/en/firmware-integration.md) | [nl/firmware-integratie.md](docs/nl/firmware-integratie.md) |
+
+**Engineering reference** (in `docs/` root):
+
+| Document | Description |
+|---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Mermaid diagrams: component map, boot sequence, RX pipeline, routing FSM, airtime budget |
+| [ROLES.md](docs/ROLES.md) | Repeater / Client / Gateway / Monitor — flags, trade-offs, CLI reference |
+| [RF_SETUP_EU868.md](docs/RF_SETUP_EU868.md) | Antenna, power, channel plan, duty-cycle budget, GPIO wiring |
+| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Symptom → `@MET` metric → fix mapping; supportpack procedure |

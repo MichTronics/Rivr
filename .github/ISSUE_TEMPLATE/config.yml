@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Documentation
+    url: https://github.com/your-org/rivr/tree/main/docs
+    about: ARCHITECTURE, ROLES, RF_SETUP_EU868, TROUBLESHOOTING guides
+  - name: Discussion
+    url: https://github.com/your-org/rivr/discussions
+    about: Questions, ideas, and general discussion
