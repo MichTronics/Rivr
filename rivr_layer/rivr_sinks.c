@@ -27,6 +27,8 @@
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
+#include "../firmware_core/rivr_metrics.h"
+#include "../firmware_core/rivr_log.h"
 
 #define TAG "RIVR_SINK"
 
@@ -41,6 +43,7 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
     rf_tx_request_t req;
     memset(&req, 0, sizeof(req));
 
+#ifndef RIVR_SIM_MODE
     if (v->tag == RIVR_VAL_STR) {
         /* Legacy: Decode "CHAT:<text>" → frame type 0x04 + Lamport tick header + text */
         const char *s    = (const char *)v->as_str.buf;
@@ -72,7 +75,9 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
         req.len    = 3u + plen;
         req.toa_us = RF_TOA_APPROX_US(req.len);
 
-    } else if (v->tag == RIVR_VAL_BYTES) {
+    } else
+#endif /* !RIVR_SIM_MODE */
+    if (v->tag == RIVR_VAL_BYTES) {
         /* ── Phase-D unicast path ─────────────────────────────────────────── */
         uint16_t total = v->as_bytes.len;
         if (total > RF_MAX_PAYLOAD_LEN) {
@@ -128,7 +133,7 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                     rreq.toa_us = RF_TOA_APPROX_US(rreq.len);
                     rreq_ok = rb_try_push(&rf_tx_queue, &rreq);
                 }
-                ESP_LOGI(TAG,
+                RIVR_LOGI(TAG,
                     "rf_tx: dst=0x%08lx no route → pending=%s ROUTE_REQ=%s",
                     (unsigned long)pkt.dst_id,
                     pend_ok ? "ok" : "FULL",
@@ -145,7 +150,7 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                 if (reenc > 0) {
                     req.len    = (uint8_t)reenc;
                     req.toa_us = RF_TOA_APPROX_US(req.len);
-                    ESP_LOGI(TAG,
+                    RIVR_LOGI(TAG,
                         "rf_tx: unicast dst=0x%08lx via next_hop=0x%08lx",
                         (unsigned long)pkt.dst_id, (unsigned long)next_hop);
                 }
@@ -184,9 +189,10 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
             }
         }
         if (!pushed) {
+            g_rivr_metrics.tx_queue_full++;
             ESP_LOGW(TAG, "rf_tx: queue full (fallback also failed) – dropped");
         } else {
-            ESP_LOGI(TAG, "rf_tx: queued %u bytes (toa=%u us)", req.len, req.toa_us);            g_tx_frame_count++;            /* Track originated TX separately from relayed traffic so that a
+            RIVR_LOGI(TAG, "rf_tx: queued %u bytes (toa=%u us)", req.len, req.toa_us);            g_tx_frame_count++;            /* Track originated TX separately from relayed traffic so that a
              * heavy relay storm cannot exhaust the forward budget and silence
              * this node's own transmissions.  (Check #5 — fwd vs originated) */
             if (dec && pkt.pkt_type < FWDBUDGET_PKT_TYPES) {
@@ -200,13 +206,16 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
         return;
     }
 
+#ifndef RIVR_SIM_MODE
     /* ── Non-BYTES path (RIVR_VAL_STR legacy) push ── */
     bool pushed = rb_try_push(&rf_tx_queue, &req);
     if (!pushed) {
+        g_rivr_metrics.tx_queue_full++;
         ESP_LOGW(TAG, "rf_tx: queue full – frame dropped (toa=%u us)", req.toa_us);
     } else {
-        ESP_LOGI(TAG, "rf_tx: queued %u bytes (toa_approx=%u us, type=0x%02x)",
+        RIVR_LOGI(TAG, "rf_tx: queued %u bytes (toa_approx=%u us, type=0x%02x)",
                  req.len, req.toa_us, req.data[0]);        g_tx_frame_count++;    }
+#endif /* !RIVR_SIM_MODE */
 }
 
 /* ── log sink ────────────────────────────────────────────────────────────── */
@@ -219,21 +228,21 @@ void log_sink_cb(const rivr_value_t *v, void *user_ctx)
 
     switch (v->tag) {
         case RIVR_VAL_STR:
-            ESP_LOGI("RIVR", "[%s] %.*s", prefix,
+            RIVR_LOGI("RIVR", "[%s] %.*s", prefix,
                      (int)v->as_str.len, (const char *)v->as_str.buf);
             break;
         case RIVR_VAL_INT:
-            ESP_LOGI("RIVR", "[%s] %lld", prefix, (long long)v->as_int);
+            RIVR_LOGI("RIVR", "[%s] %lld", prefix, (long long)v->as_int);
             break;
         case RIVR_VAL_BOOL:
-            ESP_LOGI("RIVR", "[%s] %s", prefix, v->as_bool ? "true" : "false");
+            RIVR_LOGI("RIVR", "[%s] %s", prefix, v->as_bool ? "true" : "false");
             break;
         case RIVR_VAL_BYTES:
-            ESP_LOGI("RIVR", "[%s] <bytes len=%u>", prefix, v->as_bytes.len);
+            RIVR_LOGI("RIVR", "[%s] <bytes len=%u>", prefix, v->as_bytes.len);
             break;
         case RIVR_VAL_UNIT:
         default:
-            ESP_LOGI("RIVR", "[%s] ()", prefix);
+            RIVR_LOGI("RIVR", "[%s] ()", prefix);
             break;
     }
 }
@@ -317,7 +326,7 @@ void beacon_sink_cb(const rivr_value_t *v, void *user_ctx)
     req.due_ms = 0;
 
     if (rb_try_push(&rf_tx_queue, &req)) {
-        ESP_LOGI(TAG, "beacon queued: src=0x%08lx cs='%s'",
+        RIVR_LOGI(TAG, "beacon queued: src=0x%08lx cs='%s'",
                  (unsigned long)g_my_node_id, g_callsign);
         g_tx_frame_count++;
     } else {
@@ -341,5 +350,5 @@ void rivr_sinks_init(void)
     /* Register log sink */
     rivr_register_sink("log",            log_sink_cb,     (void *)"log");
 
-    ESP_LOGI("RIVR_SINK", "sinks registered: rf_tx, beacon, usb_print, log");
+    RIVR_LOGI("RIVR_SINK", "sinks registered: rf_tx, beacon, usb_print, log");
 }

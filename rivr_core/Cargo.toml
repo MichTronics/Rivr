@@ -26,11 +26,10 @@ crate-type = ["rlib", "staticlib"]
 # -------------------------------------------------------------------
 [features]
 default  = ["std"]
-std      = ["serde/std", "serde_json", "alloc"]
-alloc    = []
-ffi      = []        # C-ABI exports (works with default std build; no_std path is WIP)
-embedded = ["ffi"]   # ffi alias  – pass --no-default-features --features embedded for no_std
+std      = ["serde/std", "alloc"] # host build: enable std + heap types
+alloc    = ["serde/alloc"]        # no_std + heap: Vec/String from alloc crate
+ffi      = []                     # C-ABI exports
+embedded = ["ffi"]                # convenience: ffi, no std, no alloc (pure-stack types)
 
 [dependencies]
 serde      = { workspace = true }
-serde_json = { workspace = true, optional = true }

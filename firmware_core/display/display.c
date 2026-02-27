@@ -28,6 +28,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "../rivr_log.h"
 #include "../timebase.h"
 
 #define TAG "DISPLAY"
@@ -266,7 +267,7 @@ flush_err:
         vTaskDelay(pdMS_TO_TICKS(50));   /* let supply / bus settle */
         esp_err_t rinit = ssd1306_hw_init();
         if (rinit == ESP_OK) {
-            ESP_LOGI(TAG, "ssd1306 recovered after %u flush failures — display active",
+            RIVR_LOGI(TAG, "ssd1306 recovered after %u flush failures — display active",
                      (unsigned)s_flush_fail_cnt);
             s_flush_fail_cnt = 0u;       /* reset counter; display stays active */
         } else {
@@ -581,7 +582,7 @@ static void display_init(const display_stats_t *initial)
         uint8_t ping[2] = {0x00u, 0xAEu};
         err = i2c_master_transmit(s_dev, ping, sizeof(ping), I2C_TIMEOUT_MS);
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "SSD1306 found at 0x%02X", k_addrs[ai]);
+            RIVR_LOGI(TAG, "SSD1306 found at 0x%02X", k_addrs[ai]);
             found = true;
         } else {
             ESP_LOGW(TAG, "0x%02X: no ACK (%s)", k_addrs[ai], esp_err_to_name(err));
@@ -606,7 +607,7 @@ static void display_init(const display_stats_t *initial)
         return;
     }
     s_ok = true;
-    ESP_LOGI(TAG, "SSD1306 ready (SDA=%d SCL=%d speed=%u Hz)",
+    RIVR_LOGI(TAG, "SSD1306 ready (SDA=%d SCL=%d speed=%u Hz)",
              PIN_DISPLAY_SDA, PIN_DISPLAY_SCL, I2C_BUS_SPEED_HZ);
 
     /* ── Self-test: force ALL pixels ON via register (no GDDRAM needed) ──────
@@ -614,7 +615,7 @@ static void display_init(const display_stats_t *initial)
      * If display shows white here → hardware path confirmed good.
      * If still black → I2C wiring / power problem, not firmware.          */
     ssd1306_cmd1(0xA5u);  /* entire display ON (ignores GDDRAM)            */
-    ESP_LOGI(TAG, "Self-test: all pixels ON for %u ms — display MUST show white",
+    RIVR_LOGI(TAG, "Self-test: all pixels ON for %u ms — display MUST show white",
              (unsigned)SELFTEST_MS);
     vTaskDelay(pdMS_TO_TICKS(SELFTEST_MS));
     ssd1306_cmd1(0xA4u);  /* back to normal (follow GDDRAM)                */

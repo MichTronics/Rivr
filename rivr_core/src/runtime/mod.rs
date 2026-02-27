@@ -11,6 +11,9 @@ pub mod opcode;
 pub mod scheduler;
 pub mod value;
 
+#[cfg(feature = "ffi")]
+pub mod alloc_guard;
+
 // Top-level re-exports.
 pub use engine::Engine;
 pub use event::{Event, Stamp};

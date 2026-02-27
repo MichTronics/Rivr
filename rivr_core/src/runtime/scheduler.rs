@@ -23,7 +23,10 @@
 //! `clock_pending_counts() -> [usize; 8]` exposes per-clock queue depths so
 //! callers can detect imbalance and emit diagnostics.
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(not(feature = "std"), not(feature = "alloc")))]
+compile_error!("rivr_core::runtime::scheduler requires either 'std' or 'alloc' feature");
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::collections::{BTreeMap, BinaryHeap};
 #[cfg(feature = "std")]
 use std::collections::{BTreeMap, BinaryHeap};

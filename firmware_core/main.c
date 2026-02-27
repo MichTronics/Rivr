@@ -56,6 +56,8 @@
 #include "firmware_core/route_cache.h"
 #include "firmware_core/pending_queue.h"
 #include "firmware_core/rivr_fabric.h"
+#include "firmware_core/rivr_metrics.h"
+#include "firmware_core/rivr_log.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
 #include "rivr_layer/rivr_cli.h"
@@ -149,16 +151,16 @@ static void sim_inject_packets(void)
 
     uint32_t seq = 0;
 
-    ESP_LOGI(TAG, "══════════════════════════════════════════════════════");
-    ESP_LOGI(TAG, "[SIM] Phase A+D: 3-node mesh demo");
-    ESP_LOGI(TAG, "  MY_NODE = 0x%08lx", (unsigned long)MY_NODE_ID);
-    ESP_LOGI(TAG, "  NODE_A  = 0x%08lx (direct neighbour)",  (unsigned long)NODE_A);
-    ESP_LOGI(TAG, "  NODE_B  = 0x%08lx (relay, direct)",      (unsigned long)NODE_B);
-    ESP_LOGI(TAG, "  NODE_C  = 0x%08lx (2-hop via NODE_B)",   (unsigned long)NODE_C);
-    ESP_LOGI(TAG, "══════════════════════════════════════════════════════");
+    RIVR_LOGI(TAG, "══════════════════════════════════════════════════════");
+    RIVR_LOGI(TAG, "[SIM] Phase A+D: 3-node mesh demo");
+    RIVR_LOGI(TAG, "  MY_NODE = 0x%08lx", (unsigned long)MY_NODE_ID);
+    RIVR_LOGI(TAG, "  NODE_A  = 0x%08lx (direct neighbour)",  (unsigned long)NODE_A);
+    RIVR_LOGI(TAG, "  NODE_B  = 0x%08lx (relay, direct)",      (unsigned long)NODE_B);
+    RIVR_LOGI(TAG, "  NODE_C  = 0x%08lx (2-hop via NODE_B)",   (unsigned long)NODE_C);
+    RIVR_LOGI(TAG, "══════════════════════════════════════════════════════");
 
     /* Round 1 ── PKT_CHAT from NODE_A (direct, hop=0) ─────────────────── */
-    ESP_LOGI(TAG, "[SIM] R1: 3 × PKT_CHAT NODE_A hop=0 (expect RIVR+relay+learn A)");
+    RIVR_LOGI(TAG, "[SIM] R1: 3 × PKT_CHAT NODE_A hop=0 (expect RIVR+relay+learn A)");
     for (int i = 0; i < 3; i++, seq++) {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
@@ -169,7 +171,7 @@ static void sim_inject_packets(void)
     }
 
     /* Round 2 ── PKT_CHAT from NODE_C via NODE_B (hop=1) ──────────────── */
-    ESP_LOGI(TAG, "[SIM] R2: 2 × PKT_CHAT NODE_C via NODE_B hop=1 (expect learn C→B)");
+    RIVR_LOGI(TAG, "[SIM] R2: 2 × PKT_CHAT NODE_C via NODE_B hop=1 (expect learn C→B)");
     for (int i = 0; i < 2; i++, seq++) {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
@@ -181,7 +183,7 @@ static void sim_inject_packets(void)
     }
 
     /* Round 3 ── PKT_DATA from NODE_A (type=6, RIVR drops via filter) ─── */
-    ESP_LOGI(TAG, "[SIM] R3: PKT_DATA NODE_A (expect RIVR-drop, C-relay queued)");
+    RIVR_LOGI(TAG, "[SIM] R3: PKT_DATA NODE_A (expect RIVR-drop, C-relay queued)");
     {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
@@ -192,7 +194,7 @@ static void sim_inject_packets(void)
     }
 
     /* Round 4 ── PKT_ROUTE_REQ from NODE_B asking for MY_NODE ─────────── */
-    ESP_LOGI(TAG, "[SIM] R4: ROUTE_REQ from NODE_B dst=MY_NODE (expect ROUTE_RPL)");
+    RIVR_LOGI(TAG, "[SIM] R4: ROUTE_REQ from NODE_B dst=MY_NODE (expect ROUTE_RPL)");
     {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
@@ -205,7 +207,7 @@ static void sim_inject_packets(void)
     /* Round 5 ── Duplicate of Round-1 frame 0 via same relay ───────────── *
      * GATE2 probe 1: same (src_id=NODE_A, seq=0), same from_id=NODE_A.      *
      * Proves basic dedupe drop.                                               */
-    ESP_LOGI(TAG, "[SIM] R5: R1[0] exact duplicate same relay  (expect DEDUPE-DROP)");
+    RIVR_LOGI(TAG, "[SIM] R5: R1[0] exact duplicate same relay  (expect DEDUPE-DROP)");
     {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
@@ -219,7 +221,7 @@ static void sim_inject_packets(void)
      * NODE_A's original frame (seq=0) is now re-forwarded by NODE_B.         *
      * key insight: dedupe is on (src_id, seq) — from_id is irrelevant.       *
      * Expected: DEDUPE-DROP even though from_id changed.                      */
-    ESP_LOGI(TAG, "[SIM] R6: R1[0] same (src,seq) different relay NODE_B (expect DEDUPE-DROP)");
+    RIVR_LOGI(TAG, "[SIM] R6: R1[0] same (src,seq) different relay NODE_B (expect DEDUPE-DROP)");
     {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
@@ -232,7 +234,7 @@ static void sim_inject_packets(void)
         sim_push_frame(&h, "hello-from-A-0", -75, NODE_B);
     }
 
-    ESP_LOGI(TAG, "[SIM] %u frames queued — main loop will process",
+    RIVR_LOGI(TAG, "[SIM] %u frames queued — main loop will process",
              rf_rx_ringbuf.cap - rb_available(&rf_rx_ringbuf));
 
     /* ──────────────────────────────────────────────────────────────────────── *
@@ -247,7 +249,7 @@ static void sim_inject_packets(void)
      * that hit a cache miss in rf_tx_sink_cb).  Then inject a ROUTE_RPL from *
      * NODE_B saying “I can reach NODE_D in 2 hops”.  When main loop processes *
      * the RPL, pending_queue_drain_for_dst() should flush the message.        */
-    ESP_LOGI(TAG, "[SIM] R7: pending-queue drain (pre-load msg for NODE_D + inject ROUTE_RPL)");
+    RIVR_LOGI(TAG, "[SIM] R7: pending-queue drain (pre-load msg for NODE_D + inject ROUTE_RPL)");
     {
         uint32_t now_ms = tb_millis();
 
@@ -263,7 +265,7 @@ static void sim_inject_packets(void)
             bool pq_ok = pending_queue_enqueue(
                 &g_pending_queue, NODE_D,
                 pd, (uint8_t)pl, RF_TOA_APPROX_US((uint8_t)pl), now_ms);
-            ESP_LOGI(TAG, "  pre-loaded pending[NODE_D]: %s",
+            RIVR_LOGI(TAG, "  pre-loaded pending[NODE_D]: %s",
                      pq_ok ? "ok" : "FAILED-queue-full");
         }
 
@@ -282,7 +284,7 @@ static void sim_inject_packets(void)
             const uint8_t *rpl_pl = NULL;
             if (protocol_decode(rpl_buf, (uint8_t)rpl_len, &rpl_h, &rpl_pl)) {
                 sim_push_frame(&rpl_h, (const char *)rpl_pl, -82, NODE_B);
-                ESP_LOGI(TAG, "  injected ROUTE_RPL from NODE_B for NODE_D");
+                RIVR_LOGI(TAG, "  injected ROUTE_RPL from NODE_B for NODE_D");
             }
         }
     }
@@ -292,7 +294,7 @@ static void sim_inject_packets(void)
      * Fill rf_tx_queue with dummy frames to force a push failure.            *
      * Then call rf_tx_sink_cb directly — it should detect UNICAST + fail    *
      * and emit a fallback flood with PKT_FLAG_FALLBACK.                      */
-    ESP_LOGI(TAG, "[SIM] R8: unicast-failover (queue full → PKT_FLAG_FALLBACK)");
+    RIVR_LOGI(TAG, "[SIM] R8: unicast-failover (queue full → PKT_FLAG_FALLBACK)");
     {
         uint32_t now_ms = tb_millis();
 
@@ -302,7 +304,7 @@ static void sim_inject_packets(void)
                            /*hops*/1u, /*metric*/185u,
                            RCACHE_FLAG_VALID | RCACHE_FLAG_DIRECT,
                            now_ms);
-        ESP_LOGI(TAG, "  pre-set route[NODE_A]=direct");
+        RIVR_LOGI(TAG, "  pre-set route[NODE_A]=direct");
 
         /* Fill rf_tx_queue with dummies to exhaust capacity */
         uint8_t filled = 0u;
@@ -314,7 +316,7 @@ static void sim_inject_packets(void)
             dummy.toa_us  = 1000u;
             if (rb_try_push(&rf_tx_queue, &dummy)) filled++;
         }
-        ESP_LOGI(TAG, "  TX queue filled with %u dummies (cap=%u)", filled, RF_TX_QUEUE_CAP);
+        RIVR_LOGI(TAG, "  TX queue filled with %u dummies (cap=%u)", filled, RF_TX_QUEUE_CAP);
 
         /* Build a unicast CHAT from MY_NODE to NODE_A, then emit via sink */
         rivr_pkt_hdr_t uh = {
@@ -412,7 +414,7 @@ static void tx_drain_loop(void)
                     payload_str[n] = '\0';
                 }
 
-                ESP_LOGI(TAG,
+                RIVR_LOGI(TAG,
                     "[SIM] TX type=%s src=0x%08lx seq=%lu ttl=%u hop=%u "
                     "len=%u payload=\"%s\" toa=%u us",
                     type_str,
@@ -421,7 +423,7 @@ static void tx_drain_loop(void)
                     pkt.ttl, pkt.hop,
                     req.len, payload_str, req.toa_us);
             } else {
-                ESP_LOGI(TAG,
+                RIVR_LOGI(TAG,
                     "[SIM] TX <non-RIVR frame> len=%u toa=%u us",
                     req.len, req.toa_us);
             }
@@ -452,11 +454,11 @@ static void tx_drain_loop(void)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "═══ RIVR Embedded Node booting ═══");
-    ESP_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
+    RIVR_LOGI(TAG, "═══ RIVR Embedded Node booting ═══");
+    RIVR_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
 
 #ifdef RIVR_SIM_MODE
-    ESP_LOGI(TAG, "*** SIMULATION MODE: no real SX1262 hardware ***");
+    RIVR_LOGI(TAG, "*** SIMULATION MODE: no real SX1262 hardware ***");
 #endif
 
     /* ── Hardware init ── */
@@ -480,7 +482,7 @@ void app_main(void)
         esp_read_mac(mac, ESP_MAC_WIFI_STA);
         g_my_node_id = ((uint32_t)mac[2] << 24) | ((uint32_t)mac[3] << 16)
                      | ((uint32_t)mac[4] <<  8) |  (uint32_t)mac[5];
-        ESP_LOGI(TAG, "Node ID: 0x%08lX (from MAC bytes [2..5])",
+        RIVR_LOGI(TAG, "Node ID: 0x%08lX (from MAC bytes [2..5])",
                  (unsigned long)g_my_node_id);
     }
 #endif
@@ -490,7 +492,7 @@ void app_main(void)
      * routing_should_reply_route_req(), route_cache_learn_rx(), etc., can
      * distinguish this node from the injected remote nodes. */
     g_my_node_id = MY_NODE_ID;
-    ESP_LOGI(TAG, "[SIM] node identity: 0x%08lx", (unsigned long)MY_NODE_ID);
+    RIVR_LOGI(TAG, "[SIM] node identity: 0x%08lx", (unsigned long)MY_NODE_ID);
 #endif
 
     /* ── RIVR engine init ── */
@@ -525,17 +527,18 @@ void app_main(void)
     /* Push simulated frames AFTER engine is ready so clock state is fully
      * initialised, but BEFORE radio_start_rx (which is skipped in sim mode). */
     sim_inject_packets();
-    ESP_LOGI(TAG, "[SIM] frames injected, entering main loop (rivr_tick will process them)");
+    RIVR_LOGI(TAG, "[SIM] frames injected, entering main loop (rivr_tick will process them)");
 #else
     /* ── Start radio RX ── */
     radio_start_rx();
 #endif
 
-    ESP_LOGI(TAG, "entering main loop");
+    RIVR_LOGI(TAG, "entering main loop");
 
-    uint32_t last_stats_ms = 0;
+    uint32_t last_stats_ms     = 0;
     uint32_t last_fabric_log_ms = 0;
-    uint32_t loop_count    = 0;
+    uint32_t last_met_print     = 0;
+    uint32_t loop_count         = 0;
     display_stats_t disp;       /* stats snapshot updated each iteration */
     memset(&disp, 0, sizeof(disp));
     strncpy(disp.callsign, RIVR_CALLSIGN, sizeof(disp.callsign) - 1u);
@@ -569,12 +572,12 @@ void app_main(void)
         uint32_t now = tb_millis();
         if (now - last_stats_ms >= STATS_INTERVAL_MS) {
             last_stats_ms = now;
-            ESP_LOGI(TAG, "── stats (loop#%lu, uptime=%lu ms) ──",
+            RIVR_LOGI(TAG, "── stats (loop#%lu, uptime=%lu ms) ──",
                      (unsigned long)loop_count, (unsigned long)now);
-            ESP_LOGI(TAG, "  rx_ringbuf available : %u", rb_available(&rf_rx_ringbuf));
-            ESP_LOGI(TAG, "  rx_drops             : %u", rb_drops(&rf_rx_ringbuf));
-            ESP_LOGI(TAG, "  tx_queue  available  : %u", rb_available(&rf_tx_queue));
-            ESP_LOGI(TAG, "  tx_drops             : %u", rb_drops(&rf_tx_queue));
+            RIVR_LOGI(TAG, "  rx_ringbuf available : %u", rb_available(&rf_rx_ringbuf));
+            RIVR_LOGI(TAG, "  rx_drops             : %u", rb_drops(&rf_rx_ringbuf));
+            RIVR_LOGI(TAG, "  tx_queue  available  : %u", rb_available(&rf_tx_queue));
+            RIVR_LOGI(TAG, "  tx_drops             : %u", rb_drops(&rf_tx_queue));
             rivr_embed_print_stats();
         }
 
@@ -582,7 +585,7 @@ void app_main(void)
 #if RIVR_FABRIC_REPEATER
         if (now - last_fabric_log_ms >= 5000u) {
             last_fabric_log_ms = now;
-            ESP_LOGI(TAG,
+            RIVR_LOGI(TAG,
                 "[FAB] score=%u rx=%lu relay=%lu delay=%lu drop=%lu dc_block=%lu",
                 (unsigned)rivr_fabric_get_score(),
                 (unsigned long)rivr_fabric_get_rx_total(),
@@ -592,6 +595,14 @@ void app_main(void)
                 (unsigned long)rivr_fabric_get_tx_blocked());
         }
 #endif /* RIVR_FABRIC_REPEATER */
+
+        /* ─ 3c. Unified metrics (all builds) ─ */
+        if (now - last_met_print >= 5000u) {
+            last_met_print = now;
+            if (rivr_log_get_mode() != RIVR_LOG_SILENT) {
+                rivr_metrics_print();
+            }
+        }
 
         /* ─ 4. Publish display stats snapshot (task picks it up at its own pace) ─ */
 #ifndef RIVR_SIM_MODE

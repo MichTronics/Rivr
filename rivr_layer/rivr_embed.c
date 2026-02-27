@@ -48,6 +48,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "../firmware_core/rivr_log.h"
 
 #define TAG             "RIVR_EMBED"
 #define MAX_ENGINE_STEPS  256u   /* max scheduler cycles per rivr_tick() call */
@@ -87,7 +88,7 @@ static const char *nvs_load_program(void)
     err = nvs_get_str(h, RIVR_NVS_KEY_PROG, s_nvs_program, &len);
     nvs_close(h);
     if (err == ESP_OK && len > 1u) {
-        ESP_LOGI(TAG, "NVS program loaded (%u bytes)", (unsigned)len);
+        RIVR_LOGI(TAG, "NVS program loaded (%u bytes)", (unsigned)len);
         return s_nvs_program;
     }
     return NULL;
@@ -109,7 +110,7 @@ bool rivr_nvs_store_program(const char *src)
         ESP_LOGE(TAG, "NVS write failed: %d", (int)err);
         return false;
     }
-    ESP_LOGI(TAG, "NVS program stored (%u bytes)", (unsigned)strlen(src));
+    RIVR_LOGI(TAG, "NVS program stored (%u bytes)", (unsigned)strlen(src));
     return true;
 }
 
@@ -130,14 +131,14 @@ void rivr_nvs_load_identity(void)
     if (nvs_get_str(h, RIVR_NVS_KEY_CALLSIGN, cs, &len) == ESP_OK && len > 1u) {
         strncpy(g_callsign, cs, sizeof(g_callsign) - 1u);
         g_callsign[sizeof(g_callsign) - 1u] = '\0';
-        ESP_LOGI(TAG, "NVS callsign loaded: %s", g_callsign);
+        RIVR_LOGI(TAG, "NVS callsign loaded: %s", g_callsign);
     }
 
     /* Net ID: stored as 16-bit unsigned integer */
     uint16_t nid = 0u;
     if (nvs_get_u16(h, RIVR_NVS_KEY_NETID, &nid) == ESP_OK) {
         g_net_id = nid;
-        ESP_LOGI(TAG, "NVS net_id loaded: 0x%04X", (unsigned)g_net_id);
+        RIVR_LOGI(TAG, "NVS net_id loaded: 0x%04X", (unsigned)g_net_id);
     }
 
     nvs_close(h);
@@ -171,7 +172,7 @@ bool rivr_nvs_store_identity(const char *callsign, uint16_t net_id)
     nvs_close(h);
 
     if (ok && err == ESP_OK) {
-        ESP_LOGI(TAG, "NVS identity stored: %s / 0x%04X",
+        RIVR_LOGI(TAG, "NVS identity stored: %s / 0x%04X",
                  callsign ? callsign : "(unchanged)", (unsigned)net_id);
         return true;
     }
@@ -264,7 +265,7 @@ uint32_t rivr_tick(void)
 
 void rivr_embed_init(void)
 {
-    ESP_LOGI(TAG, "rivr_embed_init: loading default program");
+    RIVR_LOGI(TAG, "rivr_embed_init: loading default program");
 
     /* Initialise C-layer routing state (dedupe cache, forward budget) */
     routing_init();
@@ -289,7 +290,7 @@ void rivr_embed_init(void)
     const char *prog_src = nvs_load_program();
     if (!prog_src) {
         prog_src = RIVR_ACTIVE_PROGRAM;
-        ESP_LOGI(TAG, "rivr_embed_init: no NVS program – using compiled-in default");
+        RIVR_LOGI(TAG, "rivr_embed_init: no NVS program – using compiled-in default");
     }
     rivr_result_t rc = rivr_engine_init(prog_src);
     if (rc.code != RIVR_OK) {
@@ -298,21 +299,27 @@ void rivr_embed_init(void)
         for (;;) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
 
+#ifndef RIVR_SIM_MODE
+    /* Mark runtime-init boundary — no heap allocation expected after this. */
+    extern void rivr_runtime_freeze_alloc(void);
+    rivr_runtime_freeze_alloc();
+#endif
+
     /* Enumerate timer sources from compiled graph and register with C driver */
     rivr_foreach_timer_source(s_timer_reg_cb);
 
-    ESP_LOGI(TAG, "rivr_embed_init: engine ready");
+    RIVR_LOGI(TAG, "rivr_embed_init: engine ready");
 #ifdef RIVR_SIM_MODE
-    ESP_LOGI(TAG, "SIM program:\n%s", RIVR_SIM_PROGRAM);
+    RIVR_LOGI(TAG, "SIM program:\n%s", RIVR_SIM_PROGRAM);
 #else
-    ESP_LOGI(TAG, "program:\n%s", RIVR_DEFAULT_PROGRAM);
+    RIVR_LOGI(TAG, "program:\n%s", RIVR_DEFAULT_PROGRAM);
 #endif
 }
 
 void rivr_embed_print_stats(void)
 {
     /* TODO: call rivr_engine_print_stats() FFI when implemented */
-    ESP_LOGI(TAG, "clock[0]=%llu clock[1]=%llu",
+    RIVR_LOGI(TAG, "clock[0]=%llu clock[1]=%llu",
              (unsigned long long)rivr_engine_clock_now(0),
              (unsigned long long)rivr_engine_clock_now(1));
     dutycycle_print_stats(&g_dc);
@@ -320,7 +327,7 @@ void rivr_embed_print_stats(void)
 
 bool rivr_embed_reload(void)
 {
-    ESP_LOGI(TAG, "rivr_embed_reload: reloading engine");
+    RIVR_LOGI(TAG, "rivr_embed_reload: reloading engine");
 
     /* Clear timer registrations so they are re-populated from new program */
     sources_timer_reset();
@@ -329,7 +336,7 @@ bool rivr_embed_reload(void)
     const char *prog_src = nvs_load_program();
     if (!prog_src) {
         prog_src = RIVR_ACTIVE_PROGRAM;
-        ESP_LOGI(TAG, "rivr_embed_reload: NVS empty – reverting to compiled-in default");
+        RIVR_LOGI(TAG, "rivr_embed_reload: NVS empty – reverting to compiled-in default");
     }
 
     rivr_result_t rc = rivr_engine_init(prog_src);
@@ -343,6 +350,6 @@ bool rivr_embed_reload(void)
     rivr_foreach_timer_source(s_timer_reg_cb);
 
     g_program_reload_pending = false;
-    ESP_LOGI(TAG, "rivr_embed_reload: done");
+    RIVR_LOGI(TAG, "rivr_embed_reload: done");
     return true;
 }

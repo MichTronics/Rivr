@@ -57,6 +57,7 @@
 
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "../firmware_core/rivr_log.h"
 
 #include "rivr_embed.h"
 #include "../firmware_core/protocol.h"
@@ -225,6 +226,7 @@ static void cli_handle_line(void)
                "  id                    print node ID, callsign and net ID\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
+               "  log <debug|metrics|silent>  set log verbosity\r\n"
                "  help                  show this list\r\n");
         fflush(stdout);
         return;
@@ -312,6 +314,26 @@ static void cli_handle_line(void)
         return;
     }
 
+    /* ── "log <mode>" ── */
+    if (strncmp(p, "log", 3u) == 0 && (p[3] == ' ' || p[3] == '\0')) {
+        char *arg = p + 3;
+        while (*arg == ' ') { arg++; }
+        if (strcmp(arg, "debug") == 0) {
+            rivr_log_set_mode(RIVR_LOG_DEBUG);
+            printf("OK log mode: debug\r\n");
+        } else if (strcmp(arg, "metrics") == 0) {
+            rivr_log_set_mode(RIVR_LOG_METRICS);
+            printf("OK log mode: metrics\r\n");
+        } else if (strcmp(arg, "silent") == 0) {
+            rivr_log_set_mode(RIVR_LOG_SILENT);
+            printf("OK log mode: silent\r\n");
+        } else {
+            printf("ERR: usage: log <debug|metrics|silent>\r\n");
+        }
+        fflush(stdout);
+        return;
+    }
+
     /* ── Unknown command ── */
     printf("ERR: unknown command '%s' — type 'help'\r\n", p);
     fflush(stdout);
@@ -369,7 +391,7 @@ static void cli_enqueue_chat(const char *msg, size_t len)
         return;
     }
 
-    ESP_LOGI(TAG, "TX CHAT queued: \"%.*s\" (len=%u seq=%lu)",
+    RIVR_LOGI(TAG, "TX CHAT queued: \"%.*s\" (len=%u seq=%lu)",
              (int)len, msg, (unsigned)len, (unsigned long)hdr.seq);
     printf("TX CHAT: %.*s\r\n", (int)len, msg);
     fflush(stdout);

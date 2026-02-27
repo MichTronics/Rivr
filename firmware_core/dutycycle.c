@@ -17,6 +17,8 @@
 #include "timebase.h"
 #include <string.h>
 #include "esp_log.h"
+#include "rivr_log.h"
+#include "rivr_metrics.h"
 
 #define TAG "DUTYCYCLE"
 
@@ -58,6 +60,7 @@ bool dutycycle_check(dc_ctx_t *dc, uint32_t now_ms, uint32_t toa_us)
 
     /* TX blocked */
     dc->blocked_count++;
+    g_rivr_metrics.duty_blocked++;
     dc->total_blocked_us += toa_us;
     ESP_LOGW(TAG, "duty-cycle blocked: used=%lluus budget=%lluus toa=%uus",
              (unsigned long long)dc->used_us,
@@ -93,7 +96,7 @@ uint64_t dutycycle_remaining_us(const dc_ctx_t *dc)
 /* ── Stats ───────────────────────────────────────────────────────────────── */
 void dutycycle_print_stats(const dc_ctx_t *dc)
 {
-    ESP_LOGI(TAG,
+    RIVR_LOGI(TAG,
              "used=%llu/%llu us | blocked=%u (%llu us total)",
              (unsigned long long)dc->used_us,
              (unsigned long long)DC_BUDGET_US,

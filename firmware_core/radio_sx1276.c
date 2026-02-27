@@ -46,6 +46,7 @@
 #include "timebase.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "rivr_log.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdatomic.h>
@@ -182,12 +183,12 @@ void radio_init_buffers_only(void)
     /* Safe to call before platform_init() (simulation builds). */
     rb_init(&rf_rx_ringbuf, s_rx_storage, RF_RX_RINGBUF_CAP, sizeof(rf_rx_frame_t));
     rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
-    ESP_LOGI(TAG, "radio_init_buffers_only: ringbufs ready (SIM MODE)");
+    RIVR_LOGI(TAG, "radio_init_buffers_only: ringbufs ready (SIM MODE)");
 }
 
 void radio_init(void)
 {
-    ESP_LOGI(TAG, "radio_init: SX1276 reset + configure");
+    RIVR_LOGI(TAG, "radio_init: SX1276 reset + configure");
 
     rb_init(&rf_rx_ringbuf, s_rx_storage, RF_RX_RINGBUF_CAP, sizeof(rf_rx_frame_t));
     rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
@@ -209,7 +210,7 @@ void radio_init(void)
 
     /* Verify chip version (SX1276 = 0x12; SX1278 also = 0x12). */
     uint8_t ver = sx1276_read_reg(REG_VERSION);
-    ESP_LOGI(TAG, "SX1276 version register = 0x%02x (expected 0x12)", ver);
+    RIVR_LOGI(TAG, "SX1276 version register = 0x%02x (expected 0x12)", ver);
     if (ver != 0x12) {
         ESP_LOGW(TAG, "Unexpected SX127x version — continuing anyway");
     }
@@ -301,7 +302,7 @@ void radio_init(void)
      */
     gpio_isr_handler_add(PIN_SX1262_DIO1, radio_isr, NULL);
 
-    ESP_LOGI(TAG, "radio_init: done  SF%u BW%u kHz  freq %lu Hz",
+    RIVR_LOGI(TAG, "radio_init: done  SF%u BW%u kHz  freq %lu Hz",
              (unsigned)RF_SPREADING_FACTOR,
              (unsigned)RF_BANDWIDTH_KHZ,
              (unsigned long)RF_FREQ_HZ);
@@ -323,7 +324,7 @@ void radio_start_rx(void)
     /* Enter continuous RX mode. */
     sx1276_write_reg(REG_OP_MODE, LORA_MODE | MODE_RX_C);
     s_in_rx = true;
-    ESP_LOGI(TAG, "RX mode started");
+    RIVR_LOGI(TAG, "RX mode started");
 }
 
 /* ── ISR ─────────────────────────────────────────────────────────────────── *

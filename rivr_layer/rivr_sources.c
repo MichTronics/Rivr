@@ -19,6 +19,8 @@
 #include <string.h>
 #include <stdio.h>
 #include "driver/uart.h"
+#include "../firmware_core/rivr_metrics.h"
+#include "../firmware_core/rivr_log.h"
 
 #define TAG "RIVR_SRC"
 
@@ -62,6 +64,7 @@ uint32_t sources_rf_rx_drain(void)
             }
             ESP_LOGW(TAG, "rf_rx: invalid frame (len=%u rssi=%d) – %s",
                      frame.len, frame.rssi_dbm, why);
+            g_rivr_metrics.rx_decode_fail++;
             continue;
         }
         /* \u2500\u2500 Display stats: count every valid RF reception \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 *
@@ -80,7 +83,7 @@ uint32_t sources_rf_rx_drain(void)
 
         if (fwd == RIVR_FWD_DROP_DEDUPE) {
             /* Seen before — discard completely (no RIVR injection, no learning) */
-            ESP_LOGI(TAG, "rf_rx: DEDUPE-DROP src=0x%08lx seq=%lu  [GATE2: (src,seq) keyed, not from_id]",
+            RIVR_LOGI(TAG, "rf_rx: DEDUPE-DROP src=0x%08lx seq=%lu  [GATE2: (src,seq) keyed, not from_id]",
                      (unsigned long)pkt_hdr.src_id, (unsigned long)pkt_hdr.seq);
             continue;
         }
@@ -102,7 +105,7 @@ uint32_t sources_rf_rx_drain(void)
                     pkt_hdr.ttl, fwd_hdr.ttl, want_ttl,
                     pkt_hdr.hop, fwd_hdr.hop, want_hop);
             } else {
-                ESP_LOGI(TAG,
+                RIVR_LOGI(TAG,
                     "GATE1 OK  src=0x%08lx seq=%lu: ttl %u->%u  hop %u->%u",
                     (unsigned long)pkt_hdr.src_id, (unsigned long)pkt_hdr.seq,
                     pkt_hdr.ttl, fwd_hdr.ttl,
@@ -146,7 +149,7 @@ uint32_t sources_rf_rx_drain(void)
                 &g_route_cache, pkt_hdr.src_id, now_ms, &nh);
             const route_cache_entry_t *re = route_cache_lookup(
                 &g_route_cache, pkt_hdr.src_id, now_ms);
-            ESP_LOGI(TAG,
+            RIVR_LOGI(TAG,
                 "GATE3 route[0x%08lx]: %s  next_hop=0x%08lx  hops=%u  "
                 "metric=%u  last_seen_ms=%lu",
                 (unsigned long)pkt_hdr.src_id,
@@ -164,7 +167,7 @@ uint32_t sources_rf_rx_drain(void)
                 memcpy(callsign, payload_ptr, BEACON_CALLSIGN_MAX);
                 callsign[BEACON_CALLSIGN_MAX] = '\0';
             }
-            ESP_LOGI(TAG, "BEACON src=0x%08lx cs='%s' rssi=%d dBm",
+            RIVR_LOGI(TAG, "BEACON src=0x%08lx cs='%s' rssi=%d dBm",
                      (unsigned long)pkt_hdr.src_id, callsign,
                      (int)frame.rssi_dbm);
             /* Persist callsign into the neighbour table entry for this node */
@@ -185,7 +188,7 @@ uint32_t sources_rf_rx_drain(void)
                     prog_buf[copy_len] = '\0';
                     if (rivr_nvs_store_program(prog_buf)) {
                         g_program_reload_pending = true;
-                        ESP_LOGI(TAG,
+                        RIVR_LOGI(TAG,
                             "OTA: new program received from 0x%08lx (%u bytes) – reload scheduled",
                             (unsigned long)pkt_hdr.src_id, copy_len);
                     }
@@ -218,7 +221,7 @@ uint32_t sources_rf_rx_drain(void)
                     rpl_req.len    = (uint8_t)rpl_len;
                     rpl_req.toa_us = RF_TOA_APPROX_US(rpl_req.len);
                     if (rb_try_push(&rf_tx_queue, &rpl_req)) {
-                        ESP_LOGI(TAG, "rf_rx: sent ROUTE_RPL to 0x%08lx for target=0x%08lx",
+                        RIVR_LOGI(TAG, "rf_rx: sent ROUTE_RPL to 0x%08lx for target=0x%08lx",
                                  (unsigned long)pkt_hdr.src_id,
                                  (unsigned long)g_my_node_id);
                     }
@@ -255,7 +258,7 @@ uint32_t sources_rf_rx_drain(void)
                                    metric,
                                    RCACHE_FLAG_VALID,
                                    now_ms);
-                ESP_LOGI(TAG, "rf_rx: ROUTE_RPL target=0x%08lx via 0x%08lx hops=%u",
+                RIVR_LOGI(TAG, "rf_rx: ROUTE_RPL target=0x%08lx via 0x%08lx hops=%u",
                          (unsigned long)target_id,
                          (unsigned long)next_hop,
                          hops);
@@ -269,7 +272,7 @@ uint32_t sources_rf_rx_drain(void)
                     target_id, effective_next_hop,
                     &rf_tx_queue, now_ms);
                 if (drained > 0u) {
-                    ESP_LOGI(TAG,
+                    RIVR_LOGI(TAG,
                         "rf_rx: drained %u pending msg(s) for 0x%08lx via 0x%08lx",
                         drained,
                         (unsigned long)target_id,
@@ -472,7 +475,7 @@ void sources_register_timer(const char *name, uint32_t interval_ms)
     e->interval_ms  = interval_ms;
     e->last_fire_ms = tb_millis();   /* start counting from registration */
     e->active       = true;
-    ESP_LOGI(TAG, "sources: registered timer '%s' interval=%lu ms",
+    RIVR_LOGI(TAG, "sources: registered timer '%s' interval=%lu ms",
              e->name, (unsigned long)interval_ms);
 }
 
@@ -480,7 +483,7 @@ void sources_timer_reset(void)
 {
     memset(s_timers, 0, sizeof(s_timers));
     s_timer_count = 0u;
-    ESP_LOGI(TAG, "sources: timer table cleared");
+    RIVR_LOGI(TAG, "sources: timer table cleared");
 }
 
 uint32_t sources_timer_drain(void)
@@ -534,5 +537,5 @@ void rivr_sources_init(void)
     uart_driver_install(UART_NUM_0, 512, 0, 0, NULL, 0);
     s_uart_cli_ready = true;
 #endif
-    ESP_LOGI(TAG, "rivr_sources_init: done");
+    RIVR_LOGI(TAG, "rivr_sources_init: done");
 }

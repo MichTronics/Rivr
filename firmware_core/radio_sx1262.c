@@ -44,6 +44,7 @@
 #include "timebase.h"
 #include "driver/gpio.h"    /* gpio_isr_handler_add */
 #include "esp_log.h"
+#include "rivr_log.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -68,7 +69,7 @@ void radio_init_buffers_only(void)
      * Safe to call before platform_init() in simulation builds. */
     rb_init(&rf_rx_ringbuf, s_rx_storage, RF_RX_RINGBUF_CAP, sizeof(rf_rx_frame_t));
     rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
-    ESP_LOGI(TAG, "radio_init_buffers_only: ringbufs ready (SIM MODE)");
+    RIVR_LOGI(TAG, "radio_init_buffers_only: ringbufs ready (SIM MODE)");
 }
 
 /* ── Internal SX1262 register helpers ───────────────────────────────────── */
@@ -96,7 +97,7 @@ static void sx1262_read_cmd(uint8_t cmd, uint8_t *out, uint8_t n_out)
 
 void radio_init(void)
 {
-    ESP_LOGI(TAG, "radio_init: resetting SX1262");
+    RIVR_LOGI(TAG, "radio_init: resetting SX1262");
 
     rb_init(&rf_rx_ringbuf, s_rx_storage, RF_RX_RINGBUF_CAP, sizeof(rf_rx_frame_t));
     rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
@@ -208,7 +209,7 @@ void radio_init(void)
     /* Attach DIO1 ISR */
     gpio_isr_handler_add(PIN_SX1262_DIO1, radio_isr, NULL);
 
-    ESP_LOGI(TAG, "radio_init: done (SF%u BW%ukHz @ %luHz)",
+    RIVR_LOGI(TAG, "radio_init: done (SF%u BW%ukHz @ %luHz)",
              RF_SPREADING_FACTOR, RF_BANDWIDTH_KHZ, (unsigned long)RF_FREQ_HZ);
 }
 
@@ -224,7 +225,7 @@ void radio_start_rx(void)
                                      * (5 ms was too tight and triggered spurious
                                      * BUSY timeout logs after every TX) */
     s_in_rx = true;
-    ESP_LOGI(TAG, "RX mode started");
+    RIVR_LOGI(TAG, "RX mode started");
 }
 
 /* ── ISR ─────────────────────────────────────────────────────────────────── *

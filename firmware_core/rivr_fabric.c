@@ -70,6 +70,8 @@
 #include "rivr_fabric.h"
 #include "esp_log.h"
 #include <string.h>
+#include "rivr_metrics.h"
+#include "rivr_log.h"
 
 #define TAG_FABRIC "FABRIC"
 
@@ -175,7 +177,7 @@ void rivr_fabric_init(void)
 {
 #if RIVR_FABRIC_REPEATER
     memset(&s_fab, 0, sizeof(s_fab));
-    ESP_LOGI(TAG_FABRIC, "rivr_fabric_init: enabled (RIVR_FABRIC_REPEATER=1)");
+    RIVR_LOGI(TAG_FABRIC, "rivr_fabric_init: enabled (RIVR_FABRIC_REPEATER=1)");
 #endif
 }
 
@@ -276,6 +278,7 @@ fabric_decision_t rivr_fabric_decide_relay(
                  "guard delay pkt_type=%u src=0x%08lx score=%u (blackout guard)",
                  pkt->pkt_type, (unsigned long)pkt->src_id, score);
         s_relay_delay_total++;
+        g_rivr_metrics.fabric_delay++;
         return FABRIC_DELAY;
     }
 
@@ -284,6 +287,7 @@ fabric_decision_t rivr_fabric_decide_relay(
                  "drop relay pkt_type=%u src=0x%08lx score=%u",
                  pkt->pkt_type, (unsigned long)pkt->src_id, score);
         s_relay_drop_total++;
+        g_rivr_metrics.fabric_drop++;
         return FABRIC_DROP;
     }
 
@@ -297,6 +301,7 @@ fabric_decision_t rivr_fabric_decide_relay(
                  pkt->pkt_type, (unsigned long)pkt->src_id, score,
                  (unsigned long)extra);
         s_relay_delay_total++;
+        g_rivr_metrics.fabric_delay++;
         return FABRIC_DELAY;
     }
 
@@ -309,6 +314,7 @@ fabric_decision_t rivr_fabric_decide_relay(
                  pkt->pkt_type, (unsigned long)pkt->src_id, score,
                  (unsigned long)extra);
         s_relay_delay_total++;
+        g_rivr_metrics.fabric_delay++;
         return FABRIC_DELAY;
     }
 

@@ -7,6 +7,7 @@
 #include "routing.h"
 #include "protocol.h"
 #include <string.h>
+#include "rivr_metrics.h"
 
 /* ── Module-global state (BSS) ───────────────────────────────────────────── */
 static dedupe_cache_t   g_dedupe;
@@ -267,11 +268,13 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
 {
     /* Step 1 — Deduplicate */
     if (!routing_dedupe_check(cache, pkt->src_id, pkt->seq, now_ms)) {
+        g_rivr_metrics.rx_dedupe_drop++;
         return RIVR_FWD_DROP_DEDUPE;
     }
 
     /* Step 2 — TTL must be > 0 on arrival */
     if (pkt->ttl == 0u) {
+        g_rivr_metrics.rx_ttl_drop++;
         return RIVR_FWD_DROP_TTL;
     }
 

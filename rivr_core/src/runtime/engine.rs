@@ -6,7 +6,7 @@
 //! - `tick_clock(clock, tick)` advances a specific clock domain.
 //! - `run` uses the priority scheduler (ordered by `(clock, tick, seq, node_id)`).
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{collections::BTreeMap, string::String, vec::Vec, format};
 #[cfg(feature = "std")]
 use std::collections::HashMap;

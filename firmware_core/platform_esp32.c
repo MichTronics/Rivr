@@ -12,6 +12,7 @@
 #include "esp_timer.h"      /* esp_timer_get_time */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "rivr_log.h"
 
 #define TAG "PLATFORM"
 
@@ -19,7 +20,7 @@ spi_device_handle_t g_spi_sx1262;
 
 void platform_init(void)
 {
-    ESP_LOGI(TAG, "platform_init: configuring GPIO and SPI");
+    RIVR_LOGI(TAG, "platform_init: configuring GPIO and SPI");
 
     /* ── GPIO outputs ── */
     gpio_config_t out_cfg = {
@@ -84,7 +85,7 @@ void platform_init(void)
     /* Install GPIO ISR service (isr_core_id=0 = same core as main) */
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
 
-    ESP_LOGI(TAG, "platform_init: done");
+    RIVR_LOGI(TAG, "platform_init: done");
 }
 
 /* ── SPI helpers ─────────────────────────────────────────────────────────── */
