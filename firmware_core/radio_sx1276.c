@@ -487,3 +487,16 @@ int16_t radio_get_rssi_inst(void)
     /* HF port: RSSI_dBm = -157 + RegRssiValue (instantaneous, not packet) */
     return -157 + (int16_t)sx1276_read_reg(REG_RSSI);
 }
+
+/**
+ * @brief Timeout/recovery check — SX1276 stub.
+ *
+ * Full recovery logic (RX-silence watchdog, BUSY-stuck detection) is
+ * implemented in radio_sx1262.c.  The SX1276 driver does not yet have
+ * a recovery path; this no-op satisfies the main.c call site so the
+ * lilygo_lora32_v21 build links correctly.
+ */
+void radio_check_timeouts(void)
+{
+    /* No-op: SX1276 driver does not implement timeout recovery yet. */
+}

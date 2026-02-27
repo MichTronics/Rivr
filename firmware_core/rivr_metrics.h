@@ -21,6 +21,8 @@ typedef struct {
     uint32_t pq_peak;          /* high-water mark of pending queue occupancy    */
     uint32_t rcache_evict;     /* route cache forced eviction (table full)      */
     uint32_t loop_jitter_ms;   /* max main-loop work duration in ms (gauge)     */
+    uint32_t radio_rx_timeout;    /* RX silent >60 s while in RX → soft reset  */
+    uint32_t radio_reset_backoff; /* hard reset denied – backoff cooldown active*/
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;

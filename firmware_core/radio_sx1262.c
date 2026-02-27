@@ -68,6 +68,39 @@ static uint8_t s_tx_fail_streak = 0;
 /** Consecutive spurious (non-RxDone, non-TxDone) DIO1 events; reset on valid RxDone. */
 static uint8_t s_spurious_irq_streak = 0;
 
+/* ── Recovery / backoff state ────────────────────────────────────────────── */
+
+/** Minimum milliseconds between consecutive hard resets (backoff guard). */
+#define RADIO_RESET_BACKOFF_MS    10000u
+/** Consecutive BUSY-stuck stalls in radio_transmit() before forced reset. */
+#define RADIO_BUSY_STUCK_MAX          3u
+/** RX radio silence threshold: no DIO1 event for this long → soft reset. */
+#define RADIO_RX_SILENCE_MS       60000u
+
+/** True once radio_guard_reset() has fired at least once. */
+static bool     s_reset_happened    = false;
+/** tb_millis() at the most recent radio_guard_reset() fire. */
+static uint32_t s_last_reset_ms     = 0u;
+/** tb_millis() of the most recent DIO1 event (any reason). */
+static uint32_t s_last_rx_event_ms  = 0u;
+/** Consecutive BUSY-stuck stall count; reset to 0 on any successful BUSY low. */
+static uint8_t  s_busy_stuck_streak  = 0u;
+
+/* ── Fault injection (test builds: -DRIVR_FAULT_INJECT=1) ───────────────── */
+#ifdef RIVR_FAULT_INJECT
+bool g_fault_busy_stuck = false;   /**< Makes wait_busy always return false   */
+bool g_fault_tx_no_done = false;   /**< Suppresses TxDone flag in TX poll     */
+bool g_fault_rx_silence = false;   /**< Suppresses DIO1 event dispatch        */
+
+static bool _fi_wait_busy(uint32_t ms)
+{
+    if (g_fault_busy_stuck) return false;
+    return platform_sx1262_wait_busy(ms);
+}
+/* Redirect all wait_busy calls inside this TU through the fault wrapper */
+#define platform_sx1262_wait_busy   _fi_wait_busy
+#endif /* RIVR_FAULT_INJECT */
+
 rb_t rf_rx_ringbuf;
 rb_t rf_tx_queue;
 
@@ -254,6 +287,7 @@ void radio_start_rx(void)
                                      * (5 ms was too tight and triggered spurious
                                      * BUSY timeout logs after every TX) */
     s_in_rx = true;
+    s_last_rx_event_ms = tb_millis();  /* arm RX-silence timer */
     RIVR_LOGI(TAG, "RX mode started");
 }
 
@@ -262,7 +296,9 @@ void radio_hard_reset(void)
     g_rivr_metrics.radio_hard_reset++;
     s_tx_fail_streak      = 0;
     s_spurious_irq_streak = 0;
+    s_busy_stuck_streak   = 0;
     s_in_rx               = false;
+    s_last_rx_event_ms    = 0u;  /* re-armed by radio_start_rx() */
     RIVR_LOGW(TAG, "hard reset #%" PRIu32 " — re-initialising SX1262",
               g_rivr_metrics.radio_hard_reset);
     platform_sx1262_reset();
@@ -270,6 +306,89 @@ void radio_hard_reset(void)
     radio_apply_config();
     radio_start_rx();
 }
+
+/**
+ * @brief Rate-limited wrapper for radio_hard_reset().
+ *
+ * Enforces a minimum of RADIO_RESET_BACKOFF_MS between consecutive hard
+ * resets to prevent reset storms under persistent fault conditions.
+ * When the cooldown is active, increments radio_reset_backoff and returns
+ * without resetting.
+ *
+ * @param reason  Short label logged for diagnostics (e.g., "tx_timeout").
+ */
+static void radio_guard_reset(const char *reason)
+{
+    uint32_t now = tb_millis();
+    if (s_reset_happened && (now - s_last_reset_ms) < RADIO_RESET_BACKOFF_MS) {
+        g_rivr_metrics.radio_reset_backoff++;
+        RIVR_LOGW(TAG,
+            "reset(%s) denied – backoff %" PRIu32 "ms remaining"
+            " (denied=%" PRIu32 ")",
+            reason,
+            (uint32_t)(RADIO_RESET_BACKOFF_MS - (now - s_last_reset_ms)),
+            g_rivr_metrics.radio_reset_backoff);
+        return;
+    }
+    s_reset_happened = true;
+    s_last_reset_ms  = now;
+    RIVR_LOGW(TAG, "guard_reset(%s) – triggering hard reset", reason);
+    radio_hard_reset();
+}
+
+/**
+ * @brief Check for RX-silence timeout; call once per main-loop iteration.
+ *
+ * If the radio has been in continuous-RX for longer than RADIO_RX_SILENCE_MS
+ * without any DIO1 event, the chip is likely locked up.  A guarded hard
+ * reset is triggered.  Backoff prevents repeated resets under persistent
+ * silence (e.g., antenna off).
+ */
+void radio_check_timeouts(void)
+{
+    uint32_t now = tb_millis();
+
+    /* Arm the silence baseline on first call (avoids false alarm at boot). */
+    if (s_last_rx_event_ms == 0u) {
+        s_last_rx_event_ms = now;
+        return;
+    }
+
+    /* Only meaningful while the radio is in continuous-RX. */
+    if (!s_in_rx) return;
+
+    if ((now - s_last_rx_event_ms) >= RADIO_RX_SILENCE_MS) {
+        g_rivr_metrics.radio_rx_timeout++;
+        RIVR_LOGW(TAG,
+            "RX silent %" PRIu32 "ms – soft reset (total=%" PRIu32 ")",
+            (uint32_t)(now - s_last_rx_event_ms),
+            g_rivr_metrics.radio_rx_timeout);
+        s_last_rx_event_ms = now;   /* prevent immediate re-trigger */
+        radio_guard_reset("rx_timeout");
+    }
+}
+
+#ifdef RIVR_FAULT_INJECT
+/**
+ * @brief Reset all internal radio statics for test isolation.
+ * Call between test cases to ensure a clean initial state.
+ */
+void radio_fault_reset_state(void)
+{
+    s_reset_happened    = false;
+    s_last_reset_ms     = 0u;
+    s_last_rx_event_ms  = 0u;
+    s_busy_stuck_streak = 0u;
+    s_tx_fail_streak    = 0u;
+    s_spurious_irq_streak = 0u;
+    s_in_rx             = false;
+    s_dio1_pending      = false;
+    g_fault_busy_stuck  = false;
+    g_fault_tx_no_done  = false;
+    g_fault_rx_silence  = false;
+    memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
+}
+#endif /* RIVR_FAULT_INJECT */
 
 /* ── ISR ─────────────────────────────────────────────────────────────────── *
  *
@@ -297,8 +416,12 @@ void IRAM_ATTR radio_isr(void *arg)
  * DIO1 events (there is normally at most one per loop iteration). */
 void radio_service_rx(void)
 {
+#ifdef RIVR_FAULT_INJECT
+    if (g_fault_rx_silence) return;
+#endif
     if (!s_dio1_pending) return;
     s_dio1_pending = false;
+    s_last_rx_event_ms = tb_millis();   /* reset RX-silence watchdog */
 
     /* 1. Read IRQ status */
     uint8_t irq_status[2] = {0};
@@ -313,8 +436,8 @@ void radio_service_rx(void)
      *    without a valid frame suggests the radio has lost its IRQ state. */
     if (!(irq & 0x0003)) {
         if (++s_spurious_irq_streak >= 5u) {
-            RIVR_LOGW(TAG, "5 spurious DIO1 events – triggering hard reset");
-            radio_hard_reset();
+            RIVR_LOGW(TAG, "5 spurious DIO1 events – triggering guarded reset");
+            radio_guard_reset("spurious_irq");
         }
         return;
     }
@@ -342,7 +465,8 @@ void radio_service_rx(void)
     uint8_t payload_len  = buf_status[0];
     uint8_t start_addr   = buf_status[1];
 
-    if (payload_len == 0 || payload_len > RF_MAX_PAYLOAD_LEN) return;
+    if (payload_len == 0) return;
+    /* RF_MAX_PAYLOAD_LEN == 255 == UINT8_MAX; guard against 0-len only */
 
     /* 4. GetPacketStatus (0x14): RssiPkt, SnrPkt, SignalRssiPkt */
     int16_t pkt_rssi_dbm = -99;
@@ -382,13 +506,22 @@ bool radio_transmit(const rf_tx_request_t *req)
     if (!req || req->len == 0) return false;
 
     /* Guard: if BUSY is stuck before WriteBuffer, the SPI command will be
-     * silently ignored by the SX1262 — abort rather than corrupt the channel. */
+     * silently ignored by the SX1262 — abort rather than corrupt the channel.
+     * Track consecutive stalls; if streak reaches RADIO_BUSY_STUCK_MAX trigger
+     * a guarded hard reset to recover a locked chip. */
     if (!platform_sx1262_wait_busy(10)) {
         g_rivr_metrics.radio_busy_stall++;
-        RIVR_LOGW(TAG, "BUSY stuck before TX – skipping frame (total=%" PRIu32 ")",
-                  g_rivr_metrics.radio_busy_stall);
+        uint32_t _n = g_rivr_metrics.radio_busy_stall;
+        if ((_n & (_n - 1u)) == 0u) {   /* log on 1,2,4,8,… */
+            RIVR_LOGW(TAG, "BUSY stuck before TX (total=%" PRIu32 ")", _n);
+        }
+        if (++s_busy_stuck_streak >= RADIO_BUSY_STUCK_MAX) {
+            s_busy_stuck_streak = 0u;
+            radio_guard_reset("busy_stuck");
+        }
         return false;
     }
+    s_busy_stuck_streak = 0u;   /* BUSY went low – clear streak */
 
     /* WriteBuffer: 0x0E + offset=0 + payload
      * NOTE: WriteBuffer takes [opcode][offset][data…] with NO NOP byte
@@ -442,6 +575,9 @@ bool radio_transmit(const rf_tx_request_t *req)
         uint8_t irq[2] = {0};
         sx1262_read_cmd(0x12, irq, 2);   /* 0x12 = GetIrqStatus */
         uint16_t flags = ((uint16_t)irq[0] << 8) | irq[1];
+#ifdef RIVR_FAULT_INJECT
+        if (g_fault_tx_no_done) flags &= ~0x0001u;   /* suppress TxDone */
+#endif
         if (flags & 0x0001) {   /* TxDone */
             uint8_t clr[2] = { irq[0], irq[1] };
             sx1262_cmd(0x02, clr, 2);   /* 0x02 = ClearIrqStatus */
@@ -453,7 +589,7 @@ bool radio_transmit(const rf_tx_request_t *req)
             g_rivr_metrics.radio_tx_fail++;
             RIVR_LOGW(TAG, "TX HW timeout (streak %u)", (unsigned)(s_tx_fail_streak + 1u));
             if (++s_tx_fail_streak >= 3u) {
-                radio_hard_reset();
+                radio_guard_reset("tx_timeout");
             } else {
                 radio_start_rx();
             }
@@ -463,7 +599,7 @@ bool radio_transmit(const rf_tx_request_t *req)
     g_rivr_metrics.radio_tx_fail++;
     RIVR_LOGW(TAG, "TX deadline exceeded (streak %u)", (unsigned)(s_tx_fail_streak + 1u));
     if (++s_tx_fail_streak >= 3u) {
-        radio_hard_reset();
+        radio_guard_reset("tx_timeout");
     } else {
         radio_start_rx();
     }

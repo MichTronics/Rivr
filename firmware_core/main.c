@@ -46,6 +46,9 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#ifndef RIVR_SIM_MODE
+#  include "esp_task_wdt.h"
+#endif
 
 #include "firmware_core/platform_esp32.h"
 #include "firmware_core/timebase.h"
@@ -477,6 +480,12 @@ void app_main(void)
     radio_init();
     dutycycle_init(&g_dc);
 
+    /* Subscribe the main task to the ESP Task Watchdog.
+     * Timeout is set by CONFIG_ESP_TASK_WDT_TIMEOUT_S in sdkconfig.defaults.
+     * If the main loop stalls (flash write deadlock, SPI hang, etc.) for that
+     * duration, the WDT fires a panic → clean reboot instead of wedged node. */
+    esp_task_wdt_add(NULL);
+
     /* Derive unique node ID from lower 4 bytes of WiFi STA MAC address */
     {
         uint8_t mac[6];
@@ -564,6 +573,13 @@ void app_main(void)
          * ring-buffer when RIVR drains it.  SPI is illegal from ISR context,
          * so the ISR only sets a flag; we do the actual SPI read here. */
         radio_service_rx();
+
+        /* ─ 0b. Check for radio recovery timeouts ─
+         * Detects RX silence (chip hung in RX) and triggers a guarded reset
+         * if the radio has been silent for >RADIO_RX_SILENCE_MS. */
+#ifndef RIVR_SIM_MODE
+        radio_check_timeouts();
+#endif
 
         /* ─ 1. RIVR processing tick ─ */
         rivr_tick();
@@ -702,6 +718,13 @@ void app_main(void)
                 g_rivr_metrics.loop_jitter_ms = iter_ms;
             }
         }
+
+        /* Feed the hardware watchdog — if we reach this point the main loop
+         * is alive.  If the loop ever stalls (blocked SPI, infinite poll),
+         * WDT times out → panic → reboot. */
+#ifndef RIVR_SIM_MODE
+        esp_task_wdt_reset();
+#endif
         loop_count++;
 
         /* ─ 5. Yield 10 ms — long enough to be ≥1 tick at any FreeRTOS tick rate.

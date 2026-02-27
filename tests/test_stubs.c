@@ -32,14 +32,15 @@ void timebase_tick_hook(void)
 
 uint32_t tb_lmp_advance(uint32_t sender_tick)
 {
-    uint32_t local;
+    uint_fast32_t local;
     do {
         local = atomic_load_explicit(&g_lmp_tick, memory_order_relaxed);
-        uint32_t desired = (sender_tick > local ? sender_tick : local) + 1u;
+        uint_fast32_t desired = (sender_tick > local
+                                 ? (uint_fast32_t)sender_tick : local) + 1u;
         if (atomic_compare_exchange_weak_explicit(
                 &g_lmp_tick, &local, desired,
                 memory_order_release, memory_order_relaxed))
-            return desired;
+            return (uint32_t)desired;
     } while (1);
 }
 

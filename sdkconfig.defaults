@@ -43,3 +43,13 @@ CONFIG_GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL=y
 CONFIG_BT_ENABLED=n
 CONFIG_WIFI_ENABLED=n
 CONFIG_ESP32_ENABLE_COREDUMP_TO_NONE=y
+# ── Task Watchdog (hardware WDT) ─────────────────────────────────────────────
+# Main task registers itself via esp_task_wdt_add() and feeds the WDT once per
+# main-loop iteration.  If the loop stalls, WDT fires a panic after 30 s.
+# 30 s is conservative: normal loop latency is ≤ 100 ms (radio TX + vTaskDelay).
+# IDLE tasks are excluded — they may be starved during long LoRa TX windows.
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_PANIC=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n

@@ -27,7 +27,9 @@ void rivr_metrics_print(void)
            "\"pq_exp\":%" PRIu32 ","
            "\"pq_peak\":%" PRIu32 ","
            "\"rc_evict\":%" PRIu32 ","
-           "\"jitter_ms\":%" PRIu32
+           "\"jitter_ms\":%" PRIu32 ","
+           "\"rx_tout\":%" PRIu32 ","
+           "\"rst_bkof\":%" PRIu32
            "}\n",
         g_rivr_metrics.rx_decode_fail,
         g_rivr_metrics.rx_dedupe_drop,
@@ -44,5 +46,7 @@ void rivr_metrics_print(void)
         g_rivr_metrics.pq_expired,
         g_rivr_metrics.pq_peak,
         g_rivr_metrics.rcache_evict,
-        g_rivr_metrics.loop_jitter_ms);
+        g_rivr_metrics.loop_jitter_ms,
+        g_rivr_metrics.radio_rx_timeout,
+        g_rivr_metrics.radio_reset_backoff);
 }

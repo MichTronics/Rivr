@@ -175,6 +175,29 @@ void radio_isr(void *arg);  /* IRAM_ATTR on the definition in radio_sx1262.c */
  */
 void radio_service_rx(void);
 
+/**
+ * @brief Check for radio-silence and BUSY-stuck timeouts.
+ *
+ * Call once per main-loop iteration (after radio_service_rx()).
+ * Triggers a guarded hard reset if either:
+ *   • The radio has been in continuous-RX for >RADIO_RX_SILENCE_MS without
+ *     a single DIO1 event (radio likely hung).
+ * Backoff prevents more than one reset per RADIO_RESET_BACKOFF_MS.
+ */
+void radio_check_timeouts(void);
+
+/* ── Fault injection (test builds only: -DRIVR_FAULT_INJECT=1) ──────────── */
+#ifdef RIVR_FAULT_INJECT
+/** Force platform_sx1262_wait_busy() to return false (simulate BUSY stuck). */
+extern bool g_fault_busy_stuck;
+/** Suppress TxDone IRQ flag inside TX polling loop (simulate TX never done). */
+extern bool g_fault_tx_no_done;
+/** Suppress DIO1 event dispatch (simulate RX silence). */
+extern bool g_fault_rx_silence;
+/** Reset all internal radio statics — for test isolation only. */
+void radio_fault_reset_state(void);
+#endif /* RIVR_FAULT_INJECT */
+
 /* ── Packet decoder (main-loop only) ────────────────────────────────────── */
 
 /**

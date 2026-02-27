@@ -15,6 +15,7 @@
 #include "rivr_metrics.h"
 #include "rivr_log.h"
 #include <string.h>
+#include <inttypes.h>
 
 #define TAG "PQ"
 
