@@ -182,9 +182,8 @@ uint32_t sources_rf_rx_drain(void)
             if (pkt_hdr.dst_id == g_my_node_id || pkt_hdr.dst_id == 0u) {
                 if (payload_ptr && pkt_hdr.payload_len > 0u) {
                     char prog_buf[2048];
-                    uint8_t copy_len = pkt_hdr.payload_len < (sizeof(prog_buf) - 1u)
-                                       ? pkt_hdr.payload_len
-                                       : (uint8_t)(sizeof(prog_buf) - 1u);
+                    /* payload_len is uint8_t (max 255) — always fits in prog_buf[2048] */
+                    uint8_t copy_len = pkt_hdr.payload_len;
                     memcpy(prog_buf, payload_ptr, copy_len);
                     prog_buf[copy_len] = '\0';
                     if (rivr_nvs_store_program(prog_buf)) {
@@ -297,9 +296,8 @@ uint32_t sources_rf_rx_drain(void)
             ev.stamp.tick  = assigned_tick;
             ev.v.tag       = RIVR_VAL_BYTES;
 
-            uint16_t copy_len = (frame.len < sizeof(ev.v.as_bytes.buf))
-                                ? (uint16_t)frame.len
-                                : (uint16_t)sizeof(ev.v.as_bytes.buf);
+            /* frame.len is uint8_t (max 255) — always fits in as_bytes.buf[256] */
+            uint8_t copy_len = frame.len;
             memcpy(ev.v.as_bytes.buf, frame.data, copy_len);
             ev.v.as_bytes.len = copy_len;
 

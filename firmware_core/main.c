@@ -573,9 +573,11 @@ void app_main(void)
 
     RIVR_LOGI(TAG, "entering main loop");
 
-    uint32_t last_stats_ms     = 0;
+    uint32_t last_stats_ms  = 0;
+    uint32_t last_met_print = 0;
+#if RIVR_FABRIC_REPEATER
     uint32_t last_fabric_log_ms = 0;
-    uint32_t last_met_print     = 0;
+#endif
     uint32_t loop_count         = 0;
     display_stats_t disp;       /* stats snapshot updated each iteration */
     memset(&disp, 0, sizeof(disp));

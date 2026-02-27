@@ -32,16 +32,7 @@ def get_git_sha():
 sha = get_git_sha()
 print(f"[inject_git_sha] RIVR_GIT_SHA = {sha}")
 
-# Remove any existing RIVR_GIT_SHA definition injected by platformio.ini
-# build_flags.  CPPDEFINES entries are either plain strings ("RIVR_GIT_SHA=...")
-# or 2-tuples (("RIVR_GIT_SHA", value)).  env.Flatten() would destroy tuples,
-# so we filter the raw list instead.
-def _has_git_sha(entry):
-    if isinstance(entry, (list, tuple)):
-        return any("RIVR_GIT_SHA" in str(x) for x in entry)
-    return "RIVR_GIT_SHA" in str(entry)
-
-env["CPPDEFINES"] = [d for d in env.get("CPPDEFINES", []) if not _has_git_sha(d)]
-
-# Append the real hash (or "unknown") as a properly quoted string define.
+# The static fallback "-DRIVR_GIT_SHA=\"unknown\"" has been removed from
+# platformio.ini build_flags, so there is no existing definition to remove.
+# Simply append the real (or fallback) hash — one define, no duplication.
 env.Append(CPPDEFINES=[("RIVR_GIT_SHA", f'\\"{sha}\\"')])
