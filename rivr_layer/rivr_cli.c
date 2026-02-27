@@ -120,7 +120,7 @@ void rivr_cli_init(void)
            "Node ID  : 0x%08lX\r\n"
            "Callsign : %s\r\n"
            "Net ID   : 0x%04X\r\n"
-           "Commands : chat <msg> | id | set callsign <CS> | set netid <HEX> | help\r\n",
+           "Commands : chat <msg> | id | neighbors | routes | set callsign <CS> | set netid <HEX> | help\r\n",
            (unsigned long)g_my_node_id,
            g_callsign,
            (unsigned)g_net_id);
@@ -229,6 +229,8 @@ static void cli_handle_line(void)
                "  info                  print build info (env, sha, radio profile)\r\n"
                "  metrics               print all counters/gauges as JSON (@MET line)\r\n"
                "  supportpack           JSON dump: build info + metrics snapshot\r\n"
+               "  neighbors             show live neighbour table with link scores\r\n"
+               "  routes                show route cache with scores and ages\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
@@ -359,6 +361,26 @@ static void cli_handle_line(void)
         } else {
             printf("ERR: usage: log <debug|metrics|silent>\r\n");
         }
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "neighbors" ── */
+    if (strncmp(p, "neighbors", 9u) == 0 && (p[9] == '\0' || p[9] == ' ')) {
+        uint32_t now_ms = tb_millis();
+        uint8_t  cnt    = routing_neighbor_count(&g_neighbor_table, now_ms);
+        printf("Neighbors (%u live):\r\n", (unsigned)cnt);
+        routing_neighbor_print(&g_neighbor_table, now_ms);
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "routes" ── */
+    if (strncmp(p, "routes", 6u) == 0 && (p[6] == '\0' || p[6] == ' ')) {
+        uint32_t now_ms = tb_millis();
+        uint8_t  cnt    = route_cache_count(&g_route_cache, now_ms);
+        printf("Routes (%u live):\r\n", (unsigned)cnt);
+        route_cache_print(&g_route_cache, now_ms);
         fflush(stdout);
         return;
     }

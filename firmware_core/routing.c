@@ -7,6 +7,8 @@
 #include "routing.h"
 #include "protocol.h"
 #include <string.h>
+#include <stdio.h>
+#include <inttypes.h>
 #include "rivr_metrics.h"
 
 /* ── Module-global state (BSS) ───────────────────────────────────────────── */
@@ -82,6 +84,59 @@ bool routing_should_forward(dedupe_cache_t *cache,
 
 /* ── neighbour table ─────────────────────────────────────────────────────── */
 
+/* ── link score helper (shared by routing_neighbor_link_score & neighbor_update) ── *
+ * rssi_part: clamp(rssi + 140, 0, 80)  — 0 pts at -140 dBm, 80 pts at -60 dBm  *
+ * snr_part : clamp(snr  +  10, 0, 20)  — 0 pts at -10 dB,  20 pts at >=+10 dB  *
+ * base = rssi_part + snr_part → 0..100                                           */
+static uint8_t neighbor_compute_base(int8_t rssi_dbm, int8_t snr_db)
+{
+    int32_t r = (int32_t)rssi_dbm + 140;
+    if (r < 0)  r = 0;
+    if (r > 80) r = 80;
+    int32_t s = (int32_t)snr_db + 10;
+    if (s < 0)  s = 0;
+    if (s > 20) s = 20;
+    return (uint8_t)(r + s);
+}
+
+uint8_t routing_neighbor_link_score(const neighbor_entry_t *n, uint32_t now_ms)
+{
+    if (!n || n->node_id == 0) return 0u;
+    uint32_t age = now_ms - n->last_seen_ms;
+    if (age >= NEIGHBOR_EXPIRY_MS) return 0u;
+    uint8_t base = neighbor_compute_base(n->rssi_dbm, n->last_snr_db);
+    /* Linear decay: full score at age=0, 0 at age=NEIGHBOR_EXPIRY_MS       */
+    return (uint8_t)((uint32_t)base * (NEIGHBOR_EXPIRY_MS - age)
+                     / NEIGHBOR_EXPIRY_MS);
+}
+
+void routing_neighbor_print(const neighbor_table_t *tbl, uint32_t now_ms)
+{
+    if (!tbl) return;
+    printf("%-12s %-12s %4s %8s %7s %5s %6s %6s\r\n",
+           "NodeID", "Callsign", "Hops", "RSSI(dB)", "SNR(dB)",
+           "Score", "Age(s)", "rx_ok");
+    uint8_t shown = 0u;
+    for (uint8_t i = 0u; i < NEIGHBOR_TABLE_SIZE; i++) {
+        const neighbor_entry_t *n = &tbl->entries[i];
+        if (n->node_id == 0) continue;
+        uint32_t age_ms = now_ms - n->last_seen_ms;
+        if (age_ms > NEIGHBOR_EXPIRY_MS) continue;
+        uint8_t score = routing_neighbor_link_score(n, now_ms);
+        printf("0x%08lX  %-12s %4u %8d %7d %5u %6lu %6lu\r\n",
+               (unsigned long)n->node_id,
+               n->callsign[0] ? n->callsign : "-",
+               (unsigned)n->hop_count,
+               (int)n->rssi_dbm,
+               (int)n->last_snr_db,
+               (unsigned)score,
+               (unsigned long)(age_ms / 1000u),
+               (unsigned long)n->rx_ok);
+        shown++;
+    }
+    if (shown == 0u) printf("  (no live neighbours)\r\n");
+}
+
 void routing_neighbor_init(neighbor_table_t *tbl)
 {
     memset(tbl, 0, sizeof(*tbl));
@@ -90,6 +145,7 @@ void routing_neighbor_init(neighbor_table_t *tbl)
 void routing_neighbor_update(neighbor_table_t       *tbl,
                              const rivr_pkt_hdr_t   *pkt,
                              int8_t                  rssi_dbm,
+                             int8_t                  snr_db,
                              uint32_t                now_ms)
 {
     if (!tbl || !pkt || pkt->src_id == 0) return;
@@ -106,15 +162,22 @@ void routing_neighbor_update(neighbor_table_t       *tbl,
             n->node_id      = pkt->src_id;
             n->last_seen_ms = now_ms;
             n->rssi_dbm     = rssi_dbm;
+            n->last_snr_db  = snr_db;
             n->hop_count    = (uint8_t)(pkt->hop + 1u);
+            n->rx_ok        = 1u;
             if (tbl->count < NEIGHBOR_TABLE_SIZE) { tbl->count++; }
             return;
         }
 
         if (n->node_id == pkt->src_id) {
-            /* Update existing entry */
+            /* Update existing entry — EWMA for RSSI and SNR (α=1/8) to
+             * suppress short-lived spikes and prevent route oscillation. */
             n->last_seen_ms = now_ms;
-            n->rssi_dbm     = rssi_dbm;
+            n->rssi_dbm     = (int8_t)(((int16_t)n->rssi_dbm * 7
+                                         + (int16_t)rssi_dbm) / 8);
+            n->last_snr_db  = (int8_t)(((int16_t)n->last_snr_db * 7
+                                         + (int16_t)snr_db) / 8);
+            n->rx_ok++;
             /* Only update hop_count if this path is shorter */
             uint8_t new_hops = (uint8_t)(pkt->hop + 1u);
             if (new_hops < n->hop_count) { n->hop_count = new_hops; }
@@ -135,7 +198,9 @@ void routing_neighbor_update(neighbor_table_t       *tbl,
         n->node_id      = pkt->src_id;
         n->last_seen_ms = now_ms;
         n->rssi_dbm     = rssi_dbm;
+        n->last_snr_db  = snr_db;
         n->hop_count    = (uint8_t)(pkt->hop + 1u);
+        n->rx_ok        = 1u;
     }
 }
 

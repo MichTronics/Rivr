@@ -6,22 +6,25 @@
 #include "route_cache.h"
 #include "rivr_metrics.h"
 #include <string.h>
+#include <stdio.h>
+#include <inttypes.h>
 
-/* ── rssi → metric conversion ────────────────────────────────────────────── *
- * metric = 0    → excellent (rssi ≈ -50 dBm)
- * metric = 255  → unreachable
- * The mapping is: metric = clamp(255 + rssi_dbm, 0, 254)
- *   rssi = -50 → metric = 205  (good direct link)
- *   rssi = -100 → metric = 155 (decent relay)
- *   rssi = -130 → metric = 125 (weak)
- * Lower hop_count breaks ties.
+/* ── link score → metric conversion ────────────────────────────────────── *
+ * Composite link score matching routing_neighbor_link_score():
+ *   rssi_part = clamp(rssi_dbm + 140, 0, 80)   — 0..80
+ *   snr_part  = clamp(snr_db   +  10, 0, 20)   — 0..20
+ *   score     = rssi_part + snr_part             — 0..100
+ * Higher score = better link.
  * ─────────────────────────────────────────────────────────────────────────── */
-static uint8_t rssi_to_metric(int16_t rssi_dbm)
+static uint8_t link_to_metric(int16_t rssi_dbm, int8_t snr_db)
 {
-    int32_t m = 255 + (int32_t)rssi_dbm;
-    if (m < 0)   m = 0;
-    if (m > 254) m = 254;
-    return (uint8_t)m;
+    int32_t r = (int32_t)rssi_dbm + 140;
+    if (r < 0)  r = 0;
+    if (r > 80) r = 80;
+    int32_t s = (int32_t)snr_db + 10;
+    if (s < 0)  s = 0;
+    if (s > 20) s = 20;
+    return (uint8_t)(r + s);  /* 0..100: higher = better */
 }
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
@@ -87,9 +90,12 @@ void route_cache_update(route_cache_t *cache,
         expire_entry(e, now_ms);
 
         if (e->dst_id == dst_id && (e->flags & RCACHE_FLAG_VALID)) {
-            /* Prefer: fewer hops, then better (lower) metric */
+            /* Prefer: fewer hops; within same hop-count, better metric wins
+             * only if improvement exceeds RCACHE_METRIC_HYSTERESIS, which
+             * prevents route oscillation when two paths have similar scores. */
             if (hop_count < e->hop_count ||
-                (hop_count == e->hop_count && metric > e->metric)) {
+                (hop_count == e->hop_count &&
+                 (uint32_t)metric > (uint32_t)e->metric + RCACHE_METRIC_HYSTERESIS)) {
                 e->next_hop      = next_hop;
                 e->hop_count     = hop_count;
                 e->metric        = metric;
@@ -136,15 +142,12 @@ void route_cache_learn_rx(route_cache_t *cache,
                            uint32_t       from_id,
                            uint8_t        hop_count,
                            int16_t        rssi_dbm,
+                           int8_t         snr_db,
                            uint32_t       now_ms)
 {
     if (!cache || src_id == 0) return;
 
-    /* Determine actual next_hop toward src_id:
-     *  - hop_count == 0 → src is a direct neighbour; next_hop = src_id
-     *  - hop_count >  0 → src is behind a relay; next_hop = from_id (the relay)
-     *                     Only learn if we know who the relay is.
-     */
+    /* Determine actual next_hop toward src_id:                              */
     uint32_t next_hop;
     uint8_t  nhops;
     if (hop_count == 0) {
@@ -157,7 +160,7 @@ void route_cache_learn_rx(route_cache_t *cache,
         return;   /* relay unknown, can't learn reliable route */
     }
 
-    uint8_t metric = rssi_to_metric(rssi_dbm);
+    uint8_t metric = link_to_metric(rssi_dbm, snr_db);
     uint8_t f = RCACHE_FLAG_VALID | (hop_count == 0 ? RCACHE_FLAG_DIRECT : 0u);
     route_cache_update(cache, src_id, next_hop, nhops, metric, f, now_ms);
 }
@@ -198,4 +201,31 @@ uint8_t route_cache_count(const route_cache_t *cache, uint32_t now_ms)
         if (entry_is_alive(&cache->entries[i], now_ms)) alive++;
     }
     return alive;
+}
+
+void route_cache_print(const route_cache_t *cache, uint32_t now_ms)
+{
+    if (!cache) return;
+    printf("%-12s %-12s %4s %5s %6s  %s\r\n",
+           "Destination", "NextHop", "Hops", "Score", "Age(s)", "Flags");
+    uint8_t shown = 0u;
+    for (uint8_t i = 0u; i < RCACHE_SIZE; i++) {
+        const route_cache_entry_t *e = &cache->entries[i];
+        if (!(e->flags & RCACHE_FLAG_VALID)) continue;
+        uint32_t age_ms = now_ms - e->last_seen_ms;
+        if (age_ms > RCACHE_EXPIRY_MS) continue;
+        char flags[4] = "---";
+        if (e->flags & RCACHE_FLAG_VALID)   flags[0] = 'U';
+        if (e->flags & RCACHE_FLAG_DIRECT)  flags[1] = 'D';
+        if (e->flags & RCACHE_FLAG_PENDING) flags[2] = 'P';
+        printf("0x%08lX   0x%08lX %4u %5u %6lu  %s\r\n",
+               (unsigned long)e->dst_id,
+               (unsigned long)e->next_hop,
+               (unsigned)e->hop_count,
+               (unsigned)e->metric,
+               (unsigned long)(age_ms / 1000u),
+               flags);
+        shown++;
+    }
+    if (shown == 0u) printf("  (no live routes)\r\n");
 }

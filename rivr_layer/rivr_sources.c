@@ -130,12 +130,12 @@ uint32_t sources_rf_rx_drain(void)
          * routing_neighbor_update tracks pkt_hdr.src_id + hop_count for all
          * observed senders; hop==0 entries count as direct neighbours.       */
         routing_neighbor_update(&g_neighbor_table, &pkt_hdr,
-                                (int8_t)frame.rssi_dbm, now_ms);
+                                (int8_t)frame.rssi_dbm, frame.snr_db, now_ms);
 
         route_cache_learn_rx(&g_route_cache,
                               pkt_hdr.src_id, from_id,
                               pkt_hdr.hop,
-                              frame.rssi_dbm, now_ms);
+                              frame.rssi_dbm, frame.snr_db, now_ms);
 
         /* ── GATE 3 — Route-cache learning verification ─────────────────────── *
          * Immediately after learning, probe tx_decide so the log shows whether *

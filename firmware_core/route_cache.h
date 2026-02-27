@@ -43,6 +43,7 @@ extern "C" {
 #define RCACHE_SIZE          64u         /**< Table capacity (fixed)           */
 #define RCACHE_EXPIRY_MS     120000u     /**< Route expiry: 2 minutes          */
 #define RCACHE_METRIC_INF    0xFFu       /**< "unreachable" sentinel           */
+#define RCACHE_METRIC_HYSTERESIS 10u    /**< Min score gain needed to swap routes */
 
 /* ── Entry flags ─────────────────────────────────────────────────────────── */
 
@@ -128,12 +129,14 @@ void route_cache_update(route_cache_t *cache,
  * - If @p hop_count == 0 the source is a direct neighbour.
  * - If @p from_id == 0 and hop_count == 0, derives from_id = src_id.
  * - Skips learning if from_id == 0 AND hop_count > 0 (relay unknown).
+ * - Metric is computed as a composite link score from RSSI + SNR (0..100).
  *
  * @param cache      Route cache.
  * @param src_id     Original source node (from packet header).
  * @param from_id    Immediate neighbour that delivered the frame (0 if unknown).
  * @param hop_count  Hops already taken in the received packet (pkt->hop).
  * @param rssi_dbm   Received signal strength (negative; higher = better).
+ * @param snr_db     Signal-to-noise ratio in dB.
  * @param now_ms     Current monotonic millisecond timestamp.
  */
 void route_cache_learn_rx(route_cache_t *cache,
@@ -141,6 +144,7 @@ void route_cache_learn_rx(route_cache_t *cache,
                            uint32_t       from_id,
                            uint8_t        hop_count,
                            int16_t        rssi_dbm,
+                           int8_t         snr_db,
                            uint32_t       now_ms);
 
 /**
@@ -180,6 +184,18 @@ uint8_t route_cache_expire(route_cache_t *cache, uint32_t now_ms);
  * @brief Return number of living (valid, non-expired) entries.
  */
 uint8_t route_cache_count(const route_cache_t *cache, uint32_t now_ms);
+
+/**
+ * @brief Print the route cache as a human-readable table via printf().
+ *
+ * Output format (one row per live entry):
+ *   Destination  NextHop     Hops  Score  Age(s)  Flags
+ *   Flags: U=unicast-valid D=direct P=pending
+ *
+ * @param cache   Route cache.
+ * @param now_ms  Current monotonic millisecond timestamp.
+ */
+void route_cache_print(const route_cache_t *cache, uint32_t now_ms);
 
 #ifdef __cplusplus
 }

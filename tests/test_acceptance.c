@@ -387,6 +387,140 @@ static void run3_congestion_and_due_ms(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
+ * RUN 4 — Link scoring, hysteresis, age decay, route selection
+ * ══════════════════════════════════════════════════════════════════════════ */
+static void run4_link_scoring(void)
+{
+    printf("\n=== RUN 4: Link Scoring, Hysteresis, Age Decay ===\n");
+
+    /* ── 4a: Score formula — known RSSI+SNR → expected value ────────────── */
+    /* rssi_part = clamp(rssi+140, 0, 80); snr_part = clamp(snr+10, 0, 20)  */
+    neighbor_table_t nb;
+    routing_neighbor_init(&nb);
+
+    uint32_t now = tb_millis();
+
+    rivr_pkt_hdr_t ph;
+    ph.src_id   = NODE_A;
+    ph.hop      = 0u;
+    ph.seq      = 0u;
+    ph.pkt_type = PKT_CHAT;
+
+    /* Excellent link: rssi=-60 dBm, snr=+10 dB → rssi_part=80, snr_part=20 → 100 */
+    routing_neighbor_update(&nb, &ph, -60, 10, now);
+    const neighbor_entry_t *na = routing_neighbor_get(&nb, 0u);
+    CHECK(na != NULL, "4a: NODE_A entry exists after first update");
+    uint8_t score_a = routing_neighbor_link_score(na, now);
+    CHECK(score_a == 100u, "4a: excellent link (rssi=-60, snr=+10) → score 100");
+
+    /* Mid link: rssi=-100 dBm, snr=0 dB → rssi_part=40, snr_part=10 → 50  */
+    ph.src_id = NODE_B;
+    routing_neighbor_update(&nb, &ph, -100, 0, now);
+    const neighbor_entry_t *nb_ent = routing_neighbor_get(&nb, 1u);
+    CHECK(nb_ent != NULL, "4a: NODE_B entry exists");
+    uint8_t score_b = routing_neighbor_link_score(nb_ent, now);
+    CHECK(score_b == 50u, "4a: mid link (rssi=-100, snr=0) → score 50");
+
+    /* Weak link: rssi=-120 dBm, snr=-10 dB → rssi_part=20, snr_part=0 → 20 */
+    ph.src_id = NODE_D;
+    routing_neighbor_update(&nb, &ph, -120, -10, now);
+    const neighbor_entry_t *nd = routing_neighbor_get(&nb, 2u);
+    CHECK(nd != NULL, "4a: NODE_D entry exists");
+    uint8_t score_d = routing_neighbor_link_score(nd, now);
+    CHECK(score_d == 20u, "4a: weak link (rssi=-120, snr=-10) → score 20");
+
+    /* Score ordering must be consistent */
+    CHECK(score_a > score_b && score_b > score_d,
+          "4a: score ordering: excellent > mid > weak");
+
+    /* ── 4b: Age decay — same link, clock advanced → score decreases ─────── */
+    /* Advance clock to half the expiry window */
+    test_advance_ms(NEIGHBOR_EXPIRY_MS / 2u);
+    uint32_t now2 = tb_millis();
+
+    /* NODE_A (base=100) should now be ~50 */
+    uint8_t score_a_aged = routing_neighbor_link_score(na, now2);
+    CHECK(score_a_aged < score_a,
+          "4b: score decreases after half-expiry elapsed");
+    /* Tolerate ±1 from integer rounding */
+    CHECK(score_a_aged >= 49u && score_a_aged <= 51u,
+          "4b: aged score ≈ 50 (base/2 at half-expiry window)");
+
+    /* Advance past full expiry → score == 0 */
+    test_advance_ms(NEIGHBOR_EXPIRY_MS / 2u + 1u);
+    uint32_t now3 = tb_millis();
+    uint8_t score_a_expired = routing_neighbor_link_score(na, now3);
+    CHECK(score_a_expired == 0u, "4b: score == 0 once past NEIGHBOR_EXPIRY_MS");
+
+    /* ── 4c: Hysteresis — small improvement does NOT swap route ─────────── */
+    route_cache_t rc;
+    route_cache_init(&rc);
+    uint32_t t0 = tb_millis();
+
+    /* Install a route: NODE_D via NODE_B, hops=2, metric=60 */
+    route_cache_update(&rc, NODE_D, NODE_B, 2u, 60u, RCACHE_FLAG_VALID, t0);
+    /* Attempt upgrade: same hops, metric=68 (delta=8 < RCACHE_METRIC_HYSTERESIS=10) */
+    route_cache_update(&rc, NODE_D, NODE_A, 2u, 68u, RCACHE_FLAG_VALID, t0);
+
+    uint32_t nh_out = 0u;
+    rcache_tx_decision_t dec = route_cache_tx_decide(&rc, NODE_D, t0, &nh_out);
+    CHECK(dec == RCACHE_TX_UNICAST, "4c: route exists (UNICAST)");
+    CHECK(nh_out == NODE_B,
+          "4c: hysteresis: small improvement (delta=8) does NOT swap next_hop");
+
+    /* ── 4d: Route upgrade — sufficient improvement DOES swap route ──────── */
+    /* metric=75 (delta=15 > RCACHE_METRIC_HYSTERESIS=10) → should swap     */
+    route_cache_update(&rc, NODE_D, NODE_A, 2u, 75u, RCACHE_FLAG_VALID, t0);
+    nh_out = 0u;
+    dec = route_cache_tx_decide(&rc, NODE_D, t0, &nh_out);
+    CHECK(dec == RCACHE_TX_UNICAST, "4d: route still valid after upgrade attempt");
+    CHECK(nh_out == NODE_A,
+          "4d: sufficient improvement (delta=15) DOES swap next_hop to NODE_A");
+
+    /* ── 4e: rx_ok counter increments on each neighbor update ───────────── */
+    neighbor_table_t nb2;
+    routing_neighbor_init(&nb2);
+    uint32_t t1 = tb_millis();
+    rivr_pkt_hdr_t p2;
+    p2.src_id = NODE_B; p2.hop = 0u; p2.seq = 0u; p2.pkt_type = PKT_CHAT;
+
+    routing_neighbor_update(&nb2, &p2, -80, 5, t1);
+    routing_neighbor_update(&nb2, &p2, -80, 5, t1 + 100u);
+    routing_neighbor_update(&nb2, &p2, -80, 5, t1 + 200u);
+
+    const neighbor_entry_t *nb2_ent = routing_neighbor_get(&nb2, 0u);
+    CHECK(nb2_ent != NULL, "4e: entry exists");
+    CHECK(nb2_ent->rx_ok == 3u, "4e: rx_ok == 3 after three updates");
+
+    /* ── 4f: EWMA — RSSI smooths toward new value ───────────────────────── */
+    /* Initial entry at -80 dBm. Then hit with -60 dBm once.
+     * EWMA α=1/8: new = (old*7 + new_sample)/8 = (-80*7 + -60)/8 = -77  */
+    routing_neighbor_update(&nb2, &p2, -60, 5, t1 + 300u);
+    CHECK(nb2_ent->rssi_dbm == -77,
+          "4f: EWMA RSSI smooths: (-80*7 + -60)/8 == -77");
+    /* After the 4th update rx_ok should be 4 */
+    CHECK(nb2_ent->rx_ok == 4u, "4f: rx_ok == 4 after EWMA update");
+
+    /* ── 4g: route_cache_learn_rx wires SNR into metric ─────────────────── */
+    route_cache_t rc2;
+    route_cache_init(&rc2);
+    uint32_t t2 = tb_millis();
+    /* Excellent direct link: rssi=-60, snr=+10 → metric=100                */
+    route_cache_learn_rx(&rc2, NODE_A, 0u, 0u, -60, 10, t2);
+    const route_cache_entry_t *re = route_cache_lookup(&rc2, NODE_A, t2);
+    CHECK(re != NULL, "4g: route learned via route_cache_learn_rx");
+    CHECK(re->metric == 100u,
+          "4g: metric == 100 for excellent direct link (rssi=-60, snr=+10)");
+
+    /* Weaker path arrives (rssi=-100, snr=0 → metric=50): must NOT replace
+     * because 100 → 50 is a regression (50 < 100), not an improvement.    */
+    route_cache_learn_rx(&rc2, NODE_A, 0u, 0u, -100, 0, t2);
+    re = route_cache_lookup(&rc2, NODE_A, t2);
+    CHECK(re != NULL && re->metric == 100u,
+          "4g: weaker path (metric=50) does NOT replace strong route (100)");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ *
  * main
  * ══════════════════════════════════════════════════════════════════════════ */
 int main(void)
@@ -396,6 +530,7 @@ int main(void)
     run1_flood_correctness();
     run2_hybrid_route();
     run3_congestion_and_due_ms();
+    run4_link_scoring();
 
     printf("\n══════════════════════════════════════════\n");
     printf("  PASS: %lu   FAIL: %lu\n",

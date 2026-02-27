@@ -64,16 +64,20 @@ typedef struct {
 
 /* ── Neighbor table ─────────────────────────────────────────────────────── */
 
-#define NEIGHBOR_TABLE_SIZE  16u   /**< Maximum tracked neighbours          */
-#define NEIGHBOR_EXPIRY_MS   120000u /**< Evict neighbours unseen for 2 min  */
+#define NEIGHBOR_TABLE_SIZE  16u     /**< Maximum tracked neighbours          */
+#define NEIGHBOR_EXPIRY_MS   120000u /**< Evict neighbours unseen for 2 min   */
 
 /** One entry in the neighbour table. */
 typedef struct {
     uint32_t  node_id;        /**< Neighbour node ID (0 = empty slot)       */
     uint32_t  last_seen_ms;   /**< Monotonic ms of last received packet     */
-    int8_t    rssi_dbm;       /**< Last observed RSSI                       */
+    int8_t    rssi_dbm;       /**< EWMA of observed RSSI (α=1/8)            */
     uint8_t   hop_count;      /**< Minimum hops to this neighbour (=hop+1)  */
     char      callsign[12];   /**< Callsign from last PKT_BEACON (NUL-term) */
+    /* ── Step 5: per-neighbor link stats ─────────────────────────────── */
+    uint32_t  rx_ok;          /**< Count of valid frames received           */
+    int8_t    last_snr_db;    /**< EWMA of observed SNR in dB (α=1/8)      */
+    uint8_t   _pad[3];        /**< Alignment padding                        */
 } neighbor_entry_t;
 
 /** Complete neighbour tracking state. */
@@ -141,15 +145,18 @@ void routing_neighbor_init(neighbor_table_t *tbl);
  *
  * Creates a new entry if the src_id is not yet known, otherwise refreshes the
  * existing entry.  Evicts the oldest entry when the table is full.
+ * RSSI and SNR are maintained as EWMA (α=1/8) for oscillation resistance.
  *
  * @param tbl       Neighbour table.
  * @param pkt       Decoded packet header (src_id, hop used).
  * @param rssi_dbm  Observed RSSI of the received frame.
+ * @param snr_db    Observed SNR of the received frame (dB).
  * @param now_ms    Current monotonic millisecond timestamp.
  */
 void routing_neighbor_update(neighbor_table_t       *tbl,
                              const rivr_pkt_hdr_t   *pkt,
                              int8_t                  rssi_dbm,
+                             int8_t                  snr_db,
                              uint32_t                now_ms);
 
 /**
@@ -180,6 +187,33 @@ const neighbor_entry_t *routing_neighbor_get(const neighbor_table_t *tbl,
 void routing_neighbor_set_callsign(neighbor_table_t *tbl,
                                    uint32_t          node_id,
                                    const char       *callsign);
+
+/**
+ * @brief Compute the effective link score (0..100) for a neighbour.
+ *
+ * Formula (all integer arithmetic, no floating point):
+ *   rssi_part = clamp(rssi_dbm + 140, 0, 80)   — best at -60 dBm
+ *   snr_part  = clamp(snr_db   +  10, 0, 20)   — best at ≥+10 dB
+ *   base      = rssi_part + snr_part             — 0..100
+ *   score     = base × (NEIGHBOR_EXPIRY_MS − age_ms) / NEIGHBOR_EXPIRY_MS
+ *
+ * Score decays linearly to 0 as the link approaches NEIGHBOR_EXPIRY_MS,
+ * providing automatic aging without separate expiry logic.
+ * Returns 0 if the entry is already expired.
+ */
+uint8_t routing_neighbor_link_score(const neighbor_entry_t *n,
+                                     uint32_t                now_ms);
+
+/**
+ * @brief Print the neighbour table as a human-readable table via printf().
+ *
+ * Output format (one row per live entry):
+ *   NodeID      Callsign    Hops  RSSI(dB)  SNR(dB)  Score  Age(s)  rx_ok
+ *
+ * @param tbl     Neighbour table.
+ * @param now_ms  Current monotonic millisecond timestamp.
+ */
+void routing_neighbor_print(const neighbor_table_t *tbl, uint32_t now_ms);
 
 /* ════════════════════════════════════════════════════════════════════════════
  * PHASE A — Flood hardening
