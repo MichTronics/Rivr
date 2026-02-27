@@ -42,11 +42,13 @@
 #include "radio_sx1262.h"
 #include "platform_esp32.h"
 #include "timebase.h"
+#include "rivr_metrics.h"
 #include "driver/gpio.h"    /* gpio_isr_handler_add */
 #include "esp_log.h"
 #include "rivr_log.h"
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 #define TAG "RADIO"
 
@@ -59,6 +61,12 @@ static volatile bool s_in_rx = false;
 
 /** Set by radio_isr() when DIO1 fires; cleared by radio_service_rx(). */
 static volatile bool s_dio1_pending = false;
+
+/** Consecutive TX failures; triggers radio_hard_reset() at 3. */
+static uint8_t s_tx_fail_streak = 0;
+
+/** Consecutive spurious (non-RxDone, non-TxDone) DIO1 events; reset on valid RxDone. */
+static uint8_t s_spurious_irq_streak = 0;
 
 rb_t rf_rx_ringbuf;
 rb_t rf_tx_queue;
@@ -95,16 +103,16 @@ static void sx1262_read_cmd(uint8_t cmd, uint8_t *out, uint8_t n_out)
 
 /* ── Initialisation ──────────────────────────────────────────────────────── */
 
-void radio_init(void)
+/**
+ * @brief Write the full SX1262 register configuration sequence.
+ *
+ * Assumes the chip has already been reset (RESET pulse + BUSY low).
+ * Does NOT touch ring-buffers and does NOT attach the DIO1 ISR — those
+ * are one-time operations done in radio_init().
+ * Called by both radio_init() (first boot) and radio_hard_reset().
+ */
+static void radio_apply_config(void)
 {
-    RIVR_LOGI(TAG, "radio_init: resetting SX1262");
-
-    rb_init(&rf_rx_ringbuf, s_rx_storage, RF_RX_RINGBUF_CAP, sizeof(rf_rx_frame_t));
-    rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
-
-    platform_sx1262_reset();
-    platform_sx1262_wait_busy(100);
-
     /* SetStandby(STDBY_RC) — must be first command after reset */
     uint8_t p = 0x00;
     sx1262_cmd(0x80, &p, 1);   /* 0x80 = SetStandby */
@@ -175,38 +183,59 @@ void radio_init(void)
      * Authoritative BW encoding (RadioLib / SX1262 UM v2.1 Table 13-47):
      *   0x00=7.8   0x08=10.4  0x01=15.6  0x09=20.8  0x02=31.25
      *   0x0A=41.7  0x03=62.5  0x04=125   0x05=250   0x06=500  kHz */
-    uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x04, 0x00 };
-    sx1262_cmd(0x8B, mod_params, 4);   /* 0x8B = SetModulationParams */
-    platform_sx1262_wait_busy(10);
+    {
+        uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x04, 0x00 };
+        sx1262_cmd(0x8B, mod_params, 4);   /* 0x8B = SetModulationParams */
+        platform_sx1262_wait_busy(10);
+    }
 
     /* SetPacketParams: preamble=8, explicit header, maxPayload, CRC=on, noInvertIQ */
-    uint8_t pkt_params[6] = {
-        0x00, RF_PREAMBLE_LEN,  /* preamble MSB, LSB */
-        0x00,                   /* variable length header */
-        RF_MAX_PAYLOAD_LEN,     /* maxPayloadLength */
-        0x01,                   /* CRC on */
-        0x00                    /* IQ standard */
-    };
-    sx1262_cmd(0x8C, pkt_params, 6);   /* 0x8C = SetPacketParams */
-    platform_sx1262_wait_busy(10);
+    {
+        uint8_t pkt_params[6] = {
+            0x00, RF_PREAMBLE_LEN,  /* preamble MSB, LSB */
+            0x00,                   /* variable length header */
+            RF_MAX_PAYLOAD_LEN,     /* maxPayloadLength */
+            0x01,                   /* CRC on */
+            0x00                    /* IQ standard */
+        };
+        sx1262_cmd(0x8C, pkt_params, 6);   /* 0x8C = SetPacketParams */
+        platform_sx1262_wait_busy(10);
+    }
 
     /* SetTxParams: +22 dBm (SX1262 max), rampTime=40µs.
      * The E22-900M30S external PA boosts this to ~30 dBm. */
-    uint8_t tx_params[2] = { 0x16, 0x04 };
-    sx1262_cmd(0x8E, tx_params, 2);   /* 0x8E = SetTxParams */
-    platform_sx1262_wait_busy(10);
+    {
+        uint8_t tx_params[2] = { 0x16, 0x04 };
+        sx1262_cmd(0x8E, tx_params, 2);   /* 0x8E = SetTxParams */
+        platform_sx1262_wait_busy(10);
+    }
 
     /* SetDioIrqParams: enable TxDone+RxDone+Timeout on DIO1 */
-    uint8_t irq_params[8] = {
-        0x02, 0x03,   /* irqMask: TxDone(0x0001) | RxDone(0x0002) */
-        0x02, 0x03,   /* DIO1 */
-        0x00, 0x00,   /* DIO2 */
-        0x00, 0x00    /* DIO3 */
-    };
-    sx1262_cmd(0x08, irq_params, 8);   /* 0x08 = SetDioIrqParams */
-    platform_sx1262_wait_busy(10);
+    {
+        uint8_t irq_params[8] = {
+            0x02, 0x03,   /* irqMask: TxDone(0x0001) | RxDone(0x0002) */
+            0x02, 0x03,   /* DIO1 */
+            0x00, 0x00,   /* DIO2 */
+            0x00, 0x00    /* DIO3 */
+        };
+        sx1262_cmd(0x08, irq_params, 8);   /* 0x08 = SetDioIrqParams */
+        platform_sx1262_wait_busy(10);
+    }
+}
 
-    /* Attach DIO1 ISR */
+void radio_init(void)
+{
+    RIVR_LOGI(TAG, "radio_init: resetting SX1262");
+
+    rb_init(&rf_rx_ringbuf, s_rx_storage, RF_RX_RINGBUF_CAP, sizeof(rf_rx_frame_t));
+    rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
+
+    platform_sx1262_reset();
+    platform_sx1262_wait_busy(100);
+    radio_apply_config();
+
+    /* Attach DIO1 ISR — done ONCE on first boot only.
+     * radio_hard_reset() skips this step to avoid double-registration. */
     gpio_isr_handler_add(PIN_SX1262_DIO1, radio_isr, NULL);
 
     RIVR_LOGI(TAG, "radio_init: done (SF%u BW%ukHz @ %luHz)",
@@ -226,6 +255,20 @@ void radio_start_rx(void)
                                      * BUSY timeout logs after every TX) */
     s_in_rx = true;
     RIVR_LOGI(TAG, "RX mode started");
+}
+
+void radio_hard_reset(void)
+{
+    g_rivr_metrics.radio_hard_reset++;
+    s_tx_fail_streak      = 0;
+    s_spurious_irq_streak = 0;
+    s_in_rx               = false;
+    RIVR_LOGW(TAG, "hard reset #%" PRIu32 " — re-initialising SX1262",
+              g_rivr_metrics.radio_hard_reset);
+    platform_sx1262_reset();
+    platform_sx1262_wait_busy(100);
+    radio_apply_config();
+    radio_start_rx();
 }
 
 /* ── ISR ─────────────────────────────────────────────────────────────────── *
@@ -266,7 +309,19 @@ void radio_service_rx(void)
     uint8_t clr[2] = { irq_status[0], irq_status[1] };
     sx1262_cmd(0x02, clr, 2);   /* 0x02 = ClearIrqStatus */
 
+    /* 3. Detect spurious events (neither TxDone nor RxDone).  Five in a row
+     *    without a valid frame suggests the radio has lost its IRQ state. */
+    if (!(irq & 0x0003)) {
+        if (++s_spurious_irq_streak >= 5u) {
+            RIVR_LOGW(TAG, "5 spurious DIO1 events – triggering hard reset");
+            radio_hard_reset();
+        }
+        return;
+    }
+
     if (!(irq & 0x0002)) return;  /* Not RxDone – ignore (TxDone, Timeout, etc.) */
+
+    s_spurious_irq_streak = 0;   /* reset on valid RxDone */
 
     /* 3. GetRxBufferStatus → payloadLen, startAddr */
     uint8_t buf_status[2] = {0};
@@ -313,7 +368,14 @@ bool radio_transmit(const rf_tx_request_t *req)
 {
     if (!req || req->len == 0) return false;
 
-    platform_sx1262_wait_busy(10);
+    /* Guard: if BUSY is stuck before WriteBuffer, the SPI command will be
+     * silently ignored by the SX1262 — abort rather than corrupt the channel. */
+    if (!platform_sx1262_wait_busy(10)) {
+        g_rivr_metrics.radio_busy_timeout++;
+        RIVR_LOGW(TAG, "BUSY stuck before TX – skipping frame (total=%" PRIu32 ")",
+                  g_rivr_metrics.radio_busy_timeout);
+        return false;
+    }
 
     /* WriteBuffer: 0x0E + offset=0 + payload
      * NOTE: WriteBuffer takes [opcode][offset][data…] with NO NOP byte
@@ -370,17 +432,28 @@ bool radio_transmit(const rf_tx_request_t *req)
         if (flags & 0x0001) {   /* TxDone */
             uint8_t clr[2] = { irq[0], irq[1] };
             sx1262_cmd(0x02, clr, 2);   /* 0x02 = ClearIrqStatus */
+            s_tx_fail_streak = 0;       /* clear failure streak on success */
             radio_start_rx();   /* return to RX */
             return true;
         }
         if (flags & 0x0200) {   /* Timeout */
-            ESP_LOGE(TAG, "TX timeout");
-            radio_start_rx();
+            g_rivr_metrics.radio_tx_fail++;
+            RIVR_LOGW(TAG, "TX HW timeout (streak %u)", (unsigned)(s_tx_fail_streak + 1u));
+            if (++s_tx_fail_streak >= 3u) {
+                radio_hard_reset();
+            } else {
+                radio_start_rx();
+            }
             return false;
         }
     }
-    ESP_LOGE(TAG, "TX deadline exceeded");
-    radio_start_rx();
+    g_rivr_metrics.radio_tx_fail++;
+    RIVR_LOGW(TAG, "TX deadline exceeded (streak %u)", (unsigned)(s_tx_fail_streak + 1u));
+    if (++s_tx_fail_streak >= 3u) {
+        radio_hard_reset();
+    } else {
+        radio_start_rx();
+    }
     return false;
 }
 

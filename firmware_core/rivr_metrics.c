@@ -18,7 +18,10 @@ void rivr_metrics_print(void)
            "\"tx_full\":%" PRIu32 ","
            "\"dc_blk\":%" PRIu32 ","
            "\"fab_drop\":%" PRIu32 ","
-           "\"fab_delay\":%" PRIu32
+           "\"fab_delay\":%" PRIu32 ","
+           "\"rad_busy\":%" PRIu32 ","
+           "\"rad_txfail\":%" PRIu32 ","
+           "\"rad_rst\":%" PRIu32
            "}\n",
         g_rivr_metrics.rx_decode_fail,
         g_rivr_metrics.rx_dedupe_drop,
@@ -26,5 +29,8 @@ void rivr_metrics_print(void)
         g_rivr_metrics.tx_queue_full,
         g_rivr_metrics.duty_blocked,
         g_rivr_metrics.fabric_drop,
-        g_rivr_metrics.fabric_delay);
+        g_rivr_metrics.fabric_delay,
+        g_rivr_metrics.radio_busy_timeout,
+        g_rivr_metrics.radio_tx_fail,
+        g_rivr_metrics.radio_hard_reset);
 }

@@ -114,6 +114,15 @@ void radio_init_buffers_only(void);
 void radio_start_rx(void);
 
 /**
+ * @brief Perform a hard reset and full re-initialisation of the SX1262.
+ *
+ * Called automatically after 3 consecutive TX failures or 5 spurious DIO1
+ * events.  Increments g_rivr_metrics.radio_hard_reset.  Safe to call from
+ * the main loop only — never from an ISR or another task.
+ */
+void radio_hard_reset(void);
+
+/**
  * @brief Transmit a single frame (blocking until TX_DONE or timeout).
  *
  * MUST only be called from the main loop (not from ISR).
