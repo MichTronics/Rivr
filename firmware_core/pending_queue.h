@@ -120,6 +120,16 @@ uint8_t pending_queue_expire(pending_queue_t *pq, uint32_t now_ms);
  */
 uint8_t pending_queue_count(const pending_queue_t *pq);
 
+/**
+ * @brief Return pending-queue fill level as 0..100.
+ *
+ * Used for backpressure signalling: callers should throttle
+ * non-control relay traffic when this value exceeds ~75.
+ * Control packets (BEACON, ROUTE_REQ, ROUTE_RPL, ACK, PROG_PUSH)
+ * must always bypass any backpressure gate.
+ */
+uint8_t pending_queue_pressure(const pending_queue_t *pq);
+
 #ifdef __cplusplus
 }
 #endif

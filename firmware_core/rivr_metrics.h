@@ -23,6 +23,11 @@ typedef struct {
     uint32_t loop_jitter_ms;   /* max main-loop work duration in ms (gauge)     */
     uint32_t radio_rx_timeout;    /* RX silent >60 s while in RX → soft reset  */
     uint32_t radio_reset_backoff; /* hard reset denied – backoff cooldown active*/
+    /* ── Step 4: queue / backpressure drops ─────────────────────────────── */
+    uint32_t drop_no_route;      /* pending queue full — originated frame lost  */
+    uint32_t drop_rate_limited;  /* RIVR_FWD_DROP_BUDGET: relay rate-limited    */
+    uint32_t drop_ttl_relay;     /* RIVR_FWD_DROP_TTL: relay TTL=0 dropped      */
+    uint32_t tx_queue_peak;      /* high-water mark of rf_tx_queue occupancy    */
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;

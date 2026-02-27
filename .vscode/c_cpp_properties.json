@@ -370,6 +370,8 @@
                 "LOG_LOCAL_LEVEL=ESP_LOG_DEBUG",
                 "RIVR_ROLE_CLIENT=1",
                 "RIVR_FABRIC_REPEATER=0",
+                "RIVR_BUILD_ENV=\"client_esp32devkit_e22_900\"",
+                "RIVR_GIT_SHA=\"unknown\"",
                 ""
             ],
             "cStandard": "gnu17",

@@ -145,3 +145,9 @@ uint8_t pending_queue_count(const pending_queue_t *pq)
     }
     return n;
 }
+
+uint8_t pending_queue_pressure(const pending_queue_t *pq)
+{
+    if (!pq) return 0u;
+    return (uint8_t)(((uint32_t)pq->count * 100u) / PENDING_QUEUE_SIZE);
+}

@@ -84,7 +84,11 @@ int build_info_write_json(char *buf, size_t buf_len)
             "\"rc_evict\":%" PRIu32 ","
             "\"jitter_ms\":%" PRIu32 ","
             "\"rx_tout\":%" PRIu32 ","
-            "\"rst_bkof\":%" PRIu32
+            "\"rst_bkof\":%" PRIu32 ","
+            "\"no_route\":%" PRIu32 ","
+            "\"rate_lim\":%" PRIu32 ","
+            "\"ttl_rel\":%" PRIu32 ","
+            "\"txq_peak\":%" PRIu32
         "}"
         "}",
         RIVR_BUILD_ENV,
@@ -122,7 +126,11 @@ int build_info_write_json(char *buf, size_t buf_len)
         g_rivr_metrics.rcache_evict,
         g_rivr_metrics.loop_jitter_ms,
         g_rivr_metrics.radio_rx_timeout,
-        g_rivr_metrics.radio_reset_backoff
+        g_rivr_metrics.radio_reset_backoff,
+        g_rivr_metrics.drop_no_route,
+        g_rivr_metrics.drop_rate_limited,
+        g_rivr_metrics.drop_ttl_relay,
+        g_rivr_metrics.tx_queue_peak
     );
 
     /* snprintf returns the number of chars it *would* have written;

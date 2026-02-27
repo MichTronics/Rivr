@@ -222,6 +222,8 @@ uint32_t sources_rf_rx_drain(void)
                     rpl_req.len    = (uint8_t)rpl_len;
                     rpl_req.toa_us = RF_TOA_APPROX_US(rpl_req.len);
                     if (rb_try_push(&rf_tx_queue, &rpl_req)) {
+                        uint32_t _occ = rb_available(&rf_tx_queue);
+                        if (_occ > g_rivr_metrics.tx_queue_peak) { g_rivr_metrics.tx_queue_peak = _occ; }
                         RIVR_LOGI(TAG, "rf_rx: sent ROUTE_RPL to 0x%08lx for target=0x%08lx",
                                  (unsigned long)pkt_hdr.src_id,
                                  (unsigned long)g_my_node_id);
@@ -371,6 +373,18 @@ uint32_t sources_rf_rx_drain(void)
                     fwd_hdr.pkt_type, (unsigned long)fwd_hdr.src_id,
                     (unsigned long)fabric_extra_ms);
             }
+            /* ── Pending-queue backpressure gate ──────────────────────────────
+             * When our pending queue is ≥75% full, suppress relay of
+             * PKT_CHAT and PKT_DATA to allow originated traffic to drain
+             * first.  Pure control packets (BEACON, ROUTE_REQ, ROUTE_RPL,
+             * ACK, PROG_PUSH) are always forwarded regardless of pressure. */
+            if ((fwd_hdr.pkt_type == PKT_CHAT || fwd_hdr.pkt_type == PKT_DATA)
+                    && pending_queue_pressure(&g_pending_queue) >= 75u) {
+                ESP_LOGD(TAG,
+                    "rf_rx: backpressure relay suppressed pkt_type=%u",
+                    fwd_hdr.pkt_type);
+                goto skip_enqueue;
+            }
 #endif /* RIVR_FABRIC_REPEATER */
 
             rf_tx_request_t fwd_req;
@@ -383,12 +397,15 @@ uint32_t sources_rf_rx_drain(void)
                 fwd_req.toa_us = toa_us;
                 fwd_req.due_ms = now_ms + delay_ms;  /* 0 when delay_ms==0 */
                 if (rb_try_push(&rf_tx_queue, &fwd_req)) {
+                    uint32_t _occ = rb_available(&rf_tx_queue);
+                    if (_occ > g_rivr_metrics.tx_queue_peak) { g_rivr_metrics.tx_queue_peak = _occ; }
                     ESP_LOGD(TAG,
                         "rf_rx: relay queued pkt_type=%u src=0x%08lx ttl=%u delay=%lu ms",
                         fwd_hdr.pkt_type,
                         (unsigned long)fwd_hdr.src_id,
                         fwd_hdr.ttl, (unsigned long)delay_ms);
                 } else {
+                    g_rivr_metrics.tx_queue_full++;
                     ESP_LOGW(TAG, "rf_rx: relay tx_queue full – dropped");
                 }
             }
@@ -400,9 +417,11 @@ uint32_t sources_rf_rx_drain(void)
             skip_enqueue_client:;
 #endif
         } else if (fwd == RIVR_FWD_DROP_TTL) {
+            g_rivr_metrics.drop_ttl_relay++;
             ESP_LOGD(TAG, "rf_rx: TTL=0 src=0x%08lx – not relayed",
                      (unsigned long)pkt_hdr.src_id);
         } else if (fwd == RIVR_FWD_DROP_BUDGET) {
+            g_rivr_metrics.drop_rate_limited++;
             ESP_LOGW(TAG, "rf_rx: fwd budget exceeded pkt_type=%u – not relayed",
                      pkt_hdr.pkt_type);
         }
