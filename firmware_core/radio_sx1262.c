@@ -88,9 +88,10 @@ static uint8_t  s_busy_stuck_streak  = 0u;
 
 /* ── Fault injection (test builds: -DRIVR_FAULT_INJECT=1) ───────────────── */
 #ifdef RIVR_FAULT_INJECT
-bool g_fault_busy_stuck = false;   /**< Makes wait_busy always return false   */
-bool g_fault_tx_no_done = false;   /**< Suppresses TxDone flag in TX poll     */
-bool g_fault_rx_silence = false;   /**< Suppresses DIO1 event dispatch        */
+bool    g_fault_busy_stuck = false;   /**< Makes wait_busy always return false   */
+bool    g_fault_tx_no_done = false;   /**< Suppresses TxDone flag in TX poll     */
+bool    g_fault_rx_silence = false;   /**< Suppresses DIO1 event dispatch        */
+uint8_t g_fault_crc_fail   = 0u;     /**< Burst CRC-error injection counter     */
 
 static bool _fi_wait_busy(uint32_t ms)
 {
@@ -386,6 +387,7 @@ void radio_fault_reset_state(void)
     g_fault_busy_stuck  = false;
     g_fault_tx_no_done  = false;
     g_fault_rx_silence  = false;
+    g_fault_crc_fail    = 0u;
     memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
 }
 #endif /* RIVR_FAULT_INJECT */
@@ -420,6 +422,20 @@ void radio_service_rx(void)
     if (g_fault_rx_silence) return;
 #endif
     if (!s_dio1_pending) return;
+#ifdef RIVR_FAULT_INJECT
+    /* Burst CRC-error injection: simulate PayloadCrcError for the next N frames. */
+    if (g_fault_crc_fail > 0u) {
+        g_fault_crc_fail--;
+        s_dio1_pending = false;
+        s_last_rx_event_ms = tb_millis();
+        g_rivr_metrics.radio_rx_crc_fail++;
+        uint32_t n = g_rivr_metrics.radio_rx_crc_fail;
+        if ((n & (n - 1u)) == 0u) {
+            RIVR_LOGW(TAG, "RX CRC error (fault-injected) – discarded (total=%" PRIu32 ")", n);
+        }
+        return;
+    }
+#endif
     s_dio1_pending = false;
     s_last_rx_event_ms = tb_millis();   /* reset RX-silence watchdog */
 

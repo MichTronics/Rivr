@@ -1,0 +1,38 @@
+# RIVR Replay Trace — SCENARIO A: Multi-hop forward
+#
+# Three nodes in a mesh:
+#   NODE_A = 0xAAAA0001  (direct neighbour, original sender)
+#   NODE_B = 0xBBBB0002  (relay, re-broadcasts NODE_A's frames)
+#   NODE_C = 0xCCCC0003  (direct neighbour, independent sender)
+#
+# Verification goals:
+#   - Unique frames are forwarded; PKT_FLAG_RELAY + TTL-1 + hop+1 applied.
+#   - Relay copy of (NODE_A, seq=1) is deduplicated.
+#   - Neighbour table tracks only 2 distinct source nodes.
+#   - Route cache learns paths to both NODE_A and NODE_C.
+#   - No CRC errors, no TTL drops, no spurious metric increments.
+
+{"ev":"comment","msg":"=== Step 1: NODE_A sends CHAT seq=1 (direct, hop=0) ==="}
+{"ev":"rx_frame","t_ms":1000,"src":"0xAAAA0001","dst":"0x00000000","seq":1,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"hello","fwd_toa_us":50000}
+
+{"ev":"comment","msg":"=== Step 2: relay copy from NODE_B (same src+seq = dedupe) ==="}
+{"ev":"rx_frame","t_ms":1010,"src":"0xAAAA0001","dst":"0x00000000","seq":1,"type":1,"ttl":6,"hop":1,"rssi":-80,"snr":5,"payload":"hello","fwd_toa_us":50000}
+
+{"ev":"comment","msg":"=== Step 3: NODE_C sends CHAT seq=1 (different src, independent) ==="}
+{"ev":"rx_frame","t_ms":1020,"src":"0xCCCC0003","dst":"0x00000000","seq":1,"type":1,"ttl":7,"hop":0,"rssi":-75,"snr":6,"payload":"hi","fwd_toa_us":50000}
+
+{"ev":"comment","msg":"=== Step 4: NODE_A sends seq=2 (new sequence — must forward again) ==="}
+{"ev":"rx_frame","t_ms":1030,"src":"0xAAAA0001","dst":"0x00000000","seq":2,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"world","fwd_toa_us":50000}
+
+{"ev":"comment","msg":"--- Assertions ---"}
+
+{"ev":"assert","what":"metric","key":"rx_dedupe_drop","op":"eq","val":1}
+{"ev":"assert","what":"metric","key":"rx_decode_fail","op":"eq","val":0}
+{"ev":"assert","what":"metric","key":"rx_ttl_drop","op":"eq","val":0}
+{"ev":"assert","what":"metric","key":"drop_ttl_relay","op":"eq","val":0}
+{"ev":"assert","what":"metric","key":"tx_queue_full","op":"eq","val":0}
+
+{"ev":"assert","what":"neighbor_count","op":"eq","val":2}
+
+{"ev":"assert","what":"route","node":"0xAAAA0001","op":"exists"}
+{"ev":"assert","what":"route","node":"0xCCCC0003","op":"exists"}

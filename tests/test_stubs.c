@@ -50,6 +50,12 @@ void test_advance_ms(uint32_t delta_ms)
     atomic_fetch_add_explicit(&g_mono_ms, delta_ms, memory_order_relaxed);
 }
 
+/* ── Test helper: set the monotonic clock to an absolute value ─────────────── */
+void test_set_ms(uint32_t abs_ms)
+{
+    atomic_store_explicit(&g_mono_ms, abs_ms, memory_order_relaxed);
+}
+
 /* ── Radio ring-buffer globals (normally in radio_sx1262.c) ───────────────── */
 /* The acceptance test never calls radio_init_buffers_only(), but the linker
  * needs these symbols because pending_queue.h pulls in radio_sx1262.h which

@@ -194,6 +194,11 @@ extern bool g_fault_busy_stuck;
 extern bool g_fault_tx_no_done;
 /** Suppress DIO1 event dispatch (simulate RX silence). */
 extern bool g_fault_rx_silence;
+/** Simulate PayloadCrcError on next N received frames (burst CRC failures).
+ *  Each call to radio_service_rx() that fires decrements this counter by 1,
+ *  increments radio_rx_crc_fail, and discards the frame — exactly as the
+ *  SX1262 hardware would if IRQ bit 0x0040 is set.  Set to 0 to disable. */
+extern uint8_t g_fault_crc_fail;
 /** Reset all internal radio statics — for test isolation only. */
 void radio_fault_reset_state(void);
 #endif /* RIVR_FAULT_INJECT */

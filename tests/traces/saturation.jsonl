@@ -1,0 +1,35 @@
+# RIVR Replay Trace — SCENARIO B: Saturation
+#
+# Two-part saturation test:
+#
+#   PART 1 (t=1000): Drain the global airtime token bucket via fault injection,
+#     then send 5 CHAT frames.  All 5 pass the routing/budget check but are
+#     dropped by the airtime gate → class_drops_chat increments 5 times.
+#
+#   PART 2 (t=200000): Advance the clock so the token bucket refills fully.
+#     Pre-fill rf_tx_queue to capacity via queue_fill fault.
+#     Send one CHAT frame that passes routing + airtime but finds the TX queue
+#     full → tx_queue_full increments.
+
+{"ev":"comment","msg":"=== PART 1: airtime token-bucket exhaustion ==="}
+{"ev":"tick","t_ms":1000}
+{"ev":"fault","name":"drain_tokens"}
+
+{"ev":"rx_frame","t_ms":1000,"src":"0xAAAA0001","dst":"0x00000000","seq":1,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"a","fwd_toa_us":50000}
+{"ev":"rx_frame","t_ms":1000,"src":"0xAAAA0001","dst":"0x00000000","seq":2,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"b","fwd_toa_us":50000}
+{"ev":"rx_frame","t_ms":1000,"src":"0xAAAA0001","dst":"0x00000000","seq":3,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"c","fwd_toa_us":50000}
+{"ev":"rx_frame","t_ms":1000,"src":"0xAAAA0001","dst":"0x00000000","seq":4,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"d","fwd_toa_us":50000}
+{"ev":"rx_frame","t_ms":1000,"src":"0xAAAA0001","dst":"0x00000000","seq":5,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"e","fwd_toa_us":50000}
+
+{"ev":"assert","what":"metric","key":"class_drops_chat","op":"eq","val":5}
+{"ev":"assert","what":"metric","key":"tx_queue_full","op":"eq","val":0}
+
+{"ev":"comment","msg":"=== PART 2: queue overflow (tokens full, queue pre-filled) ==="}
+{"ev":"tick","t_ms":200000}
+{"ev":"fault","name":"queue_fill","count":3}
+
+{"ev":"rx_frame","t_ms":200001,"src":"0xAAAA0001","dst":"0x00000000","seq":6,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"overflow","fwd_toa_us":50000}
+
+{"ev":"assert","what":"metric","key":"tx_queue_full","op":"eq","val":1}
+{"ev":"assert","what":"metric","key":"class_drops_chat","op":"eq","val":5}
+{"ev":"assert","what":"metric","key":"rx_decode_fail","op":"eq","val":0}

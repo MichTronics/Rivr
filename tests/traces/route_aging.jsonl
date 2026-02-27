@@ -1,0 +1,49 @@
+# RIVR Replay Trace — SCENARIO C: Route aging + fault injection
+#
+# Four-part test:
+#
+#   PART 1 (t=1000): NODE_A joins the mesh.  Verify an active neighbour entry
+#     and a live route are created.
+#
+#   PART 2 (t=200000): Advance clock well past NEIGHBOR_EXPIRY_MS (120 s) and
+#     RCACHE_EXPIRY_MS (120 s).  Verify both have expired and are absent.
+#
+#   PART 3: rx_crc_fail burst — 3 consecutive CRC-error injections.
+#     Verifies radio_rx_crc_fail and rx_decode_fail increment without
+#     polluting the routing / neighbour state.
+#
+#   PART 4: busy_stuck burst — 2 consecutive TX-busy-stall injections.
+#     NODE_A and NODE_B send valid frames; forwarding is decided but each TX
+#     attempt fires a busy_stall instead of queuing.
+
+{"ev":"comment","msg":"=== PART 1: NODE_A joins at t=1000 ==="}
+{"ev":"rx_frame","t_ms":1000,"src":"0xAAAA0001","dst":"0x00000000","seq":1,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"hello","fwd_toa_us":50000}
+
+{"ev":"assert","what":"neighbor_count","op":"eq","val":1}
+{"ev":"assert","what":"route","node":"0xAAAA0001","op":"exists"}
+
+{"ev":"comment","msg":"=== PART 2: advance clock past expiry boundaries ==="}
+{"ev":"tick","t_ms":200000}
+
+{"ev":"assert","what":"neighbor_count","op":"eq","val":0}
+{"ev":"assert","what":"route","node":"0xAAAA0001","op":"absent"}
+
+{"ev":"comment","msg":"=== PART 3: rx_crc_fail burst (3 consecutive injections) ==="}
+{"ev":"fault","name":"crc_fail","count":3}
+
+{"ev":"rx_frame","t_ms":200001,"src":"0xAAAA0001","dst":"0x00000000","seq":10,"type":1,"ttl":7,"hop":0,"rssi":-80,"snr":5,"payload":"x"}
+{"ev":"rx_frame","t_ms":200002,"src":"0xAAAA0001","dst":"0x00000000","seq":11,"type":1,"ttl":7,"hop":0,"rssi":-80,"snr":5,"payload":"y"}
+{"ev":"rx_frame","t_ms":200003,"src":"0xAAAA0001","dst":"0x00000000","seq":12,"type":1,"ttl":7,"hop":0,"rssi":-80,"snr":5,"payload":"z"}
+
+{"ev":"assert","what":"metric","key":"radio_rx_crc_fail","op":"eq","val":3}
+{"ev":"assert","what":"metric","key":"rx_decode_fail","op":"eq","val":3}
+{"ev":"assert","what":"neighbor_count","op":"eq","val":0}
+
+{"ev":"comment","msg":"=== PART 4: busy_stuck burst (2 TX stall injections) ==="}
+{"ev":"fault","name":"busy_stuck","count":2}
+
+{"ev":"rx_frame","t_ms":200010,"src":"0xAAAA0001","dst":"0x00000000","seq":20,"type":1,"ttl":7,"hop":0,"rssi":-70,"snr":8,"payload":"stall1","fwd_toa_us":50000}
+{"ev":"rx_frame","t_ms":200011,"src":"0xBBBB0002","dst":"0x00000000","seq":1,"type":1,"ttl":7,"hop":0,"rssi":-75,"snr":6,"payload":"stall2","fwd_toa_us":50000}
+
+{"ev":"assert","what":"metric","key":"radio_busy_stall","op":"eq","val":2}
+{"ev":"assert","what":"metric","key":"rx_decode_fail","op":"eq","val":3}

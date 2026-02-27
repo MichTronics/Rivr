@@ -1,9 +1,10 @@
 # tests/Makefile — build and run RIVR C-layer test suites (Linux / macOS)
 #
 # Usage (from project root):
-#   make -C tests            # build + run both suites
+#   make -C tests            # build + run all suites  (alias: make -C tests test)
 #   make -C tests acceptance # acceptance suite only
 #   make -C tests recovery   # radio-recovery suite only
+#   make -C tests replay     # deterministic replay/sim suite only
 #   make -C tests clean      # remove binaries
 #
 # Compiler search order: CC env var → gcc → cc
@@ -54,9 +55,32 @@ REC_BIN   := radio_recovery_test
 REC_FLAGS := $(COMMON_FLAGS) -DRIVR_FAULT_INJECT=1
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all acceptance recovery clean
+# REPLAY / SIM TEST  (Step 7)
+#   Deterministic JSONL-driven harness that feeds events into the
+#   routing / queue / airtime C-layer and verifies outcomes via assertions.
+#   Includes fault injection (crc_fail, busy_stuck, tx_timeout, queue_fill).
+# ─────────────────────────────────────────────────────────────────────────────
+REP_SRCS := \
+    $(FW)/protocol.c    \
+    $(FW)/routing.c     \
+    $(FW)/route_cache.c \
+    $(FW)/rivr_metrics.c  \
+    $(FW)/rivr_log.c      \
+    $(FW)/airtime_sched.c \
+    test_stubs.c           \
+    replay.c               \
+    test_replay.c
 
-all: acceptance recovery
+REP_BIN   := replay_test
+REP_FLAGS := $(COMMON_FLAGS)
+
+# ─────────────────────────────────────────────────────────────────────────────
+.PHONY: all test acceptance recovery replay clean
+
+all: acceptance recovery replay
+
+# `make test` is the CI-friendly single-command alias.
+test: all
 
 acceptance: $(ACC_BIN)
 	@echo "── Running acceptance tests ──────────────────────────────────────"
@@ -68,11 +92,19 @@ recovery: $(REC_BIN)
 	./$(REC_BIN)
 	@echo
 
+replay: $(REP_BIN)
+	@echo "── Running replay/sim tests ──────────────────────────────────────"
+	./$(REP_BIN)
+	@echo
+
 $(ACC_BIN): $(ACC_SRCS)
 	$(CC) $(ACC_FLAGS) $^ -o $@
 
 $(REC_BIN): $(REC_SRCS)
 	$(CC) $(REC_FLAGS) $^ -o $@
 
+$(REP_BIN): $(REP_SRCS)
+	$(CC) $(REP_FLAGS) $^ -o $@
+
 clean:
-	rm -f $(ACC_BIN) $(REC_BIN)
+	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN)
