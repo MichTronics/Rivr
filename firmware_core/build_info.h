@@ -130,7 +130,8 @@ int build_info_write_json(char *buf, size_t buf_len);
  *
  * Output prefix printed separately by the caller: "@SUPPORTPACK "
  *
- * Recommended minimum buffer size: 512 bytes.
+ * Recommended minimum buffer size: 768 bytes (Step-9 adds 7 extra metric
+ * fields totalling ~160 additional characters at peak integer values).
  *
  * @param buf             Caller-supplied buffer
  * @param buf_len         Size of buf in bytes

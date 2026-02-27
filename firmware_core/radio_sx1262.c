@@ -70,8 +70,11 @@ static uint8_t s_spurious_irq_streak = 0;
 
 /* ── Recovery / backoff state ────────────────────────────────────────────── */
 
-/** Minimum milliseconds between consecutive hard resets (backoff guard). */
-#define RADIO_RESET_BACKOFF_MS    10000u
+/** Minimum milliseconds between consecutive hard resets (backoff guard).
+ * Enforces at most one hard reset per RADIO_RESET_BACKOFF_MS — prevents
+ * reset storms under persistent faults (BUSY always stuck, TX always failing).
+ * 5 000 ms → at most 12 resets per minute while still recovering promptly. */
+#define RADIO_RESET_BACKOFF_MS     5000u
 /** Consecutive BUSY-stuck stalls in radio_transmit() before forced reset. */
 #define RADIO_BUSY_STUCK_MAX          3u
 /** RX radio silence threshold: no DIO1 event for this long → soft reset. */
@@ -309,6 +312,25 @@ void radio_hard_reset(void)
 }
 
 /**
+ * @brief Reason codes for radio_guard_reset().
+ *
+ * Used to increment the per-reason reset counter in g_rivr_metrics and to
+ * label the WARN log.  Any new reason must be added to both the enum and the
+ * labels array.
+ */
+typedef enum {
+    RADIO_RESET_REASON_BUSY_STUCK    = 0,  /**< BUSY pin stuck high before TX       */
+    RADIO_RESET_REASON_TX_TIMEOUT    = 1,  /**< TX HW timeout or SW deadline streak  */
+    RADIO_RESET_REASON_SPURIOUS_IRQ  = 2,  /**< Spurious DIO1 event streak           */
+    RADIO_RESET_REASON_RX_TIMEOUT    = 3,  /**< RX-silence watchdog tripped          */
+    RADIO_RESET_REASON__COUNT               /**< Sentinel — keep last                */
+} radio_reset_reason_t;
+
+static const char * const s_reset_reason_labels[RADIO_RESET_REASON__COUNT] = {
+    "busy_stuck", "tx_timeout", "spurious_irq", "rx_timeout"
+};
+
+/**
  * @brief Rate-limited wrapper for radio_hard_reset().
  *
  * Enforces a minimum of RADIO_RESET_BACKOFF_MS between consecutive hard
@@ -316,24 +338,39 @@ void radio_hard_reset(void)
  * When the cooldown is active, increments radio_reset_backoff and returns
  * without resetting.
  *
- * @param reason  Short label logged for diagnostics (e.g., "tx_timeout").
+ * On every actual reset (not backoff-denied): increments the per-reason
+ * counter in g_rivr_metrics and emits one WARN log.  The backoff itself
+ * acts as the rate-limiter so no secondary counter is needed here.
+ *
+ * @param reason  Why the reset was requested (metric + log).
  */
-static void radio_guard_reset(const char *reason)
+static void radio_guard_reset(radio_reset_reason_t reason)
 {
+    const char *label = (reason < RADIO_RESET_REASON__COUNT)
+                        ? s_reset_reason_labels[reason] : "unknown";
     uint32_t now = tb_millis();
     if (s_reset_happened && (now - s_last_reset_ms) < RADIO_RESET_BACKOFF_MS) {
         g_rivr_metrics.radio_reset_backoff++;
         RIVR_LOGW(TAG,
             "reset(%s) denied – backoff %" PRIu32 "ms remaining"
             " (denied=%" PRIu32 ")",
-            reason,
+            label,
             (uint32_t)(RADIO_RESET_BACKOFF_MS - (now - s_last_reset_ms)),
             g_rivr_metrics.radio_reset_backoff);
         return;
     }
+    /* Actual reset — increment per-reason counter then emit one WARN. */
+    switch (reason) {
+        case RADIO_RESET_REASON_BUSY_STUCK:   g_rivr_metrics.radio_reset_busy_stuck++;   break;
+        case RADIO_RESET_REASON_TX_TIMEOUT:   g_rivr_metrics.radio_reset_tx_timeout++;   break;
+        case RADIO_RESET_REASON_SPURIOUS_IRQ: g_rivr_metrics.radio_reset_spurious_irq++; break;
+        case RADIO_RESET_REASON_RX_TIMEOUT:   g_rivr_metrics.radio_reset_rx_timeout++;   break;
+        default: break;
+    }
     s_reset_happened = true;
     s_last_reset_ms  = now;
-    RIVR_LOGW(TAG, "guard_reset(%s) – triggering hard reset", reason);
+    RIVR_LOGW(TAG, "guard_reset(%s) – hard reset #%" PRIu32 " (reason=%s)",
+              label, g_rivr_metrics.radio_hard_reset + 1u, label);
     radio_hard_reset();
 }
 
@@ -365,7 +402,7 @@ void radio_check_timeouts(void)
             (uint32_t)(now - s_last_rx_event_ms),
             g_rivr_metrics.radio_rx_timeout);
         s_last_rx_event_ms = now;   /* prevent immediate re-trigger */
-        radio_guard_reset("rx_timeout");
+        radio_guard_reset(RADIO_RESET_REASON_RX_TIMEOUT);
     }
 }
 
@@ -453,7 +490,7 @@ void radio_service_rx(void)
     if (!(irq & 0x0003)) {
         if (++s_spurious_irq_streak >= 5u) {
             RIVR_LOGW(TAG, "5 spurious DIO1 events – triggering guarded reset");
-            radio_guard_reset("spurious_irq");
+            radio_guard_reset(RADIO_RESET_REASON_SPURIOUS_IRQ);
         }
         return;
     }
@@ -524,16 +561,21 @@ bool radio_transmit(const rf_tx_request_t *req)
     /* Guard: if BUSY is stuck before WriteBuffer, the SPI command will be
      * silently ignored by the SX1262 — abort rather than corrupt the channel.
      * Track consecutive stalls; if streak reaches RADIO_BUSY_STUCK_MAX trigger
-     * a guarded hard reset to recover a locked chip. */
+     * a guarded hard reset to recover a locked chip.
+     *
+     * Two counters updated on each stall:
+     *   radio_busy_stall          — legacy name, kept for backward compat
+     *   radio_busy_timeout_total  — canonical Step-9 name (same value) */
     if (!platform_sx1262_wait_busy(10)) {
         g_rivr_metrics.radio_busy_stall++;
-        uint32_t _n = g_rivr_metrics.radio_busy_stall;
+        g_rivr_metrics.radio_busy_timeout_total++;
+        uint32_t _n = g_rivr_metrics.radio_busy_timeout_total;
         if ((_n & (_n - 1u)) == 0u) {   /* log on 1,2,4,8,… */
             RIVR_LOGW(TAG, "BUSY stuck before TX (total=%" PRIu32 ")", _n);
         }
         if (++s_busy_stuck_streak >= RADIO_BUSY_STUCK_MAX) {
             s_busy_stuck_streak = 0u;
-            radio_guard_reset("busy_stuck");
+            radio_guard_reset(RADIO_RESET_REASON_BUSY_STUCK);
         }
         return false;
     }
@@ -601,21 +643,28 @@ bool radio_transmit(const rf_tx_request_t *req)
             radio_start_rx();   /* return to RX */
             return true;
         }
-        if (flags & 0x0200) {   /* Timeout */
-            g_rivr_metrics.radio_tx_fail++;
-            RIVR_LOGW(TAG, "TX HW timeout (streak %u)", (unsigned)(s_tx_fail_streak + 1u));
+        if (flags & 0x0200) {   /* SX1262 HW Timeout IRQ */
+            g_rivr_metrics.radio_tx_fail++;       /* legacy aggregate counter */
+            g_rivr_metrics.tx_timeout_total++;    /* Step-9: HW-timeout split  */
+            RIVR_LOGW(TAG, "TX HW timeout (streak %u, total_tmo=%" PRIu32 ")",
+                      (unsigned)(s_tx_fail_streak + 1u),
+                      g_rivr_metrics.tx_timeout_total);
             if (++s_tx_fail_streak >= 3u) {
-                radio_guard_reset("tx_timeout");
+                radio_guard_reset(RADIO_RESET_REASON_TX_TIMEOUT);
             } else {
                 radio_start_rx();
             }
             return false;
         }
     }
-    g_rivr_metrics.radio_tx_fail++;
-    RIVR_LOGW(TAG, "TX deadline exceeded (streak %u)", (unsigned)(s_tx_fail_streak + 1u));
+    /* SW poll deadline exceeded (toa_us×2 + 100 ms elapsed without TxDone) */
+    g_rivr_metrics.radio_tx_fail++;        /* legacy aggregate counter */
+    g_rivr_metrics.tx_deadline_total++;    /* Step-9: SW-deadline split */
+    RIVR_LOGW(TAG, "TX deadline exceeded (streak %u, total_ddl=%" PRIu32 ")",
+              (unsigned)(s_tx_fail_streak + 1u),
+              g_rivr_metrics.tx_deadline_total);
     if (++s_tx_fail_streak >= 3u) {
-        radio_guard_reset("tx_timeout");
+        radio_guard_reset(RADIO_RESET_REASON_TX_TIMEOUT);
     } else {
         radio_start_rx();
     }

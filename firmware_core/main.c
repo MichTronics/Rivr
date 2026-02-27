@@ -535,7 +535,7 @@ void app_main(void)
     build_info_print_banner();
     /* Also emit @SUPPORTPACK at boot so the first log line is copy-paste ready. */
     {
-        char sp_buf[512];
+        char sp_buf[768];
         build_info_write_supportpack(sp_buf, sizeof(sp_buf),
             0u, 0u, 0u,
             (uint64_t)36000000u, 0u, 0u,   /* DC: full budget at boot */
@@ -631,7 +631,7 @@ void app_main(void)
 
             /* Emit @SUPPORTPACK for log capture / GitHub bug reports */
             {
-                char sp_buf[512];
+                char sp_buf[768];
                 build_info_write_supportpack(
                     sp_buf, sizeof(sp_buf),
                     routing_neighbor_count(&g_neighbor_table, now),

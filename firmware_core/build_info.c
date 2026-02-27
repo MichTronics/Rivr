@@ -93,7 +93,14 @@ int build_info_write_json(char *buf, size_t buf_len)
             "\"cls_ctrl\":%" PRIu32 ","
             "\"cls_chat\":%" PRIu32 ","
             "\"cls_met\":%" PRIu32 ","
-            "\"cls_bulk\":%" PRIu32
+            "\"cls_bulk\":%" PRIu32 ","
+            "\"rad_busy_tmo\":%" PRIu32 ","
+            "\"tx_tmo\":%" PRIu32 ","
+            "\"tx_ddl\":%" PRIu32 ","
+            "\"rst_busy\":%" PRIu32 ","
+            "\"rst_txtmo\":%" PRIu32 ","
+            "\"rst_spurious\":%" PRIu32 ","
+            "\"rst_rxtmo\":%" PRIu32
         "}"
         "}",
         RIVR_BUILD_ENV,
@@ -140,7 +147,15 @@ int build_info_write_json(char *buf, size_t buf_len)
         g_rivr_metrics.class_drops_ctrl,
         g_rivr_metrics.class_drops_chat,
         g_rivr_metrics.class_drops_metrics,
-        g_rivr_metrics.class_drops_bulk
+        g_rivr_metrics.class_drops_bulk,
+        /* Step-9 counters */
+        g_rivr_metrics.radio_busy_timeout_total,
+        g_rivr_metrics.tx_timeout_total,
+        g_rivr_metrics.tx_deadline_total,
+        g_rivr_metrics.radio_reset_busy_stuck,
+        g_rivr_metrics.radio_reset_tx_timeout,
+        g_rivr_metrics.radio_reset_spurious_irq,
+        g_rivr_metrics.radio_reset_rx_timeout
     );
 
     /* snprintf returns the number of chars it *would* have written;
@@ -223,7 +238,14 @@ int build_info_write_supportpack(char    *buf,
             "\"cls_ctrl\":%" PRIu32 ","
             "\"cls_chat\":%" PRIu32 ","
             "\"cls_met\":%" PRIu32 ","
-            "\"cls_bulk\":%" PRIu32
+            "\"cls_bulk\":%" PRIu32 ","
+            "\"rad_busy_tmo\":%" PRIu32 ","
+            "\"tx_tmo\":%" PRIu32 ","
+            "\"tx_ddl\":%" PRIu32 ","
+            "\"rst_busy\":%" PRIu32 ","
+            "\"rst_txtmo\":%" PRIu32 ","
+            "\"rst_spurious\":%" PRIu32 ","
+            "\"rst_rxtmo\":%" PRIu32
         "}"
         "}",
         /* build identity */
@@ -280,7 +302,15 @@ int build_info_write_supportpack(char    *buf,
         g_rivr_metrics.class_drops_ctrl,
         g_rivr_metrics.class_drops_chat,
         g_rivr_metrics.class_drops_metrics,
-        g_rivr_metrics.class_drops_bulk
+        g_rivr_metrics.class_drops_bulk,
+        /* Step-9 counters */
+        g_rivr_metrics.radio_busy_timeout_total,
+        g_rivr_metrics.tx_timeout_total,
+        g_rivr_metrics.tx_deadline_total,
+        g_rivr_metrics.radio_reset_busy_stuck,
+        g_rivr_metrics.radio_reset_tx_timeout,
+        g_rivr_metrics.radio_reset_spurious_irq,
+        g_rivr_metrics.radio_reset_rx_timeout
     );
 
     if (n < 0) { buf[0] = '\0'; return 0; }

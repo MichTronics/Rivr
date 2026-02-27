@@ -339,7 +339,7 @@ static void cli_handle_line(void)
     /* ── "supportpack" ── */
     if (strncmp(p, "supportpack", 11u) == 0 && (p[11] == '\0' || p[11] == ' ')) {
         uint32_t now_ms = tb_millis();
-        char sp_buf[512];
+        char sp_buf[768];
         int n = build_info_write_supportpack(
             sp_buf, sizeof(sp_buf),
             routing_neighbor_count(&g_neighbor_table, now_ms),

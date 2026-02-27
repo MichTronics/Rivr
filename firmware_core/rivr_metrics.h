@@ -34,6 +34,14 @@ typedef struct {
     uint32_t class_drops_chat;   /* CHAT frames dropped by token gate           */
     uint32_t class_drops_metrics;/* METRICS frames dropped by token gate        */
     uint32_t class_drops_bulk;   /* BULK frames dropped by token gate           */
+    /* ── Step 9: SX1262 recovery hardening ──────────────────────────────── */
+    uint32_t radio_busy_timeout_total; /* wait_busy() returned false (BUSY pin stuck)   */
+    uint32_t tx_timeout_total;         /* SX1262 HW IRQ Timeout flag fired during TX     */
+    uint32_t tx_deadline_total;        /* SW poll deadline (toa×2+100ms) exceeded in TX  */
+    uint32_t radio_reset_busy_stuck;   /* guard resets triggered by BUSY-stuck streak    */
+    uint32_t radio_reset_tx_timeout;   /* guard resets triggered by TX timeout streak    */
+    uint32_t radio_reset_spurious_irq; /* guard resets triggered by spurious DIO1 streak */
+    uint32_t radio_reset_rx_timeout;   /* guard resets triggered by RX-silence timeout   */
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;

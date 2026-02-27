@@ -38,7 +38,14 @@ void rivr_metrics_print(void)
            "\"cls_ctrl\":%" PRIu32 ","
            "\"cls_chat\":%" PRIu32 ","
            "\"cls_met\":%" PRIu32 ","
-           "\"cls_bulk\":%" PRIu32
+           "\"cls_bulk\":%" PRIu32 ","
+           "\"rad_busy_tmo\":%" PRIu32 ","
+           "\"tx_tmo\":%" PRIu32 ","
+           "\"tx_ddl\":%" PRIu32 ","
+           "\"rst_busy\":%" PRIu32 ","
+           "\"rst_txtmo\":%" PRIu32 ","
+           "\"rst_spurious\":%" PRIu32 ","
+           "\"rst_rxtmo\":%" PRIu32
            "}\n",
         g_rivr_metrics.rx_decode_fail,
         g_rivr_metrics.rx_dedupe_drop,
@@ -66,5 +73,12 @@ void rivr_metrics_print(void)
         g_rivr_metrics.class_drops_ctrl,
         g_rivr_metrics.class_drops_chat,
         g_rivr_metrics.class_drops_metrics,
-        g_rivr_metrics.class_drops_bulk);
+        g_rivr_metrics.class_drops_bulk,
+        g_rivr_metrics.radio_busy_timeout_total,
+        g_rivr_metrics.tx_timeout_total,
+        g_rivr_metrics.tx_deadline_total,
+        g_rivr_metrics.radio_reset_busy_stuck,
+        g_rivr_metrics.radio_reset_tx_timeout,
+        g_rivr_metrics.radio_reset_spurious_irq,
+        g_rivr_metrics.radio_reset_rx_timeout);
 }
