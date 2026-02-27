@@ -12,9 +12,15 @@ typedef struct {
     uint32_t duty_blocked;     /* dutycycle_check() denied a TX attempt         */
     uint32_t fabric_drop;        /* rivr_fabric scored packet above DROP_THRESHOLD*/
     uint32_t fabric_delay;       /* rivr_fabric deferred a relay (FABRIC_DELAY)   */
-    uint32_t radio_busy_timeout; /* BUSY pin stuck before TX; frame skipped       */
-    uint32_t radio_tx_fail;      /* TX timeout or TX deadline exceeded            */
-    uint32_t radio_hard_reset;   /* Full SX1262 re-init triggered by fail streak  */
+    uint32_t radio_busy_stall; /* BUSY stuck before TX; SPI write skipped       */
+    uint32_t radio_tx_fail;    /* TX timeout or TX deadline exceeded            */
+    uint32_t radio_hard_reset; /* Full SX1262 re-init triggered by fail streak  */
+    uint32_t radio_rx_crc_fail;/* SX1262 CRC-error IRQ on received frame        */
+    uint32_t pq_dropped;       /* pending_queue full — frame silently dropped   */
+    uint32_t pq_expired;       /* pending entries evicted on expiry timeout     */
+    uint32_t pq_peak;          /* high-water mark of pending queue occupancy    */
+    uint32_t rcache_evict;     /* route cache forced eviction (table full)      */
+    uint32_t loop_jitter_ms;   /* max main-loop work duration in ms (gauge)     */
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;

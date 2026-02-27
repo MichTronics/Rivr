@@ -74,9 +74,15 @@ int build_info_write_json(char *buf, size_t buf_len)
             "\"dc_blk\":%" PRIu32 ","
             "\"fab_drop\":%" PRIu32 ","
             "\"fab_delay\":%" PRIu32 ","
-            "\"rad_busy\":%" PRIu32 ","
+            "\"rad_stall\":%" PRIu32 ","
             "\"rad_txfail\":%" PRIu32 ","
-            "\"rad_rst\":%" PRIu32
+            "\"rad_rst\":%" PRIu32 ","
+            "\"rad_crc\":%" PRIu32 ","
+            "\"pq_drop\":%" PRIu32 ","
+            "\"pq_exp\":%" PRIu32 ","
+            "\"pq_peak\":%" PRIu32 ","
+            "\"rc_evict\":%" PRIu32 ","
+            "\"jitter_ms\":%" PRIu32
         "}"
         "}",
         RIVR_BUILD_ENV,
@@ -104,9 +110,15 @@ int build_info_write_json(char *buf, size_t buf_len)
         g_rivr_metrics.duty_blocked,
         g_rivr_metrics.fabric_drop,
         g_rivr_metrics.fabric_delay,
-        g_rivr_metrics.radio_busy_timeout,
+        g_rivr_metrics.radio_busy_stall,
         g_rivr_metrics.radio_tx_fail,
-        g_rivr_metrics.radio_hard_reset
+        g_rivr_metrics.radio_hard_reset,
+        g_rivr_metrics.radio_rx_crc_fail,
+        g_rivr_metrics.pq_dropped,
+        g_rivr_metrics.pq_expired,
+        g_rivr_metrics.pq_peak,
+        g_rivr_metrics.rcache_evict,
+        g_rivr_metrics.loop_jitter_ms
     );
 
     /* snprintf returns the number of chars it *would* have written;

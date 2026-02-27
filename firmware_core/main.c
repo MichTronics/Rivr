@@ -550,6 +550,9 @@ void app_main(void)
     disp.net_id = (uint16_t)RIVR_NET_ID;
 
     for (;;) {
+        /* Capture start of active work (excludes vTaskDelay sleep time). */
+        uint32_t loop_body_start = tb_millis();
+
 #if RIVR_ROLE_CLIENT
         /* ─ CLI poll MUST be first — consumes UART0 bytes before rivr_tick()
          * calls sources_cli_drain(), preventing any byte-ownership race.     */
@@ -692,6 +695,13 @@ void app_main(void)
         }
 #endif
 
+        /* Update loop-jitter gauge before sleeping. */
+        {
+            uint32_t iter_ms = tb_millis() - loop_body_start;
+            if (iter_ms > g_rivr_metrics.loop_jitter_ms) {
+                g_rivr_metrics.loop_jitter_ms = iter_ms;
+            }
+        }
         loop_count++;
 
         /* ─ 5. Yield 10 ms — long enough to be ≥1 tick at any FreeRTOS tick rate.

@@ -65,6 +65,7 @@
 #include "../firmware_core/ringbuf.h"
 #include "../firmware_core/timebase.h"
 #include "../firmware_core/build_info.h"
+#include "../firmware_core/rivr_metrics.h"
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 
@@ -226,6 +227,7 @@ static void cli_handle_line(void)
                "  chat <message>        broadcast text to the mesh\r\n"
                "  id                    print node ID, callsign and net ID\r\n"
                "  info                  print build info (env, sha, radio profile)\r\n"
+               "  metrics               print all counters/gauges as JSON (@MET line)\r\n"
                "  supportpack           JSON dump: build info + metrics snapshot\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
@@ -320,6 +322,13 @@ static void cli_handle_line(void)
     /* ── "info" ── */
     if (strncmp(p, "info", 4u) == 0 && (p[4] == '\0' || p[4] == ' ')) {
         build_info_print_banner();
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "metrics" ── */
+    if (strncmp(p, "metrics", 7u) == 0 && (p[7] == '\0' || p[7] == ' ')) {
+        rivr_metrics_print();
         fflush(stdout);
         return;
     }

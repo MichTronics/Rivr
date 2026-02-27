@@ -12,7 +12,11 @@
 
 #include "pending_queue.h"
 #include "protocol.h"
+#include "rivr_metrics.h"
+#include "rivr_log.h"
 #include <string.h>
+
+#define TAG "PQ"
 
 void pending_queue_init(pending_queue_t *pq)
 {
@@ -43,7 +47,19 @@ bool pending_queue_enqueue(pending_queue_t *pq,
         e->valid       = true;
         memcpy(e->data, data, e->len);
         if (pq->count < PENDING_QUEUE_SIZE) pq->count++;
+        /* Update peak gauge */
+        if (pq->count > g_rivr_metrics.pq_peak) {
+            g_rivr_metrics.pq_peak = pq->count;
+        }
         return true;
+    }
+    /* Queue full even after expiry — drop and count */
+    g_rivr_metrics.pq_dropped++;
+    {
+        uint32_t n = g_rivr_metrics.pq_dropped;
+        if ((n & (n - 1u)) == 0u) {   /* log on 1,2,4,8,… */
+            RIVR_LOGW(TAG, "pending queue full – frame dropped (total=%" PRIu32 ")", n);
+        }
     }
     return false;  /* queue full even after expiry */
 }
@@ -112,6 +128,9 @@ uint8_t pending_queue_expire(pending_queue_t *pq, uint32_t now_ms)
             if (pq->count > 0u) pq->count--;
             evicted++;
         }
+    }
+    if (evicted > 0u) {
+        g_rivr_metrics.pq_expired += evicted;
     }
     return evicted;
 }

@@ -323,6 +323,19 @@ void radio_service_rx(void)
 
     s_spurious_irq_streak = 0;   /* reset on valid RxDone */
 
+    /* PayloadCrcError (bit 6 = 0x0040): SX1262 sets this alongside RxDone
+     * when the received frame fails hardware CRC.  Discard immediately —
+     * corrupted data in the buffer is meaningless.  Log on first and every
+     * power-of-2 occurrence (logarithmic rate limiting). */
+    if (irq & 0x0040) {
+        g_rivr_metrics.radio_rx_crc_fail++;
+        uint32_t n = g_rivr_metrics.radio_rx_crc_fail;
+        if ((n & (n - 1u)) == 0u) {   /* power of 2: 1,2,4,8,16,… */
+            RIVR_LOGW(TAG, "RX CRC error – frame discarded (total=%" PRIu32 ")", n);
+        }
+        return;
+    }
+
     /* 3. GetRxBufferStatus → payloadLen, startAddr */
     uint8_t buf_status[2] = {0};
     sx1262_read_cmd(0x13, buf_status, 2);   /* 0x13 = GetRxBufferStatus */
@@ -371,9 +384,9 @@ bool radio_transmit(const rf_tx_request_t *req)
     /* Guard: if BUSY is stuck before WriteBuffer, the SPI command will be
      * silently ignored by the SX1262 — abort rather than corrupt the channel. */
     if (!platform_sx1262_wait_busy(10)) {
-        g_rivr_metrics.radio_busy_timeout++;
+        g_rivr_metrics.radio_busy_stall++;
         RIVR_LOGW(TAG, "BUSY stuck before TX – skipping frame (total=%" PRIu32 ")",
-                  g_rivr_metrics.radio_busy_timeout);
+                  g_rivr_metrics.radio_busy_stall);
         return false;
     }
 

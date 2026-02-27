@@ -4,6 +4,7 @@
  */
 
 #include "route_cache.h"
+#include "rivr_metrics.h"
 #include <string.h>
 
 /* ── rssi → metric conversion ────────────────────────────────────────────── *
@@ -118,6 +119,8 @@ void route_cache_update(route_cache_t *cache,
     /* Table full — evict round-robin */
     uint8_t idx = cache->evict_hand;
     cache->evict_hand = (uint8_t)((idx + 1u) % RCACHE_SIZE);
+
+    g_rivr_metrics.rcache_evict++;
 
     route_cache_entry_t *e = &cache->entries[idx];
     e->dst_id       = dst_id;
