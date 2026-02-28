@@ -21,16 +21,27 @@
 #include "driver/uart.h"
 #include "../firmware_core/rivr_metrics.h"
 #include "../firmware_core/rivr_log.h"
+#include "../firmware_core/rivr_ota.h"
+#include "../firmware_core/policy.h"
 
 #define TAG "RIVR_SRC"
 
 /* ── Default jitter window ───────────────────────────────────────────────── */
 #define FORWARD_JITTER_MAX_TICKS  4u   /**< Jitter window for relay delay     */
 
+/* ── Policy engine state ─────────────────────────────────────────────────── */
+static policy_state_t g_policy;
+static bool g_policy_init_done = false;
+
 /* ── rf_rx source ────────────────────────────────────────────────────────── */
 
 uint32_t sources_rf_rx_drain(void)
 {
+    if (!g_policy_init_done) {
+        policy_init(&g_policy);
+        g_policy_init_done = true;
+    }
+
     uint32_t injected = 0;
     uint32_t now_ms   = tb_millis();
 
@@ -177,10 +188,26 @@ uint32_t sources_rf_rx_drain(void)
             goto maybe_relay;
         }
 
-        /* ── 4b. Handle PKT_PROG_PUSH: store to NVS + request hot-reload ─────── */
+        /* ── 4b. Handle PKT_PROG_PUSH: verify sig + store to NVS + request hot-reload ── */
         if (pkt_hdr.pkt_type == PKT_PROG_PUSH) {
             if (pkt_hdr.dst_id == g_my_node_id || pkt_hdr.dst_id == 0u) {
                 if (payload_ptr && pkt_hdr.payload_len > 0u) {
+#ifdef RIVR_SIGNED_PROG
+                    if (rivr_ota_verify(payload_ptr, pkt_hdr.payload_len)) {
+                        if (rivr_ota_activate(payload_ptr, pkt_hdr.payload_len)) {
+                            g_program_reload_pending = true;
+                            g_rivr_metrics.ota_accepted++;
+                            RIVR_LOGI(TAG,
+                                "OTA: signed program accepted from 0x%08lx (%u bytes) – reload scheduled",
+                                (unsigned long)pkt_hdr.src_id, pkt_hdr.payload_len);
+                        }
+                    } else {
+                        g_rivr_metrics.ota_rejected++;
+                        RIVR_LOGW(TAG,
+                            "OTA: rejected (bad sig or replay) from 0x%08lx",
+                            (unsigned long)pkt_hdr.src_id);
+                    }
+#else  /* !RIVR_SIGNED_PROG — legacy unsigned path */
                     char prog_buf[2048];
                     /* payload_len is uint8_t (max 255) — always fits in prog_buf[2048] */
                     uint8_t copy_len = pkt_hdr.payload_len;
@@ -192,6 +219,7 @@ uint32_t sources_rf_rx_drain(void)
                             "OTA: new program received from 0x%08lx (%u bytes) – reload scheduled",
                             (unsigned long)pkt_hdr.src_id, copy_len);
                     }
+#endif /* RIVR_SIGNED_PROG */
                 }
             } else {
                 ESP_LOGD(TAG, "OTA: PKT_PROG_PUSH for 0x%08lx (not us) – discarded",
@@ -326,6 +354,32 @@ uint32_t sources_rf_rx_drain(void)
         /* ── 7. Phase-A relay: re-encode modified header + enqueue with deterministic jitter ── */
         maybe_relay:
         if (fwd == RIVR_FWD_FORWARD) {
+            /* ── Policy gate: TTL cap + flood token bucket ── */
+            {
+                uint8_t clamped_ttl = fwd_hdr.ttl;
+                rivr_policy_verdict_t pv = policy_check(&g_policy, &fwd_hdr,
+                                                        now_ms, &clamped_ttl);
+                if (pv == RIVR_POLICY_DROP) {
+                    g_rivr_metrics.policy_drop++;
+                    ESP_LOGD(TAG,
+                        "rf_rx: POLICY drop pkt_type=%u src=0x%08lx",
+                        fwd_hdr.pkt_type, (unsigned long)fwd_hdr.src_id);
+#if RIVR_ROLE_CLIENT
+                    goto skip_enqueue_client;
+#elif RIVR_FABRIC_REPEATER
+                    goto skip_enqueue;
+#else
+                    goto skip_relay_policy;
+#endif
+                }
+                if (pv == RIVR_POLICY_TTL_CLAMP) {
+                    fwd_hdr.ttl = clamped_ttl;
+                    g_rivr_metrics.policy_ttl_clamp++;
+                    ESP_LOGD(TAG,
+                        "rf_rx: POLICY ttl_clamp pkt_type=%u src=0x%08lx new_ttl=%u",
+                        fwd_hdr.pkt_type, (unsigned long)fwd_hdr.src_id, clamped_ttl);
+                }
+            }
 #if RIVR_ROLE_CLIENT
             /* Client nodes do not relay PKT_CHAT or PKT_DATA — those frames
              * originate here or are consumed here, never re-broadcast.
@@ -414,6 +468,9 @@ uint32_t sources_rf_rx_drain(void)
 #if RIVR_ROLE_CLIENT
             skip_enqueue_client:;
 #endif
+            /* skip_relay_policy: used when neither RIVR_ROLE_CLIENT nor
+             * RIVR_FABRIC_REPEATER is defined — pure repeater without fabric */
+            skip_relay_policy:;
         } else if (fwd == RIVR_FWD_DROP_TTL) {
             g_rivr_metrics.drop_ttl_relay++;
             ESP_LOGD(TAG, "rf_rx: TTL=0 src=0x%08lx – not relayed",

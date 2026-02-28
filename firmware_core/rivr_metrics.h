@@ -42,6 +42,11 @@ typedef struct {
     uint32_t radio_reset_tx_timeout;   /* guard resets triggered by TX timeout streak    */
     uint32_t radio_reset_spurious_irq; /* guard resets triggered by spurious DIO1 streak */
     uint32_t radio_reset_rx_timeout;   /* guard resets triggered by RX-silence timeout   */
+    /* ── P2: signed OTA + policy engine ─────────────────────────────────── */
+    uint32_t ota_accepted;       /* signed OTA verifications that passed              */
+    uint32_t ota_rejected;       /* OTA rejected: bad sig, replay, or short payload   */
+    uint32_t policy_drop;        /* packets dropped by policy token-bucket gate       */
+    uint32_t policy_ttl_clamp;   /* packets TTL-clamped by policy engine              */
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;

@@ -32,6 +32,10 @@ idf_component_register(
         "rivr_metrics.c"
         "rivr_log.c"
         "build_info.c"
+        # P2: signed OTA + policy engine
+        "ed25519_verify.c"
+        "rivr_ota.c"
+        "policy.c"
         # RIVR glue layer (relative to firmware_core/)
         "../rivr_layer/rivr_embed.c"
         "../rivr_layer/rivr_sinks.c"
@@ -50,6 +54,7 @@ idf_component_register(
         freertos
         log
         spi_flash
+        nvs_flash  # P2: signed OTA anti-replay via NVS
 )
 
 # ── Link the pre-built Rust rivr_core static library ─────────────────────────
