@@ -306,6 +306,66 @@ emit { io.lora.tx(safe_tx); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Demo 9 – tag() operator → @TRACE log + per-source metrics
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn demo9() {
+    println!("\n═══ Demo 9 – tag() → @TRACE + source_metrics_json ═══════════════════════\n");
+    // Messages tagged with "chat_rx" produce a @TRACE entry every time they
+    // pass through the pipeline and fire the emit sink.
+    let rivr = r#"
+source rf @lmp = rf;
+let chat = rf
+  |> filter.kind("CHAT")
+  |> tag("chat_rx");
+emit { io.usb.print(chat); }
+"#;
+    let mut eng = run(rivr);
+    eng.print_graph();
+
+    // Enable the trace capture BEFORE injecting events.
+    eng.enable_trace_log();
+
+    // Inject a mix of CHAT and non-CHAT messages.
+    let msgs: &[(u64, &str)] = &[
+        (1, "CHAT:hello"),
+        (2, "DATA:sensor=23"),
+        (3, "CHAT:world"),
+        (4, "CHAT:rivr"),
+        (5, "DATA:sensor=24"),
+    ];
+    for &(tick, text) in msgs {
+        inject_lmp(&mut eng, "rf", tick, text);
+    }
+    eng.run(200);
+
+    // Drain the trace log and print as @TRACE JSON lines.
+    let traces = eng.take_trace_log();
+    println!("@TRACE records ({})", traces.len());
+    for t in &traces {
+        println!(
+            "@TRACE {{\"label\":\"{}\",\"node\":\"{}\",\"clock\":{},\"tick\":{},\"val\":\"{}\"}}",
+            t.label, t.node_name, t.stamp.clock, t.stamp.tick, t.value_str
+        );
+    }
+    assert_eq!(
+        traces.len(),
+        3,
+        "expected 3 CHAT events to pass through tag()"
+    );
+
+    // Print per-source metrics.
+    println!("\nSource metrics: {}", eng.source_metrics_json());
+    let m = eng.source_metrics();
+    assert_eq!(m.len(), 1);
+    let (name, metrics) = &m[0];
+    assert_eq!(name, "rf");
+    assert_eq!(metrics.injected, 5, "all 5 events should be counted");
+
+    eng.print_stats();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Replay 2.0 – record + assert
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -414,6 +474,7 @@ fn main() {
     demo6();
     demo7();
     demo8();
+    demo9();
     do_replay_assert();
 
     println!("\n✓ all demos complete\n");

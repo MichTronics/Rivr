@@ -15,7 +15,7 @@ pub mod value;
 pub mod alloc_guard;
 
 // Top-level re-exports.
-pub use engine::Engine;
+pub use engine::{EffectRecord, Engine, SourceMetrics, TraceRecord};
 pub use event::{Event, Stamp};
 pub use node::{DropPolicy, Node, NodeId, NodeKind, SinkKind, QUEUE_CAP, WINDOW_CAP};
 pub use opcode::OpCode;

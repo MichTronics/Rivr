@@ -41,4 +41,6 @@ pub mod ffi;
 // Convenience top-level re-exports.
 pub use compiler::{compile, CompileError};
 pub use parser::{parse, ParseError};
-pub use runtime::{ByteBuf, Engine, Event, OpCode, Stamp, StrBuf, Value};
+pub use runtime::{
+    ByteBuf, EffectRecord, Engine, Event, OpCode, SourceMetrics, Stamp, StrBuf, TraceRecord, Value,
+};

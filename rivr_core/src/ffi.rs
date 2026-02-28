@@ -157,6 +157,25 @@ pub const RIVR_MAX_NODES: usize = 64;
 // The C side provides this function (rivr_emit_dispatch in rivr_embed.c).
 type EmitDispatchFn = unsafe extern "C" fn(sink_name: *const c_char, v: *const CValue);
 
+/// Trace dispatch callback.  Called whenever an event passes through a
+/// `tag("label")` node and reaches an `emit` sink.
+///
+/// Arguments:
+/// - `label`     — NUL-terminated trace label from the RIVR program.
+/// - `sink_name` — NUL-terminated sink identifier (e.g. `"io.lora.tx"`).
+/// - `clock`     — clock domain id (0 = mono, 1 = lmp, …).
+/// - `tick`      — logical tick at emission time.
+/// - `val`       — pointer to the emitted value (valid for call duration only).
+///
+/// Register with [`rivr_set_trace_dispatch`].
+type TraceDispatchFn = unsafe extern "C" fn(
+    label: *const c_char,
+    sink_name: *const c_char,
+    clock: u8,
+    tick: u64,
+    val: *const CValue,
+);
+
 /// Watchdog reset callback.  Called every `WATCHDOG_INTERVAL` steps inside
 /// `rivr_engine_run()`.  Typical use: `esp_task_wdt_reset()`.
 type WatchdogHookFn = unsafe extern "C" fn();
@@ -176,6 +195,7 @@ static ENGINE_READY: AtomicBool = AtomicBool::new(false);
 static ENGINE_FROZEN: AtomicBool = AtomicBool::new(false);
 
 static mut EMIT_DISPATCH: Option<EmitDispatchFn> = None;
+static mut TRACE_DISPATCH: Option<TraceDispatchFn> = None;
 static mut WATCHDOG_HOOK: Option<WatchdogHookFn> = None;
 
 // ── FFI exports ──────────────────────────────────────────────────────────────
@@ -448,13 +468,70 @@ pub unsafe extern "C" fn rivr_set_emit_dispatch(f: EmitDispatchFn) {
     EMIT_DISPATCH = Some(f);
 }
 
+/// Register an optional trace dispatch callback.
+///
+/// When set, the callback fires whenever an event that carries a `tag("label")`
+/// annotation reaches an `emit` sink during `rivr_engine_run()`.
+/// Pass `NULL` to clear.
+///
+/// Intended for real-time serial logging on the device:
+/// ```c
+/// void my_trace_cb(const char *label, const char *sink,
+///                  uint8_t clock, uint64_t tick, const RivrCValue *val) {
+///     ESP_LOGI(TAG, "@TRACE {\"label\":\"%s\",\"sink\":\"%s\",\"tick\":%llu}",
+///              label, sink, tick);
+/// }
+/// rivr_set_trace_dispatch(my_trace_cb);
+/// ```
+#[no_mangle]
+pub unsafe extern "C" fn rivr_set_trace_dispatch(f: Option<TraceDispatchFn>) {
+    TRACE_DISPATCH = f;
+}
+
+/// Write a compact JSON object of per-source injection metrics to `buf`.
+///
+/// Returns the number of bytes written (not including the NUL terminator).
+/// Returns 0 if the engine is not initialised or `buf` is NULL.
+/// The output is always NUL-terminated and never exceeds `cap` bytes.
+///
+/// Example output:
+/// ```text
+/// {"rf_rx":{"injected":42,"last_tick":1234,"last_clock":1}}
+/// ```
+#[no_mangle]
+pub unsafe extern "C" fn rivr_source_metrics_json(buf: *mut u8, cap: usize) -> u32 {
+    if buf.is_null() || cap < 2 {
+        return 0;
+    }
+    if !ENGINE_READY.load(Ordering::Acquire) {
+        let empty = b"{}";
+        let n = empty.len().min(cap - 1);
+        core::ptr::copy_nonoverlapping(empty.as_ptr(), buf, n);
+        *buf.add(n) = 0;
+        return n as u32;
+    }
+    let engine = ENGINE_SLOT.assume_init_ref();
+    let json = engine.source_metrics_json();
+    let bytes = json.as_bytes();
+    let n = bytes.len().min(cap - 1);
+    core::ptr::copy_nonoverlapping(bytes.as_ptr(), buf, n);
+    *buf.add(n) = 0;
+    n as u32
+}
+
 // ── Internal: called by the Engine whenever an emit fires ────────────────────
-// This is wired up via Engine::set_emit_hook() (to be added to engine.rs).
+// Invoked from NodeKind::Emit::process() inside the engine tick.
 #[doc(hidden)]
-pub unsafe fn ffi_emit_hook(sink_name: &str, v: &Value) {
+pub unsafe fn ffi_emit_hook(sink_name: &str, v: &Value, trace_label: Option<&str>) {
     let dispatch = match EMIT_DISPATCH {
         Some(f) => f,
-        None => return,
+        None => {
+            // No emit dispatch.  Still check for trace.
+            if let (Some(label), Some(trace_fn)) = (trace_label, TRACE_DISPATCH) {
+                fire_trace(trace_fn, label, sink_name, 0, 0, v);
+            }
+            return;
+        }
     };
 
     // Convert sink_name to null-terminated C string (stack)
@@ -466,6 +543,42 @@ pub unsafe fn ffi_emit_hook(sink_name: &str, v: &Value) {
     let cv = value_to_c(v);
 
     dispatch(name_buf.as_ptr() as *const c_char, &cv);
+
+    // Fire trace callback if a label is attached.
+    if let (Some(label), Some(trace_fn)) = (trace_label, TRACE_DISPATCH) {
+        fire_trace(trace_fn, label, sink_name, 0, 0, v);
+    }
+}
+
+/// Helper: convert a trace label + sink + value to a C callback invocation.
+///
+/// `clock` and `tick` are provided by the caller when stamp info is available;
+/// currently 0 when invoked from `ffi_emit_hook` (stamp is not passed to the
+/// hook to keep the signature minimal; upgrade if needed).
+unsafe fn fire_trace(
+    f: TraceDispatchFn,
+    label: &str,
+    sink_name: &str,
+    clock: u8,
+    tick: u64,
+    v: &Value,
+) {
+    let mut label_buf = [0u8; 32];
+    let ln = label.len().min(31);
+    label_buf[..ln].copy_from_slice(&label.as_bytes()[..ln]);
+
+    let mut sink_buf = [0u8; 32];
+    let sn = sink_name.len().min(31);
+    sink_buf[..sn].copy_from_slice(&sink_name.as_bytes()[..sn]);
+
+    let cv = value_to_c(v);
+    f(
+        label_buf.as_ptr() as *const c_char,
+        sink_buf.as_ptr() as *const c_char,
+        clock,
+        tick,
+        &cv,
+    );
 }
 
 fn value_to_c(v: &Value) -> CValue {

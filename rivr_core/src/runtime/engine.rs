@@ -7,7 +7,7 @@
 //! - `run` uses the priority scheduler (ordered by `(clock, tick, seq, node_id)`).
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
-use alloc::{collections::BTreeMap, format, string::String, vec::Vec};
+use alloc::{collections::BTreeMap, format, string::String, vec, vec::Vec};
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
@@ -29,6 +29,41 @@ pub struct EffectRecord {
     pub sink: SinkKind,
     /// `Display` rendering of the event value at the time of emission.
     pub value_str: String,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trace record  (tag() operator → @TRACE log line)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A single execution trace entry, produced when an event passes through
+/// a [`NodeKind::Tag`](super::node::NodeKind::Tag) node.
+///
+/// Retrieve with [`Engine::take_trace_log`] on the host side.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraceRecord {
+    /// The label passed to `tag("...")` in the RIVR program.
+    pub label: String,
+    /// Logical timestamp of the event.
+    pub stamp: Stamp,
+    /// Name of the Tag node in the compiled graph.
+    pub node_name: String,
+    /// Human-readable value at trace time.
+    pub value_str: String,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-source metrics
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Per-source injection statistics tracked by the engine.
+#[derive(Debug, Clone, Default)]
+pub struct SourceMetrics {
+    /// Total successful [`Engine::inject`] calls for this source.
+    pub injected: u64,
+    /// Lamport tick of the most recently injected event (0 = none).
+    pub last_tick: u64,
+    /// Clock domain of the most recently injected event.
+    pub last_clock: u8,
 }
 use super::scheduler::Scheduler;
 use super::value::Value;
@@ -72,6 +107,10 @@ pub struct Engine {
     pub events_processed: u64,
     /// Optional effect capture for Replay 2.0.  `None` = disabled.
     pub effect_log: Option<Vec<EffectRecord>>,
+    /// Optional trace capture for `tag()` operator.  `None` = disabled.
+    pub trace_log: Option<Vec<TraceRecord>>,
+    /// Per-source injection counters.  Key = source name.
+    pub source_metrics: Vec<(String, SourceMetrics)>,
 }
 
 impl Engine {
@@ -92,6 +131,8 @@ impl Engine {
             seq_counter: 0,
             events_processed: 0,
             effect_log: None,
+            trace_log: None,
+            source_metrics: vec![],
         }
     }
 
@@ -134,6 +175,29 @@ impl Engine {
         let clk = ev.stamp.clock as usize;
         if clk < self.clock_now.len() && ev.stamp.tick > self.clock_now[clk] {
             self.clock_now[clk] = ev.stamp.tick;
+        }
+
+        // Update per-source metrics.
+        match self
+            .source_metrics
+            .iter_mut()
+            .find(|(k, _)| k == source_name)
+        {
+            Some((_, m)) => {
+                m.injected += 1;
+                m.last_tick = ev.stamp.tick;
+                m.last_clock = ev.stamp.clock;
+            }
+            None => {
+                self.source_metrics.push((
+                    String::from(source_name),
+                    SourceMetrics {
+                        injected: 1,
+                        last_tick: ev.stamp.tick,
+                        last_clock: ev.stamp.clock,
+                    },
+                ));
+            }
         }
 
         ev.seq = self.seq_counter;
@@ -213,8 +277,35 @@ impl Engine {
                 }
             }
 
+            // ── Pre-extract Tag label before process() borrows node ─────────
+            // We need the label (owned) before calling process(), because
+            // process() takes `ev` by value and mutably borrows the node.
+            let trace_tag_label: Option<(String, String)> = if self.trace_log.is_some() {
+                if let NodeKind::Tag { label } = &self.nodes[item.node_id].kind {
+                    Some((label.clone(), self.nodes[item.node_id].name.clone()))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             let output_events = self.nodes[item.node_id].process(item.event);
             self.events_processed += 1;
+
+            // ── Capture trace records ───────────────────────────────────────
+            if let (Some((label, node_name)), Some(log)) =
+                (trace_tag_label, self.trace_log.as_mut())
+            {
+                for ev in &output_events {
+                    log.push(TraceRecord {
+                        label: label.clone(),
+                        stamp: ev.stamp,
+                        node_name: node_name.clone(),
+                        value_str: ev.v.display(),
+                    });
+                }
+            }
 
             let downstream: Vec<NodeId> = self.nodes[item.node_id].outputs.clone();
             for mut out_ev in output_events {
@@ -265,6 +356,49 @@ impl Engine {
     /// log empty.
     pub fn take_effect_log(&mut self) -> Vec<EffectRecord> {
         self.effect_log.take().unwrap_or_default()
+    }
+
+    // ── Trace log (tag() operator) ────────────────────────────────────────
+
+    /// Enable trace capture.  After this call, every event that passes
+    /// through a `tag("label")` node will produce a [`TraceRecord`] in the
+    /// log.
+    pub fn enable_trace_log(&mut self) {
+        self.trace_log = Some(Vec::new());
+    }
+
+    /// Drain and return all captured trace records, disabling future capture.
+    pub fn take_trace_log(&mut self) -> Vec<TraceRecord> {
+        self.trace_log.take().unwrap_or_default()
+    }
+
+    // ── Per-source metrics ────────────────────────────────────────────────
+
+    /// Return an immutable view of per-source injection statistics.
+    pub fn source_metrics(&self) -> &[(String, SourceMetrics)] {
+        &self.source_metrics
+    }
+
+    /// Produce a compact JSON object string for all source metrics.
+    ///
+    /// Example output (single line):
+    /// ```text
+    /// {"rf_rx":{"injected":42,"last_tick":1234,"last_clock":1}}
+    /// ```
+    #[cfg(any(feature = "std", feature = "alloc"))]
+    pub fn source_metrics_json(&self) -> String {
+        let mut out = String::from('{');
+        for (i, (name, m)) in self.source_metrics.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!(
+                "\"{}\":{{\"injected\":{},\"last_tick\":{},\"last_clock\":{}}}",
+                name, m.injected, m.last_tick, m.last_clock
+            ));
+        }
+        out.push('}');
+        out
     }
 
     // ── Stats / diagnostics ───────────────────────────────────────────────

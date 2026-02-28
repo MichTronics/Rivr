@@ -523,7 +523,7 @@ impl Node {
                     // Safety: called from the engine's single-threaded tick context;
                     // EMIT_DISPATCH is set once before engine init and never mutated.
                     unsafe {
-                        crate::ffi::ffi_emit_hook(sink_name, &ev.v);
+                        crate::ffi::ffi_emit_hook(sink_name, &ev.v, ev.tag.as_deref());
                     }
                 }
                 #[cfg(not(feature = "ffi"))]

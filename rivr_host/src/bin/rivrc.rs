@@ -1,23 +1,32 @@
 //! # rivrc — RIVR source compiler CLI
 //!
-//! Parses and compiles a `.rivr` program, then prints the resulting node graph.
+//! Parses and compiles a `.rivr` program, then prints (or exports) the
+//! resulting node graph.
 //!
-//! ```
+//! ```text
 //! USAGE:
-//!   rivrc <program.rivr> [--check]
+//!   rivrc [FLAGS] <program.rivr>
 //!
-//!   <program.rivr>  Path to the RIVR source file to compile.
-//!   --check         Exit 0/1 without printing the graph (CI/lint mode).
+//!   <program.rivr>   Path to the RIVR source file to compile.
+//!
+//! FLAGS:
+//!   --check          Exit 0/1 without printing anything (CI/lint mode).
+//!   --dot            Output GraphViz DOT to stdout instead of the table.
+//!   --json           Output node graph as JSON to stdout.
+//!   --version        Print version and exit.
+//!   -h, --help       Print this help and exit.
 //! ```
 //!
 //! Exit codes:
-//!   0 — program parsed and compiled successfully
-//!   1 — parse or compile error, or I/O error
+//!   0 — success
+//!   1 — parse, compile, or I/O error
 //!   2 — usage error
 
 use std::{env, fmt::Write as FmtWrite, fs, process};
 
 use rivr_core::{compile, parse, runtime::node::NodeKind};
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -25,10 +34,22 @@ fn main() {
     // ── argument parsing ────────────────────────────────────────────────
     let mut path_arg: Option<&str> = None;
     let mut check_only = false;
+    let mut emit_dot = false;
+    let mut emit_json = false;
 
     for arg in args.iter().skip(1) {
         match arg.as_str() {
             "--check" | "-c" => check_only = true,
+            "--dot" => emit_dot = true,
+            "--json" => emit_json = true,
+            "--version" | "-V" => {
+                println!("rivrc {VERSION}");
+                process::exit(0);
+            }
+            "--help" | "-h" => {
+                usage();
+                process::exit(0);
+            }
             _ if arg.starts_with('-') => {
                 eprintln!("rivrc: unknown flag '{arg}'");
                 usage();
@@ -89,11 +110,20 @@ fn main() {
     }
 
     if check_only {
-        // Success — all we needed was a clean compile
         process::exit(0);
     }
 
-    // ── print node graph ─────────────────────────────────────────────────
+    if emit_dot {
+        print_dot(path, &engine.nodes);
+        return;
+    }
+
+    if emit_json {
+        print_json(path, &engine.nodes);
+        return;
+    }
+
+    // ── default: human-readable table ────────────────────────────────────
     println!("RIVR '{path}'  — {n} node(s)", n = engine.nodes.len());
     println!("{}", "─".repeat(72));
     println!("{:<4}  {:<24}  KIND / PARAMS", "ID", "NAME");
@@ -111,8 +141,16 @@ fn main() {
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 fn usage() {
-    eprintln!("Usage: rivrc <program.rivr> [--check]");
-    eprintln!("  --check  CI mode: exit 0 on success, 1 on error, no output");
+    eprintln!("RIVR compiler  (rivrc {VERSION})");
+    eprintln!();
+    eprintln!("USAGE:  rivrc [FLAGS] <program.rivr>");
+    eprintln!();
+    eprintln!("FLAGS:");
+    eprintln!("  --check           CI mode: exit 0 on success, 1 on error, no output");
+    eprintln!("  --dot             Emit GraphViz DOT to stdout");
+    eprintln!("  --json            Emit node graph as JSON to stdout");
+    eprintln!("  --version, -V     Print version");
+    eprintln!("  --help, -h        Print this help");
 }
 
 /// Produce a short human-readable description of a node's kind and key params.
@@ -152,6 +190,91 @@ fn node_detail(kind: &NodeKind) -> String {
         NodeKind::ToaBudget { window_ms, budget_us, toa_us_per_event, .. } =>
             format!("ToaBudget(win={window_ms}ms, budget={budget_us}\u{b5}s, toa={toa_us_per_event}\u{b5}s)"),
     }
+}
+
+/// Short label for DOT / JSON node categories.
+fn node_category(kind: &NodeKind) -> &'static str {
+    match kind {
+        NodeKind::Source { .. } => "source",
+        NodeKind::Emit { .. } => "emit",
+        NodeKind::Merge => "merge",
+        NodeKind::Tag { .. } => "tag",
+        NodeKind::MapUpper | NodeKind::MapLower | NodeKind::MapTrim => "map",
+        NodeKind::FilterNonempty | NodeKind::FilterKind { .. } | NodeKind::FilterPktType { .. } => {
+            "filter"
+        }
+        NodeKind::FoldCount { .. } | NodeKind::FoldSum { .. } | NodeKind::FoldLast { .. } => "fold",
+        NodeKind::WindowTicks { .. } | NodeKind::WindowMs { .. } => "window",
+        NodeKind::ThrottleTicks { .. } | NodeKind::ThrottleMs { .. } => "throttle",
+        NodeKind::DelayTicks { .. } | NodeKind::DebounceMs { .. } => "delay",
+        NodeKind::Budget { .. } | NodeKind::AirtimeBudget { .. } | NodeKind::ToaBudget { .. } => {
+            "budget"
+        }
+    }
+}
+
+/// Escape a string for use in a GraphViz label.
+fn dot_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
+/// Output GraphViz DOT format.
+fn print_dot(path: &str, nodes: &[rivr_core::runtime::node::Node]) {
+    println!("// RIVR stream graph — {path}");
+    println!("digraph rivr {{");
+    println!("  rankdir=LR;");
+    println!("  node [shape=box style=filled fontname=\"monospace\" fontsize=10];");
+
+    // Node colours by category.
+    for (id, node) in nodes.iter().enumerate() {
+        let cat = node_category(&node.kind);
+        let label = dot_escape(&format!("{}\n{}", node.name, node_detail(&node.kind)));
+        let color = match cat {
+            "source" => "#cce5ff",
+            "emit" => "#d4edda",
+            "filter" => "#fff3cd",
+            "budget" => "#f8d7da",
+            "tag" => "#e2d9f3",
+            _ => "#f8f9fa",
+        };
+        println!("  {id} [label=\"{label}\" fillcolor=\"{color}\"];");
+    }
+
+    // Edges.
+    println!();
+    for (id, node) in nodes.iter().enumerate() {
+        for &out in &node.outputs {
+            println!("  {id} -> {out};");
+        }
+    }
+
+    println!("}}");
+}
+
+/// Output a compact JSON representation of the node graph.
+fn print_json(path: &str, nodes: &[rivr_core::runtime::node::Node]) {
+    println!("{{");
+    println!("  \"program\": \"{}\",", dot_escape(path));
+    println!("  \"node_count\": {},", nodes.len());
+    println!("  \"nodes\": [");
+    for (id, node) in nodes.iter().enumerate() {
+        let comma = if id + 1 < nodes.len() { "," } else { "" };
+        let outputs: Vec<String> = node.outputs.iter().map(|o| o.to_string()).collect();
+        let inputs: Vec<String> = node.inputs.iter().map(|i| i.to_string()).collect();
+        println!(
+            "    {{\"id\":{id},\"name\":\"{nm}\",\"category\":\"{cat}\",\
+\"detail\":\"{det}\",\"inputs\":[{ins}],\"outputs\":[{outs}]}}{comma}",
+            nm = dot_escape(&node.name),
+            cat = node_category(&node.kind),
+            det = dot_escape(&node_detail(&node.kind)),
+            ins = inputs.join(","),
+            outs = outputs.join(","),
+        );
+    }
+    println!("  ]");
+    println!("}}");
 }
 
 /// Print the edge list (nodes with their upstream inputs).
