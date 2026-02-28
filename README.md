@@ -18,8 +18,9 @@ Key design constraints:
   into ESP-IDF C firmware without an OS allocator.
 - **Bounded execution** — every tick drains at most *N* RX frames and runs at most *M* engine
   steps; worst-case latency is always bounded.
-- **EU868 duty-cycle aware** — a sliding-window budget tracker enforces the 1 % per-hour
-  LoRa airtime limit before every transmission.
+- **EU868 duty-cycle aware** — a 1-hour sliding-window budget tracker enforces the 10 % airtime
+  limit (EU868 sub-band g3, 869.480 MHz default) before every transmission.  Adjust
+  `DC_DUTY_PCT_X10` in `dutycycle.h` for other sub-bands (g1 = 1 %, g2 = 0.1 %).
 
 ---
 
@@ -68,7 +69,7 @@ Mesh routing layer
 | Unicast routing | Reverse-path route cache, ROUTE_REQ / ROUTE_RPL discovery |
 | Pending queue | 16-slot hold for unicast frames while waiting for a route reply |
 | Forward jitter | `routing_forward_delay_ms()` — xorshift32 per (src, seq, type); up to 200 ms |
-| Duty-cycle cap | Per-minute sliding window + per-hour cap (36 s/h ≈ 1 % EU868) |
+| Duty-cycle cap | 1-hour sliding window, 360 s/hour budget (10 % EU868 g3 default); `DC_HISTORY_CAP=512` ring buffer with LRU eviction; adjust `DC_DUTY_PCT_X10` per sub-band |
 | Drop statistics | Per-packet-type forward-drop counters in `forward_budget_t` |
 | Unicast failover | TX queue full → fallback flood with `PKT_FLAG_FALLBACK`, TTL = 3 |
 | Neighbour table | RSSI/SNR + callsign per peer; displayed on OLED page 6 |
@@ -169,10 +170,45 @@ Or add `-DRIVR_RF_FREQ_HZ=...` as the first line of the `build_flags` in
 `platformio.ini` before the `-include` line — the `#ifndef` guard in the
 variant header will leave it untouched.
 
-### 5 — Collecting a supportpack
+### 5 — LilyGo LoRa32 v2.1 (SX1276, onboard OLED)
+
+The `lilygo_lora32_v21` variant targets the LilyGo LoRa32 v2.1 board which has an
+SX1276 (not SX1262), onboard SSD1306 OLED, and fixed pin mapping.  Both client and
+repeater roles are supported via separate environments.
+
+```bash
+# Client
+~/.platformio/penv/bin/pio run -e client_lilygo_lora32_v21 -t upload
+~/.platformio/penv/bin/pio device monitor -e client_lilygo_lora32_v21
+
+# Repeater
+~/.platformio/penv/bin/pio run -e repeater_lilygo_lora32_v21 -t upload
+~/.platformio/penv/bin/pio device monitor -e repeater_lilygo_lora32_v21
+```
+
+Pin mapping for LilyGo LoRa32 v2.1 (defined in `variants/lilygo_lora32_v21/config.h`):
+
+| Signal | GPIO |
+|---|---|
+| SCK | 5 |
+| MOSI | 27 |
+| MISO | 19 |
+| NSS/CS | 18 |
+| RESET | 23 |
+| DIO0 (IRQ) | 26 |
+| SDA (OLED) | 21 |
+| SCL (OLED) | 22 |
+
+> **Note:** The SX1276 uses `DIO0` for TX/RX done interrupts (not `DIO1` like the
+> SX1262).  Maximum TX power via the onboard PA is +20 dBm — lower than the external
+> E22-900M30S (+30 dBm).
+
+---
+
+### 6 — Collecting a supportpack
 
 A **supportpack** is a single JSON line that captures build identity, radio profile,
-routing summary, duty-cycle snapshot, and all 27 metric counters. Attach it to every
+routing summary, duty-cycle snapshot, and all 34 metric counters. Attach it to every
 bug report.
 
 **Client builds** (interactive CLI):
@@ -185,7 +221,7 @@ bug report.
 > supportpack
 
 # Output — one line, copy-paste ready:
-@SUPPORTPACK {"env":"client_esp32devkit_e22_900","sha":"659b981","built":"Feb 27 2026 14:05:32","role":"client","radio":"SX1262","freq":869480000,"sf":8,"bw_khz":125,"cr":"4/8","fabric":0,"sim":0,"uptime_ms":12345,"rx_frames":42,"tx_frames":18,"routing":{"neighbors":2,"routes":3,"pending":0},"dc":{"remaining_us":35946200,"used_us":53800,"blocked":0},"met":{"rx_fail":0,"rx_dup":0,...}}
+@SUPPORTPACK {"env":"client_esp32devkit_e22_900","sha":"8c186a8","built":"Feb 27 2026 20:59:45","role":"client","radio":"SX1262","freq":869480000,"sf":8,"bw_khz":125,"cr":"4/8","fabric":0,"sim":0,"uptime_ms":12345,"rx_frames":42,"tx_frames":18,"routing":{"neighbors":2,"routes":3,"pending":0},"dc":{"remaining_us":35946200,"used_us":53800,"blocked":0},"met":{"rx_fail":0,"rx_dup":0,...}}
 ```
 
 **Repeater builds** (no interactive CLI) emit `@SUPPORTPACK` automatically every 30 s:
@@ -199,7 +235,7 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#collecting-a-supportpack) 
 
 ---
 
-### 6 — How to report bugs
+### 7 — How to report bugs
 
 1. Collect a supportpack (see above).
 2. Note the serial log lines surrounding the failure (~50 lines).
@@ -211,7 +247,7 @@ build configuration without further back-and-forth.
 
 ---
 
-### 7 — Client node (E22-900M30S/M33S, chat-first)
+### 8 — Client node (E22-900M30S/M33S, chat-first)
 
 A lightweight client variant for nodes that **send and receive** `PKT_CHAT`
 but do not act as relay infrastructure.  `PKT_CHAT` and `PKT_DATA` frames
@@ -260,12 +296,17 @@ Rivr/
 │
 ├── firmware_core/          — C hardware drivers
 │   ├── main.c              — app_main(), tx_drain_loop(), sim rounds
-│   ├── radio_sx1262.c/.h   — SX1262 driver; ISR sets flag only, radio_service_rx() does SPI
-│   ├── routing.c/.h        — flood forward, jitter, budget caps, neighbour callsigns
+│   ├── radio_sx1262.c/.h   — SX1262 driver (E22-900M30S); ISR sets flag only, radio_service_rx() does SPI
+│   ├── radio_sx1276.c/.h   — SX1276 driver (LilyGo LoRa32 v2.1); same API as SX1262
+│   ├── routing.c/.h        — flood forward, jitter, forward-budget caps, neighbour callsigns
 │   ├── route_cache.c/.h    — unicast reverse-path cache
 │   ├── pending_queue.c/.h  — 16-slot pending queue (cache-miss hold)
 │   ├── protocol.c/.h       — RIVR binary wire format, CRC-16
-│   ├── dutycycle.c/.h      — EU868 airtime tracker
+│   ├── dutycycle.c/.h      — EU868 sliding-window airtime limiter (1-hour, 512-slot ring, LRU eviction)
+│   ├── airtime_sched.c/.h  — per-source token-bucket relay scheduler (max 16 neighbours)
+│   ├── build_info.c/.h     — JSON boot banner + @SUPPORTPACK builder
+│   ├── rivr_metrics.c/.h   — 34-counter metrics struct + @MET JSON printer
+│   ├── rivr_log.c/.h       — log-mode control (DEBUG / METRICS / SILENT)
 │   ├── timebase.c/.h       — monotonic + Lamport clocks
 │   ├── platform_esp32.c/.h — GPIO / SPI / LED init (RXEN + TXEN antenna switch)
 │   ├── ringbuf.h           — lock-free SPSC ring buffer
@@ -273,8 +314,9 @@ Rivr/
 │   └── display/            — SSD1306 128×64 I²C driver (400 kHz, horizontal addressing, single-burst flush; 7-page auto-rotating UI; FreeRTOS task on CPU1)
 │
 ├── variants/               — Board-specific compile-time config headers
-│   ├── esp32devkit_e22_900_repeater/config.h — repeater defaults (freq, pins, Fabric on, display on)
-│   └── esp32devkit_e22_900_client/config.h   — client defaults (freq, pins, Fabric off, display on)
+│   ├── esp32devkit_e22_900_repeater/config.h — ESP32 DevKit + E22-900M30S repeater (SX1262, Fabric on)
+│   ├── esp32devkit_e22_900_client/config.h   — ESP32 DevKit + E22-900M30S client  (SX1262, Fabric off)
+│   └── lilygo_lora32_v21/config.h            — LilyGo LoRa32 v2.1 (SX1276, onboard OLED, shared for client + repeater)
 │
 ├── rivr_layer/             — RIVR ↔ C firmware glue
 │   ├── rivr_embed.c/.h     — engine init, rivr_tick(), global state
