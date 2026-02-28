@@ -12,13 +12,17 @@
 
 // Import alloc types when no_std + alloc.  Under std these are in scope already.
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::{string::{String, ToString}, vec::Vec, format};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use serde::{Deserialize, Serialize};
 
-use super::fixed::FixedText;
 #[cfg(not(feature = "alloc"))]
 use super::fixed::FixedBytes;
+use super::fixed::FixedText;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Storage type aliases  (change with feature flags)
@@ -65,23 +69,31 @@ pub enum Value {
 impl Value {
     #[allow(dead_code)]
     pub fn as_int(&self) -> Option<i64> {
-        if let Value::Int(n) = self { Some(*n) } else { None }
+        if let Value::Int(n) = self {
+            Some(*n)
+        } else {
+            None
+        }
     }
 
     #[allow(dead_code)]
     pub fn as_str(&self) -> Option<&str> {
-        if let Value::Str(s) = self { Some(s.as_ref()) } else { None }
+        if let Value::Str(s) = self {
+            Some(s.as_ref())
+        } else {
+            None
+        }
     }
 
     /// Return the **kind tag**: the first colon-delimited segment of a `Str`
     /// payload, or the variant name for non-string types.
     pub fn kind_tag(&self) -> &str {
         match self {
-            Value::Str(s)    => (s.as_ref() as &str).split(':').next().unwrap_or(""),
-            Value::Int(_)    => "Int",
-            Value::Bool(_)   => "Bool",
-            Value::Bytes(_)  => "Bytes",
-            Value::Unit      => "Unit",
+            Value::Str(s) => (s.as_ref() as &str).split(':').next().unwrap_or(""),
+            Value::Int(_) => "Int",
+            Value::Bool(_) => "Bool",
+            Value::Bytes(_) => "Bytes",
+            Value::Unit => "Unit",
             #[cfg(feature = "alloc")]
             Value::Window(_) => "Window",
         }
@@ -91,11 +103,11 @@ impl Value {
     #[cfg(feature = "alloc")]
     pub fn display(&self) -> String {
         match self {
-            Value::Int(n)    => format!("{n}"),
-            Value::Bool(b)   => format!("{b}"),
-            Value::Str(s)    => s.clone(),
-            Value::Bytes(b)  => format!("<bytes len={}>", b.len()),
-            Value::Unit      => "()".to_string(),
+            Value::Int(n) => format!("{n}"),
+            Value::Bool(b) => format!("{b}"),
+            Value::Str(s) => s.clone(),
+            Value::Bytes(b) => format!("<bytes len={}>", b.len()),
+            Value::Unit => "()".to_string(),
             Value::Window(w) => format!("[window {} events]", w.len()),
         }
     }
@@ -105,13 +117,25 @@ impl Value {
         use core::fmt::Write as _;
         let mut t = FixedText::<256>::new();
         match self {
-            Value::Int(n)   => { t.push_i64(*n); }
-            Value::Bool(b)  => { let _ = write!(t, "{b}"); }
-            Value::Str(s)   => { t.push_str(s.as_ref()); }
-            Value::Bytes(b) => { let _ = write!(t, "<bytes len={}>", b.len()); }
-            Value::Unit     => { t.push_str("()"); }
+            Value::Int(n) => {
+                t.push_i64(*n);
+            }
+            Value::Bool(b) => {
+                let _ = write!(t, "{b}");
+            }
+            Value::Str(s) => {
+                t.push_str(s.as_ref());
+            }
+            Value::Bytes(b) => {
+                let _ = write!(t, "<bytes len={}>", b.len());
+            }
+            Value::Unit => {
+                t.push_str("()");
+            }
             #[cfg(feature = "alloc")]
-            Value::Window(w) => { let _ = write!(t, "[window {} events]", w.len()); }
+            Value::Window(w) => {
+                let _ = write!(t, "[window {} events]", w.len());
+            }
         }
         t
     }
@@ -120,13 +144,19 @@ impl Value {
 impl core::fmt::Display for Value {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         #[cfg(feature = "alloc")]
-        { write!(f, "{}", self.display()) }
+        {
+            write!(f, "{}", self.display())
+        }
         #[cfg(not(feature = "alloc"))]
-        { write!(f, "{}", self.display_fixed()) }
+        {
+            write!(f, "{}", self.display_fixed())
+        }
     }
 }
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 impl ToString for Value {
-    fn to_string(&self) -> String { self.display() }
+    fn to_string(&self) -> String {
+        self.display()
+    }
 }

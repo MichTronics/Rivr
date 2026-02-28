@@ -87,8 +87,8 @@ pub enum PipeOp {
     /// `N`-tick boundary, apply `POLICY` (drop-oldest / drop-newest /
     /// flush-early).
     WindowTicksCapped {
-        ticks:  u64,
-        cap:    usize,
+        ticks: u64,
+        cap: usize,
         policy: WindowPolicy,
     },
     /// Pass only `Value::Bytes` events whose byte at [`PKT_TYPE_BYTE_OFFSET`] (3)
@@ -120,10 +120,7 @@ pub enum PipeOp {
     ///
     /// Example: `budget.airtime(360000, 0.10)` → max 36 000 ticks of airtime
     /// in every 360 000-tick window (≈ 10 % duty cycle on a 1 kHz mono clock).
-    BudgetAirtime {
-        window_ticks: u64,
-        duty:         f64,
-    },
+    BudgetAirtime { window_ticks: u64, duty: f64 },
 
     /// **Time-on-Air budget** – radio duty-cycle enforcer using actual airtime
     /// cost (microseconds) rather than event-count units.
@@ -138,14 +135,13 @@ pub enum PipeOp {
     /// airtime in every 6-min window (each TX costs 400 μs).
     BudgetToaUs {
         window_ms: u64,
-        duty:      f64,
-        toa_us:    u64,
+        duty: f64,
+        toa_us: u64,
     },
 
     // ── Debug / tracing ─────────────────────────────────────────────────
     /// Attach a human-readable trace label to every passing event.
     Tag(String),
-
     // ── Merge (parsed as primary, not pipe) ─────────────────────────────
     // (kept here for completeness – see Expr::Merge)
 }
@@ -182,7 +178,9 @@ pub enum SourceKind {
     /// Periodic timer source.  Fires an `Int(mono_ms)` event every
     /// `interval_ms` milliseconds on clock 0 (mono).
     /// Syntax: `source beacon = timer(30000);`
-    Timer { interval_ms: u64 },
+    Timer {
+        interval_ms: u64,
+    },
 }
 
 // ── Clock annotation ──────────────────────────────────────────────────────────
@@ -209,9 +207,9 @@ pub struct ClockAnnotation {
 pub enum Stmt {
     /// `source NAME [@CLOCK] = <kind>;`
     Source {
-        name:  String,
+        name: String,
         clock: Option<ClockAnnotation>,
-        kind:  SourceKind,
+        kind: SourceKind,
     },
 
     /// `let NAME = <expr>;`

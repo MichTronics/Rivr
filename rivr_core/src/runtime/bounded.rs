@@ -21,13 +21,20 @@ pub struct BoundedVec<T, const CAP: usize> {
 
 impl<T: Clone, const CAP: usize> BoundedVec<T, CAP> {
     pub fn new() -> Self {
-        Self { inner: Vec::with_capacity(CAP), drops: 0 }
+        Self {
+            inner: Vec::with_capacity(CAP),
+            drops: 0,
+        }
     }
 
     /// Number of items currently in the buffer.
-    pub fn len(&self) -> usize { self.inner.len() }
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
 
-    pub fn is_empty(&self) -> bool { self.inner.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
 
     pub fn is_full_capped(&self, cap: usize) -> bool {
         self.inner.len() >= cap.min(CAP)
@@ -63,9 +70,13 @@ impl<T: Clone, const CAP: usize> BoundedVec<T, CAP> {
         out
     }
 
-    pub fn iter(&self) -> core::slice::Iter<'_, T> { self.inner.iter() }
+    pub fn iter(&self) -> core::slice::Iter<'_, T> {
+        self.inner.iter()
+    }
 }
 
 impl<T: Clone, const CAP: usize> Default for BoundedVec<T, CAP> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

@@ -8,37 +8,54 @@ use rivr_core::{compile, parse, Engine, Event, Stamp, Value};
 
 fn run(src: &str) -> Engine {
     let program = match parse(src) {
-        Ok(p)  => p,
-        Err(e) => { eprintln!("parse error: {e}"); std::process::exit(1); }
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("parse error: {e}");
+            std::process::exit(1);
+        }
     };
     let (engine, warns) = match compile(&program) {
         Ok(pair) => pair,
         Err(errs) => {
-            for e in errs { eprintln!("{e}"); }
+            for e in errs {
+                eprintln!("{e}");
+            }
             std::process::exit(1);
         }
     };
-    for w in warns { eprintln!("{w}"); }
+    for w in warns {
+        eprintln!("{w}");
+    }
     engine
 }
 
 fn inject_str(engine: &mut Engine, src: &str, tick: u64, text: &str) {
-    let ev = Event { stamp: Stamp::mono(tick), v: Value::Str(text.into()), tag: None, seq: 0 };
+    let ev = Event {
+        stamp: Stamp::mono(tick),
+        v: Value::Str(text.into()),
+        tag: None,
+        seq: 0,
+    };
     let _ = engine.inject(src, ev);
 }
 
 fn inject_tagged(engine: &mut Engine, src: &str, tick: u64, text: &str, tag: &str) {
     let ev = Event {
         stamp: Stamp::mono(tick),
-        v:     Value::Str(text.into()),
-        tag:   Some(tag.into()),
-        seq:   0,
+        v: Value::Str(text.into()),
+        tag: Some(tag.into()),
+        seq: 0,
     };
     let _ = engine.inject(src, ev);
 }
 
 fn inject_lmp(engine: &mut Engine, src: &str, tick: u64, text: &str) {
-    let ev = Event { stamp: Stamp::at(1, tick), v: Value::Str(text.into()), tag: None, seq: 0 };
+    let ev = Event {
+        stamp: Stamp::at(1, tick),
+        v: Value::Str(text.into()),
+        tag: None,
+        seq: 0,
+    };
     let _ = engine.inject(src, ev);
 }
 
@@ -58,11 +75,13 @@ emit { io.usb.print(words); }
     eng.print_graph();
     for (tick, word) in [
         (100u64, "hello"),
-        (200,    "world"),
-        (300,    "foo"),
-        (700,    "bar"),      // past 500 ms boundary
-        (800,    "baz"),
-    ] { inject_str(&mut eng, "usb", tick, word); }
+        (200, "world"),
+        (300, "foo"),
+        (700, "bar"), // past 500 ms boundary
+        (800, "baz"),
+    ] {
+        inject_str(&mut eng, "usb", tick, word);
+    }
     eng.run(500);
     eng.print_stats();
 }
@@ -82,7 +101,7 @@ emit { io.usb.print(upper); }
 "#;
     let mut eng = run(rivr);
     eng.print_graph();
-    for (tick, word) in [(0u64,""), (100,"hello"), (200,""), (300,"world")] {
+    for (tick, word) in [(0u64, ""), (100, "hello"), (200, ""), (300, "world")] {
         inject_str(&mut eng, "usb", tick, word);
     }
     eng.run(200);
@@ -105,9 +124,15 @@ emit { io.usb.print(count); }
     let mut eng = run(rivr);
     eng.print_graph();
     for (tick, word) in [
-        (0u64,"a"), (50,"b"), (100,"c"),
-        (250,"d"), (300,"e"), (350,"f"),
-    ] { inject_str(&mut eng, "evt", tick, word); }
+        (0u64, "a"),
+        (50, "b"),
+        (100, "c"),
+        (250, "d"),
+        (300, "e"),
+        (350, "f"),
+    ] {
+        inject_str(&mut eng, "evt", tick, word);
+    }
     eng.run(300);
     eng.print_stats();
 }
@@ -130,9 +155,15 @@ emit { io.usb.print(buffered); }
     eng.print_graph();
     // Inject 9 LMP-domain events (logical ticks 1..=9)
     let frames = [
-        "BEACON:0x0A", "BEACON:0x0B", "DATA:hello",
-        "DATA:world",  "ACK:0x01",    "DATA:foo",
-        "BEACON:0x0C", "DATA:bar",    "ACK:0x02",
+        "BEACON:0x0A",
+        "BEACON:0x0B",
+        "DATA:hello",
+        "DATA:world",
+        "ACK:0x01",
+        "DATA:foo",
+        "BEACON:0x0C",
+        "DATA:bar",
+        "ACK:0x02",
     ];
     for (i, frame) in frames.iter().enumerate() {
         inject_lmp(&mut eng, "rf", i as u64 + 1, frame);
@@ -162,14 +193,14 @@ emit { io.lora.tx(tx_ok); }
     eng.print_graph();
     // 5 CHAT messages and 3 SENSOR messages
     let msgs: &[(u64, &str, &str)] = &[
-        (100,  "CHAT:hello",  "CHAT"),
-        (200,  "SENSOR:23.1", "SENSOR"),
-        (300,  "CHAT:world",  "CHAT"),
-        (400,  "SENSOR:23.4", "SENSOR"),
-        (500,  "CHAT:rivr",   "CHAT"),
-        (600,  "SENSOR:23.7", "SENSOR"),
-        (700,  "CHAT:rocks",  "CHAT"),
-        (800,  "CHAT:end",    "CHAT"),
+        (100, "CHAT:hello", "CHAT"),
+        (200, "SENSOR:23.1", "SENSOR"),
+        (300, "CHAT:world", "CHAT"),
+        (400, "SENSOR:23.4", "SENSOR"),
+        (500, "CHAT:rivr", "CHAT"),
+        (600, "SENSOR:23.7", "SENSOR"),
+        (700, "CHAT:rocks", "CHAT"),
+        (800, "CHAT:end", "CHAT"),
     ];
     for &(tick, text, tag) in msgs {
         inject_tagged(&mut eng, "rf", tick, text, tag);
@@ -194,9 +225,9 @@ emit { io.usb.print(both); }
 "#;
     let mut eng = run(rivr);
     eng.print_graph();
-    inject_str(&mut eng, "usb",  100, "from-usb");
+    inject_str(&mut eng, "usb", 100, "from-usb");
     inject_str(&mut eng, "lora", 150, "from-lora");
-    inject_str(&mut eng, "usb",  200, "usb-again");
+    inject_str(&mut eng, "usb", 200, "usb-again");
     eng.run(300);
     eng.print_stats();
 }
@@ -289,10 +320,42 @@ emit { io.usb.print(words); }
     // Phase 1: record
     let mut eng1 = run(rivr);
     let events: Vec<(&str, Event)> = vec![
-        ("usb", Event { stamp: Stamp::mono(100), v: Value::Str("hello".into()), tag: None, seq: 0 }),
-        ("usb", Event { stamp: Stamp::mono(200), v: Value::Str("world".into()), tag: None, seq: 0 }),
-        ("usb", Event { stamp: Stamp::mono(300), v: Value::Str("foo".into()),   tag: None, seq: 0 }),
-        ("usb", Event { stamp: Stamp::mono(700), v: Value::Str("bar".into()),   tag: None, seq: 0 }),
+        (
+            "usb",
+            Event {
+                stamp: Stamp::mono(100),
+                v: Value::Str("hello".into()),
+                tag: None,
+                seq: 0,
+            },
+        ),
+        (
+            "usb",
+            Event {
+                stamp: Stamp::mono(200),
+                v: Value::Str("world".into()),
+                tag: None,
+                seq: 0,
+            },
+        ),
+        (
+            "usb",
+            Event {
+                stamp: Stamp::mono(300),
+                v: Value::Str("foo".into()),
+                tag: None,
+                seq: 0,
+            },
+        ),
+        (
+            "usb",
+            Event {
+                stamp: Stamp::mono(700),
+                v: Value::Str("bar".into()),
+                tag: None,
+                seq: 0,
+            },
+        ),
     ];
     let trace = replay::record(&mut eng1, &events);
     println!("── recorded trace ──\n{trace}\n");
@@ -300,7 +363,7 @@ emit { io.usb.print(words); }
     // Phase 2: replay + assert
     let mut eng2 = run(rivr);
     match replay::replay_and_assert(&mut eng2, &trace) {
-        Ok(())   => println!("Replay assertion: PASSED ✓\n"),
+        Ok(()) => println!("Replay assertion: PASSED ✓\n"),
         Err(diffs) => println!("Replay assertion: FAILED ({} diffs) ✗\n", diffs.len()),
     }
 }

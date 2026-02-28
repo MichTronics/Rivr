@@ -10,11 +10,11 @@
 //! - [`NodeKind::WindowTicks`] uses a [`BoundedVec`] to cap memory.
 
 #[cfg(not(feature = "std"))]
-use alloc::{string::String, vec::Vec, format};
+use alloc::{format, string::String, vec::Vec};
 
 use super::bounded::BoundedVec;
 use super::event::Event;
-use super::value::{Value, StrBuf};
+use super::value::{StrBuf, Value};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Identifiers and policies
@@ -64,10 +64,12 @@ pub enum NodeKind {
         #[allow(dead_code)]
         name: String,
         /// The clock domain id assigned to this source at compile time.
-        clock: u8,        /// For `source NAME = timer(N)` declarations: the fire interval in
+        clock: u8,
+        /// For `source NAME = timer(N)` declarations: the fire interval in
         /// milliseconds.  `None` for all other source kinds.
         /// Exposed to C via `rivr_foreach_timer_source()`.
-        interval_ms: Option<u64>,    },
+        interval_ms: Option<u64>,
+    },
 
     // ── Text / filter ──────────────────────────────────────────────────────
     MapUpper,
@@ -78,22 +80,32 @@ pub enum NodeKind {
     FilterNonempty,
     /// Pass only events whose `Value::kind_tag()` equals `kind`.
     /// `kind == "*"` passes everything.
-    FilterKind { kind: String },
+    FilterKind {
+        kind: String,
+    },
 
     /// Pass only `Value::Bytes` events where `bytes[3] == pkt_type`.
     ///
     /// Byte offset 3 is the `pkt_type` field of the RIVR binary wire format.
     /// All other value types are silently dropped.
-    FilterPktType { pkt_type: u8 },
+    FilterPktType {
+        pkt_type: u8,
+    },
 
     // ── Aggregation ────────────────────────────────────────────────────────
-    FoldCount { count: u64 },
+    FoldCount {
+        count: u64,
+    },
     /// Running sum of `Int` payloads.  Emits the accumulated total.
     /// Non-integer events contribute 0 (not dropped).
-    FoldSum { sum: i64 },
+    FoldSum {
+        sum: i64,
+    },
     /// Last-value latch.  Emits the most recently received `Value` on every
     /// event.  Before the first event it emits `Value::Unit`.
-    FoldLast { last: Option<Value> },
+    FoldLast {
+        last: Option<Value>,
+    },
 
     // ── Tick-domain operators (canonical) ──────────────────────────────────
     /// Tumbling window keyed on `event.stamp.tick`.
@@ -106,37 +118,43 @@ pub enum NodeKind {
     /// `buffer_policy == FlushEarly`, reaching `cap` triggers an immediate
     /// mid-window flush rather than a drop.
     WindowTicks {
-        duration:      u64,
+        duration: u64,
         /// Runtime capacity (may be < WINDOW_CAP).
-        cap:           usize,
-        buffer:        BoundedVec<Event, WINDOW_CAP>,
-        window_start:  u64,
+        cap: usize,
+        buffer: BoundedVec<Event, WINDOW_CAP>,
+        window_start: u64,
         buffer_policy: DropPolicy,
     },
 
     /// Pass at most one event per `interval` ticks.
     ThrottleTicks {
-        interval:     u64,
-        last_emit:    u64,  // u64::MAX = never emitted (first event always passes)
+        interval: u64,
+        last_emit: u64, // u64::MAX = never emitted (first event always passes)
     },
 
     /// Forward the pending event only after `delay` ticks of silence.
     DelayTicks {
-        delay:   u64,
-        pending: Option<(u64, Event)>,  // (deadline_tick, event)
+        delay: u64,
+        pending: Option<(u64, Event)>, // (deadline_tick, event)
     },
 
     // ── Ms-domain aliases (host convenience; identical semantics) ──────────
-    WindowMs   { inner: Box<NodeKind> },  // wraps WindowTicks on clock 0
-    ThrottleMs { inner: Box<NodeKind> },
-    DebounceMs { inner: Box<NodeKind> },
+    WindowMs {
+        inner: Box<NodeKind>,
+    }, // wraps WindowTicks on clock 0
+    ThrottleMs {
+        inner: Box<NodeKind>,
+    },
+    DebounceMs {
+        inner: Box<NodeKind>,
+    },
 
     // ── Rate limiting ──────────────────────────────────────────────────────
     Budget {
-        rate_per_tick: f64,   // tokens / tick
-        burst:         u64,
-        tokens:        f64,
-        last_refill:   u64,
+        rate_per_tick: f64, // tokens / tick
+        burst: u64,
+        tokens: f64,
+        last_refill: u64,
     },
 
     /// **Airtime budget** – radio duty-cycle enforcer.
@@ -145,13 +163,13 @@ pub enum NodeKind {
     /// event costs one "airtime unit".  Events are dropped once
     /// `used >= window_ticks * duty`.  The window resets automatically.
     AirtimeBudget {
-        window_ticks:      u64,
+        window_ticks: u64,
         /// Pre-computed: `(window_ticks as f64 * duty).floor() as u64`.
         budget_per_window: u64,
         /// Airtime units used in the current window.
-        used:              u64,
+        used: u64,
         /// Tick at which the current measurement window started.
-        window_start:      u64,
+        window_start: u64,
         /// Total dropped events (for diagnostics).
         total_dropped: u64,
     },
@@ -172,27 +190,31 @@ pub enum NodeKind {
     /// ```
     ToaBudget {
         /// Measurement window in ticks (== ms on clock 0).
-        window_ms:         u64,
+        window_ms: u64,
         /// Maximum accumulated ToA per window in microseconds.
-        budget_us:         u64,
+        budget_us: u64,
         /// Accumulated ToA used in the current window (microseconds).
-        used_us:           u64,
+        used_us: u64,
         /// Tick at which the current window started.
-        window_start:      u64,
+        window_start: u64,
         /// Fixed ToA cost per forwarded event (microseconds).
-        toa_us_per_event:  u64,
+        toa_us_per_event: u64,
         /// Total events dropped (diagnostics).
-        total_dropped:     u64,
+        total_dropped: u64,
     },
 
     // ── Merge ──────────────────────────────────────────────────────────────
     Merge,
 
     // ── Debug ──────────────────────────────────────────────────────────────
-    Tag { label: String },
+    Tag {
+        label: String,
+    },
 
     // ── Sinks ──────────────────────────────────────────────────────────────
-    Emit { sink: SinkKind },
+    Emit {
+        sink: SinkKind,
+    },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,13 +222,13 @@ pub enum NodeKind {
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub struct Node {
-    pub id:      NodeId,
-    pub name:    String,
-    pub kind:    NodeKind,
-    pub inputs:  Vec<NodeId>,
+    pub id: NodeId,
+    pub name: String,
+    pub kind: NodeKind,
+    pub inputs: Vec<NodeId>,
     pub outputs: Vec<NodeId>,
     /// Drops due to full input queue.
-    pub drops:   u64,
+    pub drops: u64,
 }
 
 impl core::fmt::Debug for Node {
@@ -221,9 +243,9 @@ impl Node {
             id,
             name: name.into(),
             kind,
-            inputs:  Vec::new(),
+            inputs: Vec::new(),
             outputs: Vec::new(),
-            drops:   0,
+            drops: 0,
         }
     }
 
@@ -240,11 +262,19 @@ impl Node {
 
             // ── Text / filter ────────────────────────────────────────────
             NodeKind::MapUpper => {
-                let v = if let Value::Str(s) = ev.v { Value::Str(s.to_ascii_uppercase()) } else { ev.v };
+                let v = if let Value::Str(s) = ev.v {
+                    Value::Str(s.to_ascii_uppercase())
+                } else {
+                    ev.v
+                };
                 vec![Event { v, ..ev }]
             }
             NodeKind::MapLower => {
-                let v = if let Value::Str(s) = ev.v { Value::Str(s.to_ascii_lowercase()) } else { ev.v };
+                let v = if let Value::Str(s) = ev.v {
+                    Value::Str(s.to_ascii_lowercase())
+                } else {
+                    ev.v
+                };
                 vec![Event { v, ..ev }]
             }
             NodeKind::MapTrim => {
@@ -252,21 +282,31 @@ impl Node {
                     // AsRef<str> is ambiguous when StrBuf == String; cast through &str explicitly.
                     let trimmed: &str = (&s as &dyn core::ops::Deref<Target = str>).trim();
                     Value::Str(StrBuf::from(trimmed))
-                } else { ev.v };
+                } else {
+                    ev.v
+                };
                 vec![Event { v, ..ev }]
             }
             NodeKind::FilterNonempty => {
                 let keep = match &ev.v {
                     Value::Str(s) => !s.trim().is_empty(),
-                    Value::Unit   => false,
-                    _             => true,
+                    Value::Unit => false,
+                    _ => true,
                 };
-                if keep { vec![ev] } else { vec![] }
+                if keep {
+                    vec![ev]
+                } else {
+                    vec![]
+                }
             }
             NodeKind::FilterKind { kind } => {
                 let k = kind.clone();
                 let pass = k == "*" || ev.v.kind_tag() == k.as_str();
-                if pass { vec![ev] } else { vec![] }
+                if pass {
+                    vec![ev]
+                } else {
+                    vec![]
+                }
             }
 
             // ── filter.pkt_type ────────────────────────────────────────────
@@ -280,7 +320,11 @@ impl Node {
                     }
                     _ => false,
                 };
-                if pass { vec![ev] } else { vec![] }
+                if pass {
+                    vec![ev]
+                } else {
+                    vec![]
+                }
             }
 
             // ── fold.count ────────────────────────────────────────────────
@@ -292,7 +336,9 @@ impl Node {
 
             // ── fold.sum ──────────────────────────────────────────────────
             NodeKind::FoldSum { sum } => {
-                if let Value::Int(n) = ev.v { *sum += n; }
+                if let Value::Int(n) = ev.v {
+                    *sum += n;
+                }
                 let s = *sum;
                 vec![Event::new(ev.stamp, Value::Int(s))]
             }
@@ -305,17 +351,26 @@ impl Node {
             }
 
             // ── window.ticks ──────────────────────────────────────────────
-            NodeKind::WindowTicks { duration, cap, buffer, window_start, buffer_policy } => {
-                let dur      = *duration;
-                let ws       = *window_start;
-                let pol      = *buffer_policy;
+            NodeKind::WindowTicks {
+                duration,
+                cap,
+                buffer,
+                window_start,
+                buffer_policy,
+            } => {
+                let dur = *duration;
+                let ws = *window_start;
+                let pol = *buffer_policy;
                 let runtime_cap = *cap;
-                let mut out  = Vec::new();
+                let mut out = Vec::new();
 
                 // ── Tick-boundary flush ──────────────────────────────────
                 if tick >= ws + dur {
-                    let flushed: Vec<String> = buffer.drain_all().into_iter()
-                        .map(|e| e.v.display()).collect();
+                    let flushed: Vec<String> = buffer
+                        .drain_all()
+                        .into_iter()
+                        .map(|e| e.v.display())
+                        .collect();
                     *window_start = (tick / dur) * dur;
                     if !flushed.is_empty() {
                         out.push(Event::new(ev.stamp, Value::Window(flushed)));
@@ -324,8 +379,11 @@ impl Node {
 
                 // ── FlushEarly: capacity reached before boundary ─────────
                 if pol == DropPolicy::FlushEarly && buffer.is_full_capped(runtime_cap) {
-                    let flushed: Vec<String> = buffer.drain_all().into_iter()
-                        .map(|e| e.v.display()).collect();
+                    let flushed: Vec<String> = buffer
+                        .drain_all()
+                        .into_iter()
+                        .map(|e| e.v.display())
+                        .collect();
                     if !flushed.is_empty() {
                         out.push(Event::new(ev.stamp, Value::Window(flushed)));
                     }
@@ -336,7 +394,7 @@ impl Node {
             }
 
             // ── Delegate ms aliases to their inner WindowTicks/etc ─────────
-            NodeKind::WindowMs   { inner }
+            NodeKind::WindowMs { inner }
             | NodeKind::ThrottleMs { inner }
             | NodeKind::DebounceMs { inner } => {
                 // The inner node holds the real NodeKind (WindowTicks, etc.).
@@ -345,9 +403,17 @@ impl Node {
             }
 
             // ── throttle.ticks ────────────────────────────────────────────
-            NodeKind::ThrottleTicks { interval, last_emit } => {
+            NodeKind::ThrottleTicks {
+                interval,
+                last_emit,
+            } => {
                 let ready = *last_emit == u64::MAX || tick >= last_emit.saturating_add(*interval);
-                if ready { *last_emit = tick; vec![ev] } else { vec![] }
+                if ready {
+                    *last_emit = tick;
+                    vec![ev]
+                } else {
+                    vec![]
+                }
             }
 
             // ── delay.ticks ───────────────────────────────────────────────
@@ -367,15 +433,31 @@ impl Node {
             }
 
             // ── budget (token-bucket) ─────────────────────────────────────
-            NodeKind::Budget { rate_per_tick, burst, tokens, last_refill } => {
+            NodeKind::Budget {
+                rate_per_tick,
+                burst,
+                tokens,
+                last_refill,
+            } => {
                 let elapsed = tick.saturating_sub(*last_refill) as f64;
                 *tokens = (*tokens + elapsed * *rate_per_tick).min(*burst as f64);
                 *last_refill = tick;
-                if *tokens >= 1.0 { *tokens -= 1.0; vec![ev] } else { vec![] }
+                if *tokens >= 1.0 {
+                    *tokens -= 1.0;
+                    vec![ev]
+                } else {
+                    vec![]
+                }
             }
 
             // ── airtime budget ────────────────────────────────────────────
-            NodeKind::AirtimeBudget { window_ticks, budget_per_window, used, window_start, total_dropped } => {
+            NodeKind::AirtimeBudget {
+                window_ticks,
+                budget_per_window,
+                used,
+                window_start,
+                total_dropped,
+            } => {
                 let wt = *window_ticks;
                 // Roll window if expired.
                 if tick >= *window_start + wt {
@@ -394,7 +476,14 @@ impl Node {
             }
 
             // ── budget.toa_us ─────────────────────────────────────────────
-            NodeKind::ToaBudget { window_ms, budget_us, used_us, window_start, toa_us_per_event, total_dropped } => {
+            NodeKind::ToaBudget {
+                window_ms,
+                budget_us,
+                used_us,
+                window_start,
+                toa_us_per_event,
+                total_dropped,
+            } => {
                 let wm = *window_ms;
                 // Roll window on expiry
                 if tick >= *window_start + wm {
@@ -426,22 +515,28 @@ impl Node {
                 #[cfg(feature = "ffi")]
                 {
                     let sink_name = match sink {
-                        SinkKind::UsbPrint   => "io.usb.print",
-                        SinkKind::LoraTx     => "io.lora.tx",
+                        SinkKind::UsbPrint => "io.usb.print",
+                        SinkKind::LoraTx => "io.lora.tx",
                         SinkKind::LoraBeacon => "io.lora.beacon",
-                        SinkKind::DebugDump  => "io.debug.dump",
+                        SinkKind::DebugDump => "io.debug.dump",
                     };
                     // Safety: called from the engine's single-threaded tick context;
                     // EMIT_DISPATCH is set once before engine init and never mutated.
-                    unsafe { crate::ffi::ffi_emit_hook(sink_name, &ev.v); }
+                    unsafe {
+                        crate::ffi::ffi_emit_hook(sink_name, &ev.v);
+                    }
                 }
                 #[cfg(not(feature = "ffi"))]
                 match sink {
-                    SinkKind::UsbPrint   => println!("[usb] {}", ev.v.display()),
+                    SinkKind::UsbPrint => println!("[usb] {}", ev.v.display()),
                     SinkKind::LoraBeacon => { /* dispatched via rivr_emit_dispatch in firmware */ }
                     SinkKind::LoraTx => {
-                        let hex: String = ev.v.display().bytes()
-                            .map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+                        let hex: String =
+                            ev.v.display()
+                                .bytes()
+                                .map(|b| format!("{b:02x}"))
+                                .collect::<Vec<_>>()
+                                .join(" ");
                         println!("[lora] {} bytes: {hex}", ev.v.display().len());
                     }
                     SinkKind::DebugDump => eprintln!("[debug] {ev}"),
@@ -454,16 +549,30 @@ impl Node {
     /// Flush any internally buffered state (end-of-stream / shutdown).
     pub fn flush(&mut self) -> Vec<Event> {
         match &mut self.kind {
-            NodeKind::WindowTicks { buffer, window_start, .. } => {
+            NodeKind::WindowTicks {
+                buffer,
+                window_start,
+                ..
+            } => {
                 let ws = *window_start;
-                let items: Vec<String> = buffer.drain_all().into_iter().map(|e| e.v.display()).collect();
-                if items.is_empty() { return vec![]; }
+                let items: Vec<String> = buffer
+                    .drain_all()
+                    .into_iter()
+                    .map(|e| e.v.display())
+                    .collect();
+                if items.is_empty() {
+                    return vec![];
+                }
                 use super::event::Stamp;
                 vec![Event::new(Stamp::mono(ws), Value::Window(items))]
             }
             NodeKind::WindowMs { inner } | NodeKind::DebounceMs { inner } => inner.flush_inner(),
             NodeKind::DelayTicks { pending, .. } => {
-                if let Some((_, ev)) = pending.take() { vec![ev] } else { vec![] }
+                if let Some((_, ev)) = pending.take() {
+                    vec![ev]
+                } else {
+                    vec![]
+                }
             }
             _ => vec![],
         }
@@ -477,37 +586,65 @@ impl Node {
 impl NodeKind {
     fn process_inner(&mut self, ev: Event) -> Vec<Event> {
         match self {
-            NodeKind::WindowTicks { duration, cap, buffer, window_start, buffer_policy } => {
-                let tick        = ev.stamp.tick;
-                let dur         = *duration;
-                let ws          = *window_start;
-                let pol         = *buffer_policy;
+            NodeKind::WindowTicks {
+                duration,
+                cap,
+                buffer,
+                window_start,
+                buffer_policy,
+            } => {
+                let tick = ev.stamp.tick;
+                let dur = *duration;
+                let ws = *window_start;
+                let pol = *buffer_policy;
                 let runtime_cap = *cap;
-                let mut out     = Vec::new();
+                let mut out = Vec::new();
 
                 if tick >= ws + dur {
-                    let flushed: Vec<String> = buffer.drain_all().into_iter().map(|e| e.v.display()).collect();
+                    let flushed: Vec<String> = buffer
+                        .drain_all()
+                        .into_iter()
+                        .map(|e| e.v.display())
+                        .collect();
                     *window_start = (tick / dur) * dur;
-                    if !flushed.is_empty() { out.push(Event::new(ev.stamp, Value::Window(flushed))); }
+                    if !flushed.is_empty() {
+                        out.push(Event::new(ev.stamp, Value::Window(flushed)));
+                    }
                 }
                 if pol == DropPolicy::FlushEarly && buffer.is_full_capped(runtime_cap) {
-                    let flushed: Vec<String> = buffer.drain_all().into_iter().map(|e| e.v.display()).collect();
-                    if !flushed.is_empty() { out.push(Event::new(ev.stamp, Value::Window(flushed))); }
+                    let flushed: Vec<String> = buffer
+                        .drain_all()
+                        .into_iter()
+                        .map(|e| e.v.display())
+                        .collect();
+                    if !flushed.is_empty() {
+                        out.push(Event::new(ev.stamp, Value::Window(flushed)));
+                    }
                 }
                 buffer.push_capped(ev, pol, runtime_cap);
                 out
             }
-            NodeKind::ThrottleTicks { interval, last_emit } => {
+            NodeKind::ThrottleTicks {
+                interval,
+                last_emit,
+            } => {
                 let tick = ev.stamp.tick;
                 let ready = *last_emit == u64::MAX || tick >= last_emit.saturating_add(*interval);
-                if ready { *last_emit = tick; vec![ev] } else { vec![] }
+                if ready {
+                    *last_emit = tick;
+                    vec![ev]
+                } else {
+                    vec![]
+                }
             }
             NodeKind::DelayTicks { delay, pending } => {
                 let tick = ev.stamp.tick;
                 let d = *delay;
                 let mut out = Vec::new();
                 if let Some((deadline, _)) = pending {
-                    if tick >= *deadline { out.push(pending.take().unwrap().1); }
+                    if tick >= *deadline {
+                        out.push(pending.take().unwrap().1);
+                    }
                 }
                 *pending = Some((tick + d, ev));
                 out
@@ -522,15 +659,29 @@ impl NodeKind {
 
     fn flush_inner(&mut self) -> Vec<Event> {
         match self {
-            NodeKind::WindowTicks { buffer, window_start, .. } => {
+            NodeKind::WindowTicks {
+                buffer,
+                window_start,
+                ..
+            } => {
                 let ws = *window_start;
-                let items: Vec<String> = buffer.drain_all().into_iter().map(|e| e.v.display()).collect();
-                if items.is_empty() { return vec![]; }
+                let items: Vec<String> = buffer
+                    .drain_all()
+                    .into_iter()
+                    .map(|e| e.v.display())
+                    .collect();
+                if items.is_empty() {
+                    return vec![];
+                }
                 use super::event::Stamp;
                 vec![Event::new(Stamp::mono(ws), Value::Window(items))]
             }
             NodeKind::DelayTicks { pending, .. } => {
-                if let Some((_, ev)) = pending.take() { vec![ev] } else { vec![] }
+                if let Some((_, ev)) = pending.take() {
+                    vec![ev]
+                } else {
+                    vec![]
+                }
             }
             _ => vec![],
         }

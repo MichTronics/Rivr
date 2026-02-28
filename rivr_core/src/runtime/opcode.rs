@@ -56,88 +56,98 @@
 #[repr(u8)]
 pub enum OpCode {
     // ── Sources ─────────────────────────────────────────────────────────
-    Source           = 0x00,
+    Source = 0x00,
 
     // ── Text / filter ────────────────────────────────────────────────────
-    MapUpper         = 0x10,
+    MapUpper = 0x10,
     /// map.lower() — ASCII lowercase
-    MapLower         = 0x14,
+    MapLower = 0x14,
     /// map.trim()  — strip leading/trailing ASCII whitespace
-    MapTrim          = 0x15,
-    FilterNonempty   = 0x11,
-    FilterKind       = 0x12,
+    MapTrim = 0x15,
+    FilterNonempty = 0x11,
+    FilterKind = 0x12,
     /// filter.pkt_type(N) — inspect byte [3] of Value::Bytes (binary header)
-    FilterPktType    = 0x13,
+    FilterPktType = 0x13,
     // ── Aggregation ──────────────────────────────────────────────────────
-    FoldCount        = 0x20,
+    FoldCount = 0x20,
     /// fold.sum() — running sum of Int payloads
-    FoldSum          = 0x21,
+    FoldSum = 0x21,
     /// fold.last() — emit the most recently seen value
-    FoldLast         = 0x22,
+    FoldLast = 0x22,
 
     // ── Tick-domain ──────────────────────────────────────────────────────
-    WindowTicks      = 0x30,
-    ThrottleTicks    = 0x31,
-    DelayTicks       = 0x32,
+    WindowTicks = 0x30,
+    ThrottleTicks = 0x31,
+    DelayTicks = 0x32,
 
     // ── Ms-domain aliases ─────────────────────────────────────────────────
-    WindowMs         = 0x38,
-    ThrottleMs       = 0x39,
-    DebounceMs       = 0x3A,
+    WindowMs = 0x38,
+    ThrottleMs = 0x39,
+    DebounceMs = 0x3A,
 
     // ── Rate / duty-cycle ─────────────────────────────────────────────────
-    Budget           = 0x40,
-    AirtimeBudget    = 0x41,
-    ToaBudget        = 0x42,
+    Budget = 0x40,
+    AirtimeBudget = 0x41,
+    ToaBudget = 0x42,
 
     // ── Topology ─────────────────────────────────────────────────────────
-    Merge            = 0x50,
-    Tag              = 0x51,
+    Merge = 0x50,
+    Tag = 0x51,
 
     // ── Sinks ─────────────────────────────────────────────────────────────
-    Emit             = 0x60,
+    Emit = 0x60,
 }
 
 impl OpCode {
     /// Human-readable mnemonic used in disassembly / debug output.
     pub fn mnemonic(self) -> &'static str {
         match self {
-            OpCode::Source        => "source",
-            OpCode::MapUpper      => "map.upper",
-            OpCode::MapLower      => "map.lower",
-            OpCode::MapTrim       => "map.trim",
-            OpCode::FilterNonempty=> "filter.nonempty",
-            OpCode::FilterKind    => "filter.kind",
+            OpCode::Source => "source",
+            OpCode::MapUpper => "map.upper",
+            OpCode::MapLower => "map.lower",
+            OpCode::MapTrim => "map.trim",
+            OpCode::FilterNonempty => "filter.nonempty",
+            OpCode::FilterKind => "filter.kind",
             OpCode::FilterPktType => "filter.pkt_type",
-            OpCode::FoldCount     => "fold.count",
-            OpCode::FoldSum       => "fold.sum",
-            OpCode::FoldLast      => "fold.last",
-            OpCode::WindowTicks   => "window.ticks",
+            OpCode::FoldCount => "fold.count",
+            OpCode::FoldSum => "fold.sum",
+            OpCode::FoldLast => "fold.last",
+            OpCode::WindowTicks => "window.ticks",
             OpCode::ThrottleTicks => "throttle.ticks",
-            OpCode::DelayTicks    => "delay.ticks",
-            OpCode::WindowMs      => "window.ms",
-            OpCode::ThrottleMs    => "throttle.ms",
-            OpCode::DebounceMs    => "debounce.ms",
-            OpCode::Budget        => "budget",
+            OpCode::DelayTicks => "delay.ticks",
+            OpCode::WindowMs => "window.ms",
+            OpCode::ThrottleMs => "throttle.ms",
+            OpCode::DebounceMs => "debounce.ms",
+            OpCode::Budget => "budget",
             OpCode::AirtimeBudget => "budget.airtime",
-            OpCode::ToaBudget     => "budget.toa_us",
-            OpCode::Merge         => "merge",
-            OpCode::Tag           => "tag",
-            OpCode::Emit          => "emit",
+            OpCode::ToaBudget => "budget.toa_us",
+            OpCode::Merge => "merge",
+            OpCode::Tag => "tag",
+            OpCode::Emit => "emit",
         }
     }
 
     /// Hint: can this operator produce more than one output event per input?
     pub fn is_fan_out(self) -> bool {
-        matches!(self, OpCode::WindowTicks | OpCode::WindowMs | OpCode::DebounceMs)
+        matches!(
+            self,
+            OpCode::WindowTicks | OpCode::WindowMs | OpCode::DebounceMs
+        )
     }
 
     /// Is this a time-sensitive operator (has internal state that needs a tick)?
     pub fn is_time_sensitive(self) -> bool {
-        matches!(self,
-            OpCode::WindowTicks | OpCode::ThrottleTicks | OpCode::DelayTicks
-            | OpCode::WindowMs  | OpCode::ThrottleMs    | OpCode::DebounceMs
-            | OpCode::Budget | OpCode::AirtimeBudget | OpCode::ToaBudget
+        matches!(
+            self,
+            OpCode::WindowTicks
+                | OpCode::ThrottleTicks
+                | OpCode::DelayTicks
+                | OpCode::WindowMs
+                | OpCode::ThrottleMs
+                | OpCode::DebounceMs
+                | OpCode::Budget
+                | OpCode::AirtimeBudget
+                | OpCode::ToaBudget
         )
     }
 }
@@ -158,28 +168,28 @@ impl NodeKind {
     /// Return the [`OpCode`] for this node without consuming state.
     pub fn opcode(&self) -> OpCode {
         match self {
-            NodeKind::Source { .. }        => OpCode::Source,
-            NodeKind::MapUpper             => OpCode::MapUpper,
-            NodeKind::MapLower             => OpCode::MapLower,
-            NodeKind::MapTrim              => OpCode::MapTrim,
-            NodeKind::FilterNonempty       => OpCode::FilterNonempty,
-            NodeKind::FilterKind { .. }    => OpCode::FilterKind,
+            NodeKind::Source { .. } => OpCode::Source,
+            NodeKind::MapUpper => OpCode::MapUpper,
+            NodeKind::MapLower => OpCode::MapLower,
+            NodeKind::MapTrim => OpCode::MapTrim,
+            NodeKind::FilterNonempty => OpCode::FilterNonempty,
+            NodeKind::FilterKind { .. } => OpCode::FilterKind,
             NodeKind::FilterPktType { .. } => OpCode::FilterPktType,
-            NodeKind::FoldCount { .. }     => OpCode::FoldCount,
-            NodeKind::FoldSum { .. }       => OpCode::FoldSum,
-            NodeKind::FoldLast { .. }      => OpCode::FoldLast,
-            NodeKind::WindowTicks { .. }   => OpCode::WindowTicks,
+            NodeKind::FoldCount { .. } => OpCode::FoldCount,
+            NodeKind::FoldSum { .. } => OpCode::FoldSum,
+            NodeKind::FoldLast { .. } => OpCode::FoldLast,
+            NodeKind::WindowTicks { .. } => OpCode::WindowTicks,
             NodeKind::ThrottleTicks { .. } => OpCode::ThrottleTicks,
-            NodeKind::DelayTicks { .. }    => OpCode::DelayTicks,
-            NodeKind::WindowMs { .. }      => OpCode::WindowMs,
-            NodeKind::ThrottleMs { .. }    => OpCode::ThrottleMs,
-            NodeKind::DebounceMs { .. }    => OpCode::DebounceMs,
-            NodeKind::Budget { .. }        => OpCode::Budget,
+            NodeKind::DelayTicks { .. } => OpCode::DelayTicks,
+            NodeKind::WindowMs { .. } => OpCode::WindowMs,
+            NodeKind::ThrottleMs { .. } => OpCode::ThrottleMs,
+            NodeKind::DebounceMs { .. } => OpCode::DebounceMs,
+            NodeKind::Budget { .. } => OpCode::Budget,
             NodeKind::AirtimeBudget { .. } => OpCode::AirtimeBudget,
-            NodeKind::ToaBudget { .. }     => OpCode::ToaBudget,
-            NodeKind::Merge                => OpCode::Merge,
-            NodeKind::Tag { .. }           => OpCode::Tag,
-            NodeKind::Emit { .. }          => OpCode::Emit,
+            NodeKind::ToaBudget { .. } => OpCode::ToaBudget,
+            NodeKind::Merge => OpCode::Merge,
+            NodeKind::Tag { .. } => OpCode::Tag,
+            NodeKind::Emit { .. } => OpCode::Emit,
         }
     }
 }

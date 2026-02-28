@@ -78,7 +78,9 @@ fn main() {
         Ok((eng, warns)) => (eng, warns),
         Err(errors) => {
             eprintln!("rivrc: compile error(s) in '{path}':");
-            for e in &errors { eprintln!("  {e}"); }
+            for e in &errors {
+                eprintln!("  {e}");
+            }
             process::exit(1);
         }
     };
@@ -94,7 +96,7 @@ fn main() {
     // ── print node graph ─────────────────────────────────────────────────
     println!("RIVR '{path}'  — {n} node(s)", n = engine.nodes.len());
     println!("{}", "─".repeat(72));
-    println!("{:<4}  {:<24}  {}", "ID", "NAME", "KIND / PARAMS");
+    println!("{:<4}  {:<24}  KIND / PARAMS", "ID", "NAME");
     println!("{}", "─".repeat(72));
 
     for (id, node) in engine.nodes.iter().enumerate() {
@@ -155,7 +157,9 @@ fn node_detail(kind: &NodeKind) -> String {
 /// Print the edge list (nodes with their upstream inputs).
 fn print_edges(nodes: &[rivr_core::runtime::node::Node]) {
     let has_edges = nodes.iter().any(|n| !n.inputs.is_empty());
-    if !has_edges { return; }
+    if !has_edges {
+        return;
+    }
     println!("\nEdges:");
     for (id, node) in nodes.iter().enumerate() {
         if !node.inputs.is_empty() {

@@ -18,18 +18,23 @@
 /// Silently truncates at a UTF-8 character boundary on overflow.
 #[derive(Clone, Copy)]
 pub struct FixedText<const N: usize> {
-    buf:       [u8; N],
-    len:       usize,
+    buf: [u8; N],
+    len: usize,
     truncated: bool,
 }
 
 impl<const N: usize> FixedText<N> {
     /// Create an empty `FixedText`.
     pub const fn new() -> Self {
-        Self { buf: [0u8; N], len: 0, truncated: false }
+        Self {
+            buf: [0u8; N],
+            len: 0,
+            truncated: false,
+        }
     }
 
     /// Build from a string slice, truncating if longer than `N` bytes.
+    #[allow(clippy::should_implement_trait)] // intentional: truncating semantics differ from FromStr
     pub fn from_str(s: &str) -> Self {
         let mut this = Self::new();
         this.push_str(s);
@@ -67,10 +72,18 @@ impl<const N: usize> FixedText<N> {
         unsafe { core::str::from_utf8_unchecked(&self.buf[..self.len]) }
     }
 
-    pub fn len(&self)       -> usize { self.len }
-    pub fn is_empty(&self)  -> bool  { self.len == 0 }
-    pub fn capacity()       -> usize { N }
-    pub fn truncated(&self) -> bool  { self.truncated }
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    pub fn capacity() -> usize {
+        N
+    }
+    pub fn truncated(&self) -> bool {
+        self.truncated
+    }
 
     /// Format an `i64` into a `FixedText` (no alloc).
     pub fn from_i64(n: i64) -> Self {
@@ -90,10 +103,14 @@ impl<const N: usize> FixedText<N> {
                 digits[pos] = b'0'.wrapping_add((n.wrapping_rem(-10)).unsigned_abs() as u8);
                 pos += 1;
                 n = n.wrapping_div(-10);
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 n = -n;
             }
-            for &d in digits[..pos].iter().rev() { self.push_ascii(d); }
+            for &d in digits[..pos].iter().rev() {
+                self.push_ascii(d);
+            }
         } else {
             let mut digits = [0u8; 20];
             let mut pos = 0usize;
@@ -101,24 +118,34 @@ impl<const N: usize> FixedText<N> {
                 digits[pos] = b'0' + (n % 10) as u8;
                 pos += 1;
                 n /= 10;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
             }
-            for &d in digits[..pos].iter().rev() { self.push_ascii(d); }
+            for &d in digits[..pos].iter().rev() {
+                self.push_ascii(d);
+            }
         }
     }
 }
 
 impl<const N: usize> Default for FixedText<N> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> PartialEq for FixedText<N> {
-    fn eq(&self, other: &Self) -> bool { self.as_str() == other.as_str() }
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
 }
 impl<const N: usize> Eq for FixedText<N> {}
 
 impl<const N: usize> PartialEq<str> for FixedText<N> {
-    fn eq(&self, other: &str) -> bool { self.as_str() == other }
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
 }
 
 impl<const N: usize> core::fmt::Debug for FixedText<N> {
@@ -134,11 +161,15 @@ impl<const N: usize> core::fmt::Display for FixedText<N> {
 }
 
 impl<const N: usize> From<&str> for FixedText<N> {
-    fn from(s: &str) -> Self { Self::from_str(s) }
+    fn from(s: &str) -> Self {
+        Self::from_str(s)
+    }
 }
 
 impl<const N: usize> AsRef<str> for FixedText<N> {
-    fn as_ref(&self) -> &str { self.as_str() }
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
 }
 
 // core::fmt::Write allows use with write!() macro without alloc
@@ -179,14 +210,18 @@ impl<'de, const N: usize> serde::Deserialize<'de> for FixedText<N> {
 /// Stack-allocated byte buffer with compile-time capacity `N`.
 #[derive(Clone, Copy)]
 pub struct FixedBytes<const N: usize> {
-    buf:       [u8; N],
-    len:       usize,
+    buf: [u8; N],
+    len: usize,
     truncated: bool,
 }
 
 impl<const N: usize> FixedBytes<N> {
     pub const fn new() -> Self {
-        Self { buf: [0u8; N], len: 0, truncated: false }
+        Self {
+            buf: [0u8; N],
+            len: 0,
+            truncated: false,
+        }
     }
 
     pub fn from_slice(s: &[u8]) -> Self {
@@ -198,23 +233,37 @@ impl<const N: usize> FixedBytes<N> {
     pub fn push_bytes(&mut self, s: &[u8]) {
         let space = N.saturating_sub(self.len);
         let copy_len = s.len().min(space);
-        if copy_len < s.len() { self.truncated = true; }
+        if copy_len < s.len() {
+            self.truncated = true;
+        }
         self.buf[self.len..self.len + copy_len].copy_from_slice(&s[..copy_len]);
         self.len += copy_len;
     }
 
-    pub fn as_bytes(&self) -> &[u8] { &self.buf[..self.len] }
-    pub fn len(&self)       -> usize { self.len }
-    pub fn is_empty(&self)  -> bool  { self.len == 0 }
-    pub fn truncated(&self) -> bool  { self.truncated }
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.buf[..self.len]
+    }
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    pub fn truncated(&self) -> bool {
+        self.truncated
+    }
 }
 
 impl<const N: usize> Default for FixedBytes<N> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> PartialEq for FixedBytes<N> {
-    fn eq(&self, other: &Self) -> bool { self.as_bytes() == other.as_bytes() }
+    fn eq(&self, other: &Self) -> bool {
+        self.as_bytes() == other.as_bytes()
+    }
 }
 impl<const N: usize> Eq for FixedBytes<N> {}
 
@@ -231,11 +280,15 @@ impl<const N: usize> core::fmt::Display for FixedBytes<N> {
 }
 
 impl<const N: usize> From<&[u8]> for FixedBytes<N> {
-    fn from(s: &[u8]) -> Self { Self::from_slice(s) }
+    fn from(s: &[u8]) -> Self {
+        Self::from_slice(s)
+    }
 }
 
 impl<const N: usize> AsRef<[u8]> for FixedBytes<N> {
-    fn as_ref(&self) -> &[u8] { self.as_bytes() }
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
 }
 
 impl<const N: usize> serde::Serialize for FixedBytes<N> {

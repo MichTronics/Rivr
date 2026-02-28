@@ -1,8 +1,22 @@
 // Safety: ENGINE_SLOT is a single-core singleton; ISRs never touch it.
 // Suppress the Rust 2024 static_mut_refs lint for the whole module.
 #![allow(static_mut_refs)]
-
 // ffi.rs – C-ABI exports from rivr_core for the embedded firmware.
+//
+// ┌─────────────────────────────────────────────────────────────────┐
+// │ SAFETY CONTRACT (read before calling any rivr_* function)       │
+// │                                                                 │
+// │ 1. SINGLE-THREADED – all rivr_* calls must occur on the same   │
+// │    OS task / ISR level.  No concurrent calls are safe.          │
+// │ 2. POINTER VALIDITY – every pointer argument must remain valid  │
+// │    for the entire duration of the call.                         │
+// │ 3. FREEZE SEMANTICS – after rivr_engine_freeze() returns        │
+// │    RIVR_OK, no further heap allocations must be made inside the │
+// │    RIVR engine.  The C side must also stop calling functions    │
+// │    that mutate engine state (init, inject).                     │
+// │    Diagnostic / read-only accessors (node_count, clock_now,    │
+// │    foreach_timer_source) remain safe to call after freeze.      │
+// └─────────────────────────────────────────────────────────────────┘
 //
 // BUILD
 // ─────
@@ -29,26 +43,26 @@ use core::ffi::{c_char, CStr};
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::string::String;
 
-use crate::{compile, parse, Engine, Event, Stamp, Value};
-use crate::runtime::value::StrBuf;   // StrBuf = String (alloc) or FixedText<64> (no-alloc)
-use crate::runtime::NodeKind;
 #[cfg(not(feature = "alloc"))]
 use crate::runtime::fixed::FixedText;
+use crate::runtime::value::StrBuf; // StrBuf = String (alloc) or FixedText<64> (no-alloc)
+use crate::runtime::NodeKind;
+use crate::{compile, parse, Engine, Event, Stamp, Value};
 
 // ── C-ABI types (must match rivr_embed.h) ────────────────────────────────────
 
 #[repr(C)]
 pub struct CStamp {
     pub clock: u8,
-    pub tick:  u64,
+    pub tick: u64,
 }
 
 #[repr(u8)]
 pub enum CValTag {
-    Unit  = 0,
-    Int   = 1,
-    Bool  = 2,
-    Str   = 3,
+    Unit = 0,
+    Int = 1,
+    Bool = 2,
+    Str = 3,
     Bytes = 4,
 }
 
@@ -68,25 +82,25 @@ pub struct CFixedBytes {
 
 #[repr(C)]
 pub union CValUnion {
-    pub as_int:   i64,
-    pub as_bool:  bool,
-    pub as_str:   CFixedStr,
+    pub as_int: i64,
+    pub as_bool: bool,
+    pub as_str: CFixedStr,
     pub as_bytes: CFixedBytes,
 }
 
 #[repr(C)]
 pub struct CValue {
-    pub tag: u8,                 // CValTag discriminant
+    pub tag: u8, // CValTag discriminant
     pub _pad: [u8; 3],
     pub data: CValUnion,
 }
 
 #[repr(C)]
 pub struct CEvent {
-    pub stamp:    CStamp,
-    pub v:        CValue,
+    pub stamp: CStamp,
+    pub v: CValue,
     pub kind_tag: [u8; 32],
-    pub seq:      u32,
+    pub seq: u32,
 }
 
 // ── Result type returned by all FFI calls ────────────────────────────────────
@@ -98,9 +112,9 @@ pub struct CEvent {
 #[repr(C)]
 pub struct RivrResult {
     /// 0 = success (RIVR_OK).  Non-zero = one of the RIVR_ERR_* constants.
-    pub code:          u32,
+    pub code: u32,
     /// Scheduler steps consumed by this call (meaningful for `rivr_engine_run`).
-    pub cycles_used:   u32,
+    pub cycles_used: u32,
     /// Remaining step budget = `max_steps - cycles_used`.
     /// Reaching 0 means the scheduler was NOT idle when the limit was hit
     /// (possible starvation / unbounded program).
@@ -108,19 +122,32 @@ pub struct RivrResult {
 }
 
 impl RivrResult {
-    pub const fn ok()    -> Self { Self { code: RIVR_OK,           cycles_used: 0, gas_remaining: 0 } }
-    pub const fn err(c: u32) -> Self { Self { code: c,             cycles_used: 0, gas_remaining: 0 } }
+    pub const fn ok() -> Self {
+        Self {
+            code: RIVR_OK,
+            cycles_used: 0,
+            gas_remaining: 0,
+        }
+    }
+    pub const fn err(c: u32) -> Self {
+        Self {
+            code: c,
+            cycles_used: 0,
+            gas_remaining: 0,
+        }
+    }
 }
 
 // ── Error codes (match RIVR_ERR_* constants in rivr_embed.h) ─────────────────
-pub const RIVR_OK:               u32 = 0;
-pub const RIVR_ERR_NULL_PTR:     u32 = 1;  // null pointer argument
-pub const RIVR_ERR_UTF8:         u32 = 2;  // non-UTF-8 C string
-pub const RIVR_ERR_PARSE:        u32 = 3;  // RIVR parse error
-pub const RIVR_ERR_COMPILE:      u32 = 4;  // RIVR compile error
-pub const RIVR_ERR_NOT_INIT:     u32 = 5;  // engine not yet initialised
-pub const RIVR_ERR_SRC_UNKNOWN:  u32 = 6;  // source name not found in graph
-pub const RIVR_ERR_NODE_LIMIT:   u32 = 7;  // compiled graph exceeds RIVR_MAX_NODES
+pub const RIVR_OK: u32 = 0;
+pub const RIVR_ERR_NULL_PTR: u32 = 1; // null pointer argument
+pub const RIVR_ERR_UTF8: u32 = 2; // non-UTF-8 C string
+pub const RIVR_ERR_PARSE: u32 = 3; // RIVR parse error
+pub const RIVR_ERR_COMPILE: u32 = 4; // RIVR compile error
+pub const RIVR_ERR_NOT_INIT: u32 = 5; // engine not yet initialised
+pub const RIVR_ERR_SRC_UNKNOWN: u32 = 6; // source name not found in graph
+pub const RIVR_ERR_NODE_LIMIT: u32 = 7; // compiled graph exceeds RIVR_MAX_NODES
+pub const RIVR_ERR_FROZEN: u32 = 8; // call rejected: engine is frozen (post-init)
 
 /// Hard cap on compiled graph size.  Programs that exceed this are rejected
 /// at `rivr_engine_init()` time so we never exceed the static BSS budget.
@@ -145,9 +172,11 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 static mut ENGINE_SLOT: MaybeUninit<Engine> = MaybeUninit::uninit();
 static ENGINE_READY: AtomicBool = AtomicBool::new(false);
+/// Once set, `rivr_engine_init()` and other mutating calls are rejected.
+static ENGINE_FROZEN: AtomicBool = AtomicBool::new(false);
 
-static mut EMIT_DISPATCH:   Option<EmitDispatchFn>   = None;
-static mut WATCHDOG_HOOK:   Option<WatchdogHookFn>   = None;
+static mut EMIT_DISPATCH: Option<EmitDispatchFn> = None;
+static mut WATCHDOG_HOOK: Option<WatchdogHookFn> = None;
 
 // ── FFI exports ──────────────────────────────────────────────────────────────
 
@@ -166,7 +195,9 @@ pub unsafe extern "C" fn rivr_set_watchdog_hook(hook: Option<WatchdogHookFn>) {
 /// Returns 0 if the engine is not yet initialised.
 #[no_mangle]
 pub unsafe extern "C" fn rivr_engine_node_count() -> u32 {
-    if !ENGINE_READY.load(Ordering::Acquire) { return 0; }
+    if !ENGINE_READY.load(Ordering::Acquire) {
+        return 0;
+    }
     ENGINE_SLOT.assume_init_ref().nodes.len() as u32
 }
 
@@ -179,21 +210,23 @@ pub unsafe extern "C" fn rivr_engine_node_count() -> u32 {
 /// `program_src` must be a valid null-terminated UTF-8 C string.
 #[no_mangle]
 pub unsafe extern "C" fn rivr_engine_init(program_src: *const c_char) -> RivrResult {
-    if program_src.is_null() { return RivrResult::err(RIVR_ERR_NULL_PTR); }
+    if program_src.is_null() {
+        return RivrResult::err(RIVR_ERR_NULL_PTR);
+    }
 
     let src = match CStr::from_ptr(program_src).to_str() {
-        Ok(s)  => s,
+        Ok(s) => s,
         Err(_) => return RivrResult::err(RIVR_ERR_UTF8),
     };
 
     let program = match parse(src) {
-        Ok(p)  => p,
+        Ok(p) => p,
         Err(_) => return RivrResult::err(RIVR_ERR_PARSE),
     };
 
     let (engine, _warns) = match compile(&program) {
         Ok(pair) => pair,
-        Err(_)   => return RivrResult::err(RIVR_ERR_COMPILE),
+        Err(_) => return RivrResult::err(RIVR_ERR_COMPILE),
     };
 
     // Reject over-complex graphs: unbounded node counts are a DoS/memory risk.
@@ -201,8 +234,32 @@ pub unsafe extern "C" fn rivr_engine_init(program_src: *const c_char) -> RivrRes
         return RivrResult::err(RIVR_ERR_NODE_LIMIT);
     }
 
+    // Reject re-initialisation after freeze.
+    if ENGINE_FROZEN.load(Ordering::Acquire) {
+        return RivrResult::err(RIVR_ERR_FROZEN);
+    }
+
     ENGINE_SLOT.write(engine);
     ENGINE_READY.store(true, Ordering::Release);
+    RivrResult::ok()
+}
+
+/// Freeze the engine, preventing further `rivr_engine_init()` calls.
+///
+/// Call this once the firmware has successfully loaded its RIVR program and
+/// you want to guarantee that no subsequent code path can overwrite the graph.
+/// After this call:
+/// - `rivr_engine_init()` returns `RIVR_ERR_FROZEN`.
+/// - `rivr_engine_run()` and `rivr_inject_event()` continue to work normally.
+/// - Read-only accessors (`rivr_engine_node_count`, etc.) are unaffected.
+///
+/// Idempotent: calling it multiple times is safe.
+#[no_mangle]
+pub unsafe extern "C" fn rivr_engine_freeze() -> RivrResult {
+    if !ENGINE_READY.load(Ordering::Acquire) {
+        return RivrResult::err(RIVR_ERR_NOT_INIT);
+    }
+    ENGINE_FROZEN.store(true, Ordering::Release);
     RivrResult::ok()
 }
 
@@ -215,11 +272,15 @@ pub unsafe extern "C" fn rivr_inject_event(
     source_name: *const c_char,
     event: *const CEvent,
 ) -> RivrResult {
-    if !ENGINE_READY.load(Ordering::Acquire) { return RivrResult::err(RIVR_ERR_NOT_INIT); }
-    if source_name.is_null() || event.is_null() { return RivrResult::err(RIVR_ERR_NULL_PTR); }
+    if !ENGINE_READY.load(Ordering::Acquire) {
+        return RivrResult::err(RIVR_ERR_NOT_INIT);
+    }
+    if source_name.is_null() || event.is_null() {
+        return RivrResult::err(RIVR_ERR_NULL_PTR);
+    }
 
     let name = match CStr::from_ptr(source_name).to_str() {
-        Ok(s)  => s,
+        Ok(s) => s,
         Err(_) => return RivrResult::err(RIVR_ERR_UTF8),
     };
 
@@ -282,7 +343,7 @@ pub unsafe extern "C" fn rivr_inject_event(
 
     let engine = ENGINE_SLOT.assume_init_mut();
     match engine.inject(name, rivr_event) {
-        Ok(_)  => RivrResult::ok(),
+        Ok(_) => RivrResult::ok(),
         Err(_) => RivrResult::err(RIVR_ERR_SRC_UNKNOWN),
     }
 }
@@ -304,18 +365,20 @@ pub unsafe extern "C" fn rivr_engine_run(max_steps: u32) -> RivrResult {
     if !ENGINE_READY.load(Ordering::Acquire) {
         return RivrResult::err(RIVR_ERR_NOT_INIT);
     }
-    let engine     = ENGINE_SLOT.assume_init_mut();
-    let mut total  = 0u32;
+    let engine = ENGINE_SLOT.assume_init_mut();
+    let mut total = 0u32;
     let mut budget = max_steps;
 
     while budget > 0 {
-        let chunk     = budget.min(WATCHDOG_INTERVAL);
-        let done      = engine.run(chunk as usize) as u32;
-        total        += done;
-        budget        = budget.saturating_sub(chunk);
+        let chunk = budget.min(WATCHDOG_INTERVAL);
+        let done = engine.run(chunk as usize) as u32;
+        total += done;
+        budget = budget.saturating_sub(chunk);
 
         // Kick watchdog (safe even if done < chunk; wdt just gets extra resets).
-        if let Some(hook) = WATCHDOG_HOOK { hook(); }
+        if let Some(hook) = WATCHDOG_HOOK {
+            hook();
+        }
 
         if done < chunk {
             // Scheduler went idle before exhausting the chunk – we're done.
@@ -324,8 +387,8 @@ pub unsafe extern "C" fn rivr_engine_run(max_steps: u32) -> RivrResult {
     }
 
     RivrResult {
-        code:          RIVR_OK,
-        cycles_used:   total,
+        code: RIVR_OK,
+        cycles_used: total,
         gas_remaining: max_steps.saturating_sub(total),
     }
 }
@@ -344,11 +407,21 @@ pub unsafe extern "C" fn rivr_engine_run(max_steps: u32) -> RivrResult {
 pub unsafe extern "C" fn rivr_foreach_timer_source(
     cb: Option<unsafe extern "C" fn(*const c_char, u64)>,
 ) {
-    let cb = match cb { Some(f) => f, None => return };
-    if !ENGINE_READY.load(Ordering::Acquire) { return; }
+    let cb = match cb {
+        Some(f) => f,
+        None => return,
+    };
+    if !ENGINE_READY.load(Ordering::Acquire) {
+        return;
+    }
     let engine = ENGINE_SLOT.assume_init_ref();
     for node in &engine.nodes {
-        if let NodeKind::Source { name, interval_ms: Some(ms), .. } = &node.kind {
+        if let NodeKind::Source {
+            name,
+            interval_ms: Some(ms),
+            ..
+        } = &node.kind
+        {
             let mut buf = [0u8; 64];
             let n = name.len().min(63);
             buf[..n].copy_from_slice(&name.as_bytes()[..n]);
@@ -361,7 +434,9 @@ pub unsafe extern "C" fn rivr_foreach_timer_source(
 /// Return the current tick for the given clock index.
 #[no_mangle]
 pub unsafe extern "C" fn rivr_engine_clock_now(clock_id: u8) -> u64 {
-    if !ENGINE_READY.load(Ordering::Acquire) { return 0; }
+    if !ENGINE_READY.load(Ordering::Acquire) {
+        return 0;
+    }
     let engine = ENGINE_SLOT.assume_init_ref();
     engine.clock_now[clock_id as usize & 7]
 }
@@ -377,7 +452,10 @@ pub unsafe extern "C" fn rivr_set_emit_dispatch(f: EmitDispatchFn) {
 // This is wired up via Engine::set_emit_hook() (to be added to engine.rs).
 #[doc(hidden)]
 pub unsafe fn ffi_emit_hook(sink_name: &str, v: &Value) {
-    let dispatch = match EMIT_DISPATCH { Some(f) => f, None => return };
+    let dispatch = match EMIT_DISPATCH {
+        Some(f) => f,
+        None => return,
+    };
 
     // Convert sink_name to null-terminated C string (stack)
     let mut name_buf = [0u8; 32];
@@ -393,23 +471,28 @@ pub unsafe fn ffi_emit_hook(sink_name: &str, v: &Value) {
 fn value_to_c(v: &Value) -> CValue {
     match v {
         Value::Int(n) => CValue {
-            tag: 1, _pad: [0;3],
+            tag: 1,
+            _pad: [0; 3],
             data: CValUnion { as_int: *n },
         },
         Value::Bool(b) => CValue {
-            tag: 2, _pad: [0;3],
+            tag: 2,
+            _pad: [0; 3],
             data: CValUnion { as_bool: *b },
         },
         Value::Str(s) => {
             // StrBuf is String (alloc) or FixedText<64>; both deref to str.
             let sr: &str = s.as_ref();
             let bytes = sr.as_bytes();
-            let len   = bytes.len().min(127) as u8;
+            let len = bytes.len().min(127) as u8;
             let mut buf = [0u8; 128];
             buf[..len as usize].copy_from_slice(&bytes[..len as usize]);
             CValue {
-                tag: 3, _pad: [0;3],
-                data: CValUnion { as_str: CFixedStr { buf, len } },
+                tag: 3,
+                _pad: [0; 3],
+                data: CValUnion {
+                    as_str: CFixedStr { buf, len },
+                },
             }
         }
         Value::Bytes(b) => {
@@ -419,14 +502,21 @@ fn value_to_c(v: &Value) -> CValue {
             let mut buf = [0u8; 256];
             buf[..len as usize].copy_from_slice(&slice[..len as usize]);
             CValue {
-                tag: 4, _pad: [0;3],
-                data: CValUnion { as_bytes: CFixedBytes { buf, len } },
+                tag: 4,
+                _pad: [0; 3],
+                data: CValUnion {
+                    as_bytes: CFixedBytes { buf, len },
+                },
             }
         }
         // Value::Unit and Value::Window(alloc) have no useful wire representation;
         // tag=0 causes the C sink to log a warning and discard them, which is
         // the correct behaviour (a Unit or Window value should never reach rf_tx).
-        _ => CValue { tag: 0, _pad: [0;3], data: CValUnion { as_int: 0 } },
+        _ => CValue {
+            tag: 0,
+            _pad: [0; 3],
+            data: CValUnion { as_int: 0 },
+        },
     }
 }
 
@@ -449,15 +539,21 @@ mod embedded_rt {
 
     unsafe impl GlobalAlloc for LibcAlloc {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            extern "C" { fn malloc(size: usize) -> *mut u8; }
+            extern "C" {
+                fn malloc(size: usize) -> *mut u8;
+            }
             malloc(layout.size())
         }
         unsafe fn dealloc(&self, ptr: *mut u8, _: Layout) {
-            extern "C" { fn free(ptr: *mut u8); }
+            extern "C" {
+                fn free(ptr: *mut u8);
+            }
             free(ptr)
         }
         unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, new_size: usize) -> *mut u8 {
-            extern "C" { fn realloc(ptr: *mut u8, size: usize) -> *mut u8; }
+            extern "C" {
+                fn realloc(ptr: *mut u8, size: usize) -> *mut u8;
+            }
             realloc(ptr, new_size)
         }
     }
@@ -468,7 +564,9 @@ mod embedded_rt {
     /// Abort on panic.  ESP-IDF's watchdog or the hardfault handler will reset.
     #[panic_handler]
     fn panic(_: &PanicInfo) -> ! {
-        extern "C" { fn abort() -> !; }
+        extern "C" {
+            fn abort() -> !;
+        }
         unsafe { abort() }
     }
 }

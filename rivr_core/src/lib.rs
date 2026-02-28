@@ -27,11 +27,11 @@
 extern crate alloc;
 
 // Sub-systems
+pub mod adapt;
 pub mod ast;
 pub mod compiler;
 pub mod parser;
 pub mod runtime;
-pub mod adapt;
 
 /// C-ABI exports for embedding rivr_core in C firmware (ESP32, etc.).
 /// Compiled in when the `ffi` feature is enabled or when building a staticlib.

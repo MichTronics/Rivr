@@ -20,16 +20,19 @@
 //! | **replay**      | feed JSONL events back into engine, collect effects         |
 //! | **assert**      | replay + compare effect trace against recorded effects       |
 
-use serde::{Deserialize, Serialize};
-use rivr_core::{Engine, Event, Stamp, Value};
 use rivr_core::runtime::{engine::EffectRecord, node::SinkKind};
+use rivr_core::{Engine, Event, Stamp, Value};
+use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JSON wire types
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct StampJson { pub clock: u8, pub tick: u64 }
+pub(crate) struct StampJson {
+    pub clock: u8,
+    pub tick: u64,
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
@@ -43,11 +46,11 @@ pub(crate) enum ValueJson {
 /// A single JSONL trace record (input event **or** output effect).
 #[derive(Serialize, Deserialize)]
 pub struct TraceRecord {
-    pub kind:    String,          // "in" or "out"
+    pub kind: String, // "in" or "out"
     /// For "in": the source name.  For "out": the sink kind string.
     pub channel: String,
-    pub stamp:   StampJson,
-    pub v:       ValueJson,
+    pub stamp: StampJson,
+    pub v: ValueJson,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,30 +61,34 @@ fn value_json_to_value(v: &ValueJson) -> Value {
     match v {
         ValueJson::Float(f) => {
             let i = *f as i64;
-            if (i as f64 - f).abs() < 1e-9 { Value::Int(i) } else { Value::Str(format!("{f}")) }
+            if (i as f64 - f).abs() < 1e-9 {
+                Value::Int(i)
+            } else {
+                Value::Str(format!("{f}"))
+            }
         }
-        ValueJson::Int(i)  => Value::Int(*i),
-        ValueJson::Str(s)  => Value::Str(s.clone()),
+        ValueJson::Int(i) => Value::Int(*i),
+        ValueJson::Str(s) => Value::Str(s.clone()),
         ValueJson::Bool(b) => Value::Bool(*b),
     }
 }
 
 fn value_to_json(v: &Value) -> ValueJson {
     match v {
-        Value::Int(i)       => ValueJson::Int(*i),
-        Value::Str(s)       => ValueJson::Str(s.clone()),
-        Value::Bool(b)      => ValueJson::Bool(*b),
-        Value::Window(w)    => ValueJson::Str(format!("[window {} events]", w.len())),
-        _                   => ValueJson::Str("[unit]".into()),
+        Value::Int(i) => ValueJson::Int(*i),
+        Value::Str(s) => ValueJson::Str(s.clone()),
+        Value::Bool(b) => ValueJson::Bool(*b),
+        Value::Window(w) => ValueJson::Str(format!("[window {} events]", w.len())),
+        _ => ValueJson::Str("[unit]".into()),
     }
 }
 
 fn sink_kind_str(s: &SinkKind) -> &'static str {
     match s {
-        SinkKind::UsbPrint   => "usb_print",
-        SinkKind::LoraTx     => "lora_tx",
+        SinkKind::UsbPrint => "usb_print",
+        SinkKind::LoraTx => "lora_tx",
         SinkKind::LoraBeacon => "lora_beacon",
-        SinkKind::DebugDump  => "debug_dump",
+        SinkKind::DebugDump => "debug_dump",
     }
 }
 
@@ -100,23 +107,32 @@ pub fn record(engine: &mut Engine, events: &[(&str, Event)]) -> String {
     let effects = engine.take_effect_log();
 
     // Serialise input events
-    let mut lines: Vec<String> = events.iter().map(|(src, ev)| {
-        let rec = TraceRecord {
-            kind:    "in".into(),
-            channel: src.to_string(),
-            stamp:   StampJson { clock: ev.stamp.clock, tick: ev.stamp.tick },
-            v:       value_to_json(&ev.v),
-        };
-        serde_json::to_string(&rec).unwrap_or_default()
-    }).collect();
+    let mut lines: Vec<String> = events
+        .iter()
+        .map(|(src, ev)| {
+            let rec = TraceRecord {
+                kind: "in".into(),
+                channel: src.to_string(),
+                stamp: StampJson {
+                    clock: ev.stamp.clock,
+                    tick: ev.stamp.tick,
+                },
+                v: value_to_json(&ev.v),
+            };
+            serde_json::to_string(&rec).unwrap_or_default()
+        })
+        .collect();
 
     // Serialise output effects
     for eff in &effects {
         let rec = TraceRecord {
-            kind:    "out".into(),
+            kind: "out".into(),
             channel: sink_kind_str(&eff.sink).to_string(),
-            stamp:   StampJson { clock: eff.stamp.clock, tick: eff.stamp.tick },
-            v:       ValueJson::Str(eff.value_str.clone()),
+            stamp: StampJson {
+                clock: eff.stamp.clock,
+                tick: eff.stamp.tick,
+            },
+            v: ValueJson::Str(eff.value_str.clone()),
         };
         lines.push(serde_json::to_string(&rec).unwrap_or_default());
     }
@@ -136,24 +152,34 @@ pub fn replay(engine: &mut Engine, content: &str) -> Vec<EffectRecord> {
     let mut n_in = 0usize;
     for line in content.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
 
         match serde_json::from_str::<TraceRecord>(line) {
             Ok(rec) if rec.kind == "in" => {
-                let v     = value_json_to_value(&rec.v);
+                let v = value_json_to_value(&rec.v);
                 let stamp = Stamp::at(rec.stamp.clock, rec.stamp.tick);
-                let ev    = Event { stamp, v, tag: None, seq: 0 };
+                let ev = Event {
+                    stamp,
+                    v,
+                    tag: None,
+                    seq: 0,
+                };
                 let _ = engine.inject(&rec.channel, ev);
                 n_in += 1;
             }
-            Ok(_)     => { /* skip "out" records */ }
-            Err(e)    => eprintln!("WARN: skipping malformed line: {e}"),
+            Ok(_) => { /* skip "out" records */ }
+            Err(e) => eprintln!("WARN: skipping malformed line: {e}"),
         }
     }
 
     engine.run(10_000);
     let effects = engine.take_effect_log();
-    println!("── replay complete: {n_in} events injected, {} effects ──\n", effects.len());
+    println!(
+        "── replay complete: {n_in} events injected, {} effects ──\n",
+        effects.len()
+    );
     engine.print_stats();
     effects
 }
@@ -168,27 +194,38 @@ pub fn replay(engine: &mut Engine, content: &str) -> Vec<EffectRecord> {
 /// Returns `Ok(())` on a matching trace, `Err(mismatches)` otherwise.
 pub fn replay_and_assert(engine: &mut Engine, content: &str) -> Result<(), Vec<String>> {
     // Collect expected effects from "out" records in the trace.
-    let expected: Vec<(String, String, u64)> = content.lines()
+    let expected: Vec<(String, String, u64)> = content
+        .lines()
         .filter_map(|l| serde_json::from_str::<TraceRecord>(l.trim()).ok())
         .filter(|r| r.kind == "out")
         .map(|r| {
-        let v_str = match &r.v {
-            ValueJson::Str(s) => s.clone(),
-            ValueJson::Int(n) => n.to_string(),
-            ValueJson::Float(f) => f.to_string(),
-            ValueJson::Bool(b) => b.to_string(),
-        };
+            let v_str = match &r.v {
+                ValueJson::Str(s) => s.clone(),
+                ValueJson::Int(n) => n.to_string(),
+                ValueJson::Float(f) => f.to_string(),
+                ValueJson::Bool(b) => b.to_string(),
+            };
             (r.channel.clone(), v_str, r.stamp.tick)
         })
         .collect();
 
     let actual_effects = replay(engine, content);
-    let actual: Vec<(String, String, u64)> = actual_effects.iter()
-        .map(|e| (sink_kind_str(&e.sink).to_string(), e.value_str.clone(), e.stamp.tick))
+    let actual: Vec<(String, String, u64)> = actual_effects
+        .iter()
+        .map(|e| {
+            (
+                sink_kind_str(&e.sink).to_string(),
+                e.value_str.clone(),
+                e.stamp.tick,
+            )
+        })
         .collect();
 
     if expected == actual {
-        println!("✓ replay assertion PASSED ({} effects match)\n", expected.len());
+        println!(
+            "✓ replay assertion PASSED ({} effects match)\n",
+            expected.len()
+        );
         return Ok(());
     }
 
@@ -198,14 +235,16 @@ pub fn replay_and_assert(engine: &mut Engine, content: &str) -> Result<(), Vec<S
         let exp = expected.get(i);
         let act = actual.get(i);
         if exp != act {
-            mismatches.push(format!(
-                "  effect[{i}]: expected {:?}  got {:?}",
-                exp, act
-            ));
+            mismatches.push(format!("  effect[{i}]: expected {:?}  got {:?}", exp, act));
         }
     }
-    println!("✗ replay assertion FAILED ({} mismatches):", mismatches.len());
-    for m in &mismatches { println!("{m}"); }
+    println!(
+        "✗ replay assertion FAILED ({} mismatches):",
+        mismatches.len()
+    );
+    for m in &mismatches {
+        println!("{m}");
+    }
     Err(mismatches)
 }
 
@@ -220,14 +259,21 @@ pub fn replay_legacy(engine: &mut Engine, content: &str) {
     let mut n = 0usize;
     for line in content.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
 
         // Try new format first
         if let Ok(rec) = serde_json::from_str::<TraceRecord>(line) {
             if rec.kind == "in" {
-                let v     = value_json_to_value(&rec.v);
+                let v = value_json_to_value(&rec.v);
                 let stamp = Stamp::at(rec.stamp.clock, rec.stamp.tick);
-                let ev    = Event { stamp, v, tag: None, seq: 0 };
+                let ev = Event {
+                    stamp,
+                    v,
+                    tag: None,
+                    seq: 0,
+                };
                 let _ = engine.inject(&rec.channel, ev);
                 n += 1;
                 continue;
@@ -235,11 +281,20 @@ pub fn replay_legacy(engine: &mut Engine, content: &str) {
         }
         // Try legacy {source, stamp, v} format
         #[derive(Deserialize)]
-        struct LegacyEntry { source: String, stamp: StampJson, v: ValueJson }
+        struct LegacyEntry {
+            source: String,
+            stamp: StampJson,
+            v: ValueJson,
+        }
         if let Ok(e) = serde_json::from_str::<LegacyEntry>(line) {
-            let v     = value_json_to_value(&e.v);
+            let v = value_json_to_value(&e.v);
             let stamp = Stamp::at(e.stamp.clock, e.stamp.tick);
-            let ev    = Event { stamp, v, tag: None, seq: 0 };
+            let ev = Event {
+                stamp,
+                v,
+                tag: None,
+                seq: 0,
+            };
             let _ = engine.inject(&e.source, ev);
             n += 1;
         } else {
@@ -258,10 +313,13 @@ pub fn replay_legacy(engine: &mut Engine, content: &str) {
 #[allow(dead_code)]
 pub fn log_entry(source: &str, stamp: Stamp, v: &Value) -> String {
     let rec = TraceRecord {
-        kind:    "in".into(),
+        kind: "in".into(),
         channel: source.to_string(),
-        stamp:   StampJson { clock: stamp.clock, tick: stamp.tick },
-        v:       value_to_json(v),
+        stamp: StampJson {
+            clock: stamp.clock,
+            tick: stamp.tick,
+        },
+        v: value_to_json(v),
     };
     serde_json::to_string(&rec).unwrap_or_default()
 }

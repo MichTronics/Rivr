@@ -24,7 +24,10 @@ pub struct ParseError {
 
 impl ParseError {
     fn new(pos: usize, msg: impl Into<String>) -> Self {
-        Self { pos, msg: msg.into() }
+        Self {
+            pos,
+            msg: msg.into(),
+        }
     }
 }
 
@@ -46,7 +49,9 @@ struct Parser<'s> {
 }
 
 impl<'s> Parser<'s> {
-    fn new(src: &'s str) -> Self { Self { src, pos: 0 } }
+    fn new(src: &'s str) -> Self {
+        Self { src, pos: 0 }
+    }
 
     // ── cursor helpers ────────────────────────────────────────────────────
 
@@ -56,15 +61,11 @@ impl<'s> Parser<'s> {
 
     fn skip_ws(&mut self) {
         loop {
-            while self.pos < self.src.len()
-                && self.src.as_bytes()[self.pos].is_ascii_whitespace()
-            {
+            while self.pos < self.src.len() && self.src.as_bytes()[self.pos].is_ascii_whitespace() {
                 self.pos += 1;
             }
             if self.src[self.pos..].starts_with("//") {
-                while self.pos < self.src.len()
-                    && self.src.as_bytes()[self.pos] != b'\n'
-                {
+                while self.pos < self.src.len() && self.src.as_bytes()[self.pos] != b'\n' {
                     self.pos += 1;
                 }
             } else {
@@ -75,20 +76,30 @@ impl<'s> Parser<'s> {
 
     fn eat(&mut self, kw: &str) -> bool {
         self.skip_ws();
-        if !self.src[self.pos..].starts_with(kw) { return false; }
+        if !self.src[self.pos..].starts_with(kw) {
+            return false;
+        }
         let after = self.pos + kw.len();
         // Do not consume if it is just a prefix of a longer identifier.
-        let last_alnum = kw.chars().last().map(|c| c.is_alphanumeric() || c == '_').unwrap_or(false);
+        let last_alnum = kw
+            .chars()
+            .last()
+            .map(|c| c.is_alphanumeric() || c == '_')
+            .unwrap_or(false);
         if last_alnum {
             let next = self.src[after..].chars().next().unwrap_or('\0');
-            if next.is_alphanumeric() || next == '_' { return false; }
+            if next.is_alphanumeric() || next == '_' {
+                return false;
+            }
         }
         self.pos += kw.len();
         true
     }
 
     fn expect(&mut self, kw: &str) -> Result<()> {
-        if self.eat(kw) { return Ok(()); }
+        if self.eat(kw) {
+            return Ok(());
+        }
         self.skip_ws();
         let ctx: String = self.src[self.pos..].chars().take(12).collect();
         Err(ParseError::new(
@@ -109,7 +120,11 @@ impl<'s> Parser<'s> {
         let start = self.pos;
         while self.pos < self.src.len() {
             let b = self.src.as_bytes()[self.pos];
-            if b.is_ascii_alphanumeric() || b == b'_' { self.pos += 1; } else { break; }
+            if b.is_ascii_alphanumeric() || b == b'_' {
+                self.pos += 1;
+            } else {
+                break;
+            }
         }
         if self.pos == start {
             return Err(ParseError::new(self.pos, "expected identifier"));
@@ -123,7 +138,9 @@ impl<'s> Parser<'s> {
         while self.pos < self.src.len() && self.src.as_bytes()[self.pos].is_ascii_digit() {
             self.pos += 1;
         }
-        if self.pos == start { return Err(ParseError::new(self.pos, "expected integer")); }
+        if self.pos == start {
+            return Err(ParseError::new(self.pos, "expected integer"));
+        }
         self.src[start..self.pos]
             .parse::<u64>()
             .map_err(|e| ParseError::new(start, e.to_string()))
@@ -134,9 +151,15 @@ impl<'s> Parser<'s> {
         let start = self.pos;
         while self.pos < self.src.len() {
             let b = self.src.as_bytes()[self.pos];
-            if b.is_ascii_digit() || b == b'.' { self.pos += 1; } else { break; }
+            if b.is_ascii_digit() || b == b'.' {
+                self.pos += 1;
+            } else {
+                break;
+            }
         }
-        if self.pos == start { return Err(ParseError::new(self.pos, "expected number")); }
+        if self.pos == start {
+            return Err(ParseError::new(self.pos, "expected number"));
+        }
         self.src[start..self.pos]
             .parse::<f64>()
             .map_err(|e| ParseError::new(start, e.to_string()))
@@ -151,15 +174,35 @@ impl<'s> Parser<'s> {
                 return Err(ParseError::new(self.pos, "unterminated string literal"));
             }
             let b = self.src.as_bytes()[self.pos];
-            if b == b'"' { self.pos += 1; break; }
+            if b == b'"' {
+                self.pos += 1;
+                break;
+            }
             if b == b'\\' {
                 self.pos += 1;
                 match self.src.as_bytes().get(self.pos).copied().unwrap_or(0) {
-                    b'n'  => { result.push('\n'); self.pos += 1; }
-                    b't'  => { result.push('\t'); self.pos += 1; }
-                    b'\\' => { result.push('\\'); self.pos += 1; }
-                    b'"'  => { result.push('"');  self.pos += 1; }
-                    c => return Err(ParseError::new(self.pos, format!("unknown escape \\{}", c as char))),
+                    b'n' => {
+                        result.push('\n');
+                        self.pos += 1;
+                    }
+                    b't' => {
+                        result.push('\t');
+                        self.pos += 1;
+                    }
+                    b'\\' => {
+                        result.push('\\');
+                        self.pos += 1;
+                    }
+                    b'"' => {
+                        result.push('"');
+                        self.pos += 1;
+                    }
+                    c => {
+                        return Err(ParseError::new(
+                            self.pos,
+                            format!("unknown escape \\{}", c as char),
+                        ))
+                    }
                 }
             } else {
                 result.push(self.src[self.pos..].chars().next().unwrap());
@@ -176,7 +219,11 @@ impl<'s> Parser<'s> {
         let start = self.pos;
         while self.pos < self.src.len() {
             let b = self.src.as_bytes()[self.pos];
-            if b.is_ascii_alphanumeric() || b == b'_' || b == b'.' { self.pos += 1; } else { break; }
+            if b.is_ascii_alphanumeric() || b == b'_' || b == b'.' {
+                self.pos += 1;
+            } else {
+                break;
+            }
         }
         self.src[start..self.pos].to_string()
     }
@@ -195,13 +242,34 @@ impl<'s> Parser<'s> {
         }
 
         match name.as_str() {
-            "map.upper"       => { self.expect("()")?; Ok(PipeOp::MapUpper) }
-            "map.lower"       => { self.expect("()")?; Ok(PipeOp::MapLower) }
-            "map.trim"        => { self.expect("()")?; Ok(PipeOp::MapTrim) }
-            "filter.nonempty" => { self.expect("()")?; Ok(PipeOp::FilterNonempty) }
-            "fold.count"      => { self.expect("()")?; Ok(PipeOp::FoldCount) }
-            "fold.sum"        => { self.expect("()")?; Ok(PipeOp::FoldSum) }
-            "fold.last"       => { self.expect("()")?; Ok(PipeOp::FoldLast) }
+            "map.upper" => {
+                self.expect("()")?;
+                Ok(PipeOp::MapUpper)
+            }
+            "map.lower" => {
+                self.expect("()")?;
+                Ok(PipeOp::MapLower)
+            }
+            "map.trim" => {
+                self.expect("()")?;
+                Ok(PipeOp::MapTrim)
+            }
+            "filter.nonempty" => {
+                self.expect("()")?;
+                Ok(PipeOp::FilterNonempty)
+            }
+            "fold.count" => {
+                self.expect("()")?;
+                Ok(PipeOp::FoldCount)
+            }
+            "fold.sum" => {
+                self.expect("()")?;
+                Ok(PipeOp::FoldSum)
+            }
+            "fold.last" => {
+                self.expect("()")?;
+                Ok(PipeOp::FoldLast)
+            }
 
             "filter.kind" => {
                 self.expect("(")?;
@@ -214,8 +282,10 @@ impl<'s> Parser<'s> {
                 self.expect("(")?;
                 let t = self.parse_uint()?;
                 if t > 255 {
-                    return Err(ParseError::new(self.pos,
-                        "filter.pkt_type argument must be 0–255"));
+                    return Err(ParseError::new(
+                        self.pos,
+                        "filter.pkt_type argument must be 0–255",
+                    ));
                 }
                 self.expect(")")?;
                 Ok(PipeOp::FilterPktType(t as u8))
@@ -254,10 +324,18 @@ impl<'s> Parser<'s> {
                         "drop_oldest" | "DropOldest" => crate::ast::WindowPolicy::DropOldest,
                         "drop_newest" | "DropNewest" => crate::ast::WindowPolicy::DropNewest,
                         "flush_early" | "FlushEarly" => crate::ast::WindowPolicy::FlushEarly,
-                        other => return Err(ParseError::new(self.pos,
-                            format!("unknown window policy `{other}`"))),
+                        other => {
+                            return Err(ParseError::new(
+                                self.pos,
+                                format!("unknown window policy `{other}`"),
+                            ))
+                        }
                     };
-                    Ok(PipeOp::WindowTicksCapped { ticks: n, cap, policy })
+                    Ok(PipeOp::WindowTicksCapped {
+                        ticks: n,
+                        cap,
+                        policy,
+                    })
                 } else {
                     self.expect(")")?;
                     Ok(PipeOp::WindowTicks(n))
@@ -278,7 +356,7 @@ impl<'s> Parser<'s> {
 
             "budget" => {
                 self.expect("(")?;
-                let rate  = self.parse_float()?;
+                let rate = self.parse_float()?;
                 self.expect(",")?;
                 let burst = self.parse_uint()?;
                 self.expect(")")?;
@@ -311,7 +389,11 @@ impl<'s> Parser<'s> {
                 skip_named!("toa_us");
                 let toa_us = self.parse_uint()?;
                 self.expect(")")?;
-                Ok(PipeOp::BudgetToaUs { window_ms, duty, toa_us })
+                Ok(PipeOp::BudgetToaUs {
+                    window_ms,
+                    duty,
+                    toa_us,
+                })
             }
 
             "tag" => {
@@ -340,8 +422,12 @@ impl<'s> Parser<'s> {
             self.expect(")")?;
             return Ok(Expr::Merge(a, b));
         }
-        if self.peek() == '"' { return Ok(Expr::Lit(Literal::Str(self.parse_string()?))); }
-        if self.peek().is_ascii_digit() { return Ok(Expr::Lit(Literal::Int(self.parse_uint()? as i64))); }
+        if self.peek() == '"' {
+            return Ok(Expr::Lit(Literal::Str(self.parse_string()?)));
+        }
+        if self.peek().is_ascii_digit() {
+            return Ok(Expr::Lit(Literal::Int(self.parse_uint()? as i64)));
+        }
         Ok(Expr::Ident(self.parse_ident()?))
     }
 
@@ -352,7 +438,10 @@ impl<'s> Parser<'s> {
             if self.src[self.pos..].starts_with("|>") {
                 self.pos += 2;
                 let op = self.parse_pipe_op()?;
-                lhs = Expr::Pipe { lhs: Box::new(lhs), op };
+                lhs = Expr::Pipe {
+                    lhs: Box::new(lhs),
+                    op,
+                };
             } else {
                 break;
             }
@@ -366,10 +455,30 @@ impl<'s> Parser<'s> {
         self.skip_ws();
         let name = self.read_dotted_name();
         match name.as_str() {
-            "io.usb.print"   => { self.expect("(")? ; let a = self.parse_ident()? ; self.expect(")")? ; Ok(Sink::UsbPrint(a)) }
-            "io.lora.tx"     => { self.expect("(")? ; let a = self.parse_ident()? ; self.expect(")")? ; Ok(Sink::LoraTx(a)) }
-            "io.lora.beacon" => { self.expect("(")? ; let a = self.parse_ident()? ; self.expect(")")? ; Ok(Sink::LoraBeacon(a)) }
-            "io.debug.dump"  => { self.expect("(")? ; let a = self.parse_ident()? ; self.expect(")")? ; Ok(Sink::DebugDump(a)) }
+            "io.usb.print" => {
+                self.expect("(")?;
+                let a = self.parse_ident()?;
+                self.expect(")")?;
+                Ok(Sink::UsbPrint(a))
+            }
+            "io.lora.tx" => {
+                self.expect("(")?;
+                let a = self.parse_ident()?;
+                self.expect(")")?;
+                Ok(Sink::LoraTx(a))
+            }
+            "io.lora.beacon" => {
+                self.expect("(")?;
+                let a = self.parse_ident()?;
+                self.expect(")")?;
+                Ok(Sink::LoraBeacon(a))
+            }
+            "io.debug.dump" => {
+                self.expect("(")?;
+                let a = self.parse_ident()?;
+                self.expect(")")?;
+                Ok(Sink::DebugDump(a))
+            }
             other => Err(ParseError::new(self.pos, format!("unknown sink `{other}`"))),
         }
     }
@@ -379,9 +488,9 @@ impl<'s> Parser<'s> {
     fn parse_source_kind(&mut self) -> Result<SourceKind> {
         let name = self.parse_ident()?;
         match name.as_str() {
-            "usb"          => Ok(SourceKind::Usb),
-            "lora"         => Ok(SourceKind::Lora),
-            "rf"           => Ok(SourceKind::Rf),
+            "usb" => Ok(SourceKind::Usb),
+            "lora" => Ok(SourceKind::Lora),
+            "rf" => Ok(SourceKind::Rf),
             "programmatic" => Ok(SourceKind::Programmatic),
             "timer" => {
                 self.expect("(")?;
@@ -392,7 +501,10 @@ impl<'s> Parser<'s> {
                 self.expect(")")?;
                 Ok(SourceKind::Timer { interval_ms })
             }
-            other => Err(ParseError::new(self.pos, format!("unknown source kind `{other}`"))),
+            other => Err(ParseError::new(
+                self.pos,
+                format!("unknown source kind `{other}`"),
+            )),
         }
     }
 
@@ -402,14 +514,16 @@ impl<'s> Parser<'s> {
         self.skip_ws();
 
         if self.eat("source") {
-            let name  = self.parse_ident()?;
+            let name = self.parse_ident()?;
             // Optional `@clock_name` annotation.
             let clock = if self.eat("@") {
                 let cname = self.parse_ident()?;
                 Some(ClockAnnotation { name: cname })
-            } else { None };
+            } else {
+                None
+            };
             self.expect("=")?;
-            let kind  = self.parse_source_kind()?;
+            let kind = self.parse_source_kind()?;
             self.expect(";")?;
             return Ok(Stmt::Source { name, clock, kind });
         }
@@ -427,7 +541,10 @@ impl<'s> Parser<'s> {
             let mut sinks = Vec::new();
             loop {
                 self.skip_ws();
-                if self.peek() == '}' { self.pos += 1; break; }
+                if self.peek() == '}' {
+                    self.pos += 1;
+                    break;
+                }
                 sinks.push(self.parse_sink()?);
                 self.expect(";")?;
             }
@@ -435,12 +552,17 @@ impl<'s> Parser<'s> {
         }
 
         let ctx: String = self.src[self.pos..].chars().take(16).collect();
-        Err(ParseError::new(self.pos, format!("expected `source`, `let`, or `emit`; found `{ctx}…`")))
+        Err(ParseError::new(
+            self.pos,
+            format!("expected `source`, `let`, or `emit`; found `{ctx}…`"),
+        ))
     }
 
     fn parse_program(&mut self) -> Result<Program> {
         let mut stmts = Vec::new();
-        while !self.at_end() { stmts.push(self.parse_stmt()?); }
+        while !self.at_end() {
+            stmts.push(self.parse_stmt()?);
+        }
         Ok(Program { stmts })
     }
 }
@@ -452,4 +574,81 @@ impl<'s> Parser<'s> {
 /// Parse a RIVR source string into a [`Program`] AST.
 pub fn parse(src: &str) -> Result<Program> {
     Parser::new(src).parse_program()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Empty source string produces an empty program (zero statements).
+    #[test]
+    fn parse_empty_program() {
+        let prog = parse("").expect("empty program must parse");
+        assert!(prog.stmts.is_empty());
+    }
+
+    /// A comment-only file also produces an empty program.
+    #[test]
+    fn parse_comment_only() {
+        let prog = parse("// just a comment\n").expect("comment-only must parse");
+        assert!(prog.stmts.is_empty());
+    }
+
+    /// A minimal valid program: one source, one let, one emit.
+    #[test]
+    fn parse_minimal_valid_program() {
+        let src = r#"
+            source radio = rf;
+            let stream = radio;
+            emit { io.lora.tx(stream); }
+        "#;
+        let prog = parse(src).expect("minimal program must parse");
+        assert_eq!(prog.stmts.len(), 3, "expected source + let + emit");
+    }
+
+    /// A source with a clock annotation parses without error.
+    #[test]
+    fn parse_source_with_clock() {
+        let src = "source rf_rx @lmp = rf;";
+        parse(src).expect("source with clock annotation must parse");
+    }
+
+    /// A pipe-chain with multiple operators parses without error.
+    #[test]
+    fn parse_pipe_chain() {
+        let src = r#"
+            source kbd = usb;
+            let filtered = kbd |> map.upper() |> filter.nonempty();
+            emit { io.usb.print(filtered); }
+        "#;
+        parse(src).expect("pipe chain must parse");
+    }
+
+    /// An unrecognised token must yield a `ParseError` (not a panic).
+    #[test]
+    fn parse_invalid_token_returns_error() {
+        let result = parse("@@@@");
+        assert!(result.is_err(), "invalid token must produce a ParseError");
+    }
+
+    /// A source declaration with a missing semicolon must fail gracefully.
+    #[test]
+    fn parse_missing_semicolon_returns_error() {
+        let result = parse("source x = usb");
+        assert!(result.is_err(), "missing ';' must produce a ParseError");
+    }
+
+    /// An emit block that is never closed (missing `}`) must fail gracefully.
+    #[test]
+    fn parse_unterminated_emit_returns_error() {
+        let result = parse("source x = usb; emit { io.usb.print(x);");
+        assert!(
+            result.is_err(),
+            "unterminated emit block must produce a ParseError"
+        );
+    }
 }

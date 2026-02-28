@@ -16,7 +16,12 @@
 //! - Static type-check pass validates sources, clocks, and emit bindings.
 
 #[cfg(not(feature = "std"))]
-use alloc::{collections::BTreeMap, string::{String, ToString}, vec::Vec, format};
+use alloc::{
+    collections::BTreeMap,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
@@ -34,16 +39,23 @@ use crate::runtime::{
 
 #[derive(Debug)]
 pub struct CompileError {
-    pub kind:    ErrorKind,
+    pub kind: ErrorKind,
     pub message: String,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ErrorKind { Error, Warning }
+pub enum ErrorKind {
+    Error,
+    Warning,
+}
 
 impl core::fmt::Display for CompileError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let tag = if self.kind == ErrorKind::Error { "ERROR" } else { "WARN" };
+        let tag = if self.kind == ErrorKind::Error {
+            "ERROR"
+        } else {
+            "WARN"
+        };
         write!(f, "[{tag}] {}", self.message)
     }
 }
@@ -55,24 +67,24 @@ pub type CompileResult = Result<(Engine, Vec<CompileError>), Vec<CompileError>>;
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Compiler {
-    engine:     Engine,
+    engine: Engine,
     #[cfg(feature = "std")]
-    bindings:   HashMap<String, NodeId>,
+    bindings: HashMap<String, NodeId>,
     #[cfg(not(feature = "std"))]
-    bindings:   BTreeMap<String, NodeId>,
-    diags:      Vec<CompileError>,
-    next_anon:  usize,
+    bindings: BTreeMap<String, NodeId>,
+    diags: Vec<CompileError>,
+    next_anon: usize,
 }
 
 impl Compiler {
     fn new() -> Self {
         Self {
-            engine:    Engine::new(),
+            engine: Engine::new(),
             #[cfg(feature = "std")]
-            bindings:  HashMap::new(),
+            bindings: HashMap::new(),
             #[cfg(not(feature = "std"))]
-            bindings:  BTreeMap::new(),
-            diags:     Vec::new(),
+            bindings: BTreeMap::new(),
+            diags: Vec::new(),
             next_anon: 0,
         }
     }
@@ -84,10 +96,16 @@ impl Compiler {
     }
 
     fn error(&mut self, msg: impl Into<String>) {
-        self.diags.push(CompileError { kind: ErrorKind::Error, message: msg.into() });
+        self.diags.push(CompileError {
+            kind: ErrorKind::Error,
+            message: msg.into(),
+        });
     }
     fn warn(&mut self, msg: impl Into<String>) {
-        self.diags.push(CompileError { kind: ErrorKind::Warning, message: msg.into() });
+        self.diags.push(CompileError {
+            kind: ErrorKind::Warning,
+            message: msg.into(),
+        });
     }
     fn resolve(&self, name: &str) -> Option<NodeId> {
         self.bindings.get(name).copied()
@@ -97,55 +115,62 @@ impl Compiler {
 
     fn compile_op(&mut self, op: &PipeOp) -> (String, NodeKind) {
         match op {
-            PipeOp::MapUpper       => ("map.upper".into(),      NodeKind::MapUpper),
-            PipeOp::MapLower       => ("map.lower".into(),      NodeKind::MapLower),
-            PipeOp::MapTrim        => ("map.trim".into(),       NodeKind::MapTrim),
+            PipeOp::MapUpper => ("map.upper".into(), NodeKind::MapUpper),
+            PipeOp::MapLower => ("map.lower".into(), NodeKind::MapLower),
+            PipeOp::MapTrim => ("map.trim".into(), NodeKind::MapTrim),
             PipeOp::FilterNonempty => ("filter.nonempty".into(), NodeKind::FilterNonempty),
-            PipeOp::FoldCount      => ("fold.count".into(),      NodeKind::FoldCount { count: 0 }),
-            PipeOp::FoldSum        => ("fold.sum".into(),        NodeKind::FoldSum   { sum: 0 }),
-            PipeOp::FoldLast       => ("fold.last".into(),       NodeKind::FoldLast  { last: None }),
+            PipeOp::FoldCount => ("fold.count".into(), NodeKind::FoldCount { count: 0 }),
+            PipeOp::FoldSum => ("fold.sum".into(), NodeKind::FoldSum { sum: 0 }),
+            PipeOp::FoldLast => ("fold.last".into(), NodeKind::FoldLast { last: None }),
 
-            PipeOp::FilterKind(k)  => (
+            PipeOp::FilterKind(k) => (
                 format!("filter.kind({})", k),
                 NodeKind::FilterKind { kind: k.clone() },
-            ),            PipeOp::FilterPktType(t) => (
+            ),
+            PipeOp::FilterPktType(t) => (
                 format!("filter.pkt_type({})", t),
                 NodeKind::FilterPktType { pkt_type: *t },
             ),
             // ── Ms operators → alias inner WindowTicks/ThrottleTicks/DelayTicks ──
             PipeOp::WindowMs(ms) => (
                 format!("window.ms({ms})"),
-                NodeKind::WindowMs { inner: Box::new(NodeKind::WindowTicks {
-                    duration:      *ms,
-                    cap:           WINDOW_CAP,
-                    buffer:        BoundedVec::new(),
-                    window_start:  0,
-                    buffer_policy: DropPolicy::DropOldest,
-                })},
+                NodeKind::WindowMs {
+                    inner: Box::new(NodeKind::WindowTicks {
+                        duration: *ms,
+                        cap: WINDOW_CAP,
+                        buffer: BoundedVec::new(),
+                        window_start: 0,
+                        buffer_policy: DropPolicy::DropOldest,
+                    }),
+                },
             ),
             PipeOp::ThrottleMs(ms) => (
                 format!("throttle.ms({ms})"),
-                NodeKind::ThrottleMs { inner: Box::new(NodeKind::ThrottleTicks {
-                    interval:  *ms,
-                    last_emit: u64::MAX,
-                })},
+                NodeKind::ThrottleMs {
+                    inner: Box::new(NodeKind::ThrottleTicks {
+                        interval: *ms,
+                        last_emit: u64::MAX,
+                    }),
+                },
             ),
             PipeOp::DebounceMs(ms) => (
                 format!("debounce.ms({ms})"),
-                NodeKind::DebounceMs { inner: Box::new(NodeKind::DelayTicks {
-                    delay:   *ms,
-                    pending: None,
-                })},
+                NodeKind::DebounceMs {
+                    inner: Box::new(NodeKind::DelayTicks {
+                        delay: *ms,
+                        pending: None,
+                    }),
+                },
             ),
 
             // ── Tick-domain ───────────────────────────────────────────────
             PipeOp::WindowTicks(n) => (
                 format!("window.ticks({n})"),
                 NodeKind::WindowTicks {
-                    duration:      *n,
-                    cap:           WINDOW_CAP,
-                    buffer:        BoundedVec::new(),
-                    window_start:  0,
+                    duration: *n,
+                    cap: WINDOW_CAP,
+                    buffer: BoundedVec::new(),
+                    window_start: 0,
                     buffer_policy: DropPolicy::DropOldest,
                 },
             ),
@@ -160,21 +185,27 @@ impl Compiler {
                 (
                     format!("window.ticks({ticks},{cap},{policy:?})"),
                     NodeKind::WindowTicks {
-                        duration:      *ticks,
-                        cap:           runtime_cap,
-                        buffer:        BoundedVec::new(),
-                        window_start:  0,
+                        duration: *ticks,
+                        cap: runtime_cap,
+                        buffer: BoundedVec::new(),
+                        window_start: 0,
                         buffer_policy: dp,
                     },
                 )
             }
             PipeOp::ThrottleTicks(n) => (
                 format!("throttle.ticks({n})"),
-                NodeKind::ThrottleTicks { interval: *n, last_emit: u64::MAX },
+                NodeKind::ThrottleTicks {
+                    interval: *n,
+                    last_emit: u64::MAX,
+                },
             ),
             PipeOp::DelayTicks(n) => (
                 format!("delay.ticks({n})"),
-                NodeKind::DelayTicks { delay: *n, pending: None },
+                NodeKind::DelayTicks {
+                    delay: *n,
+                    pending: None,
+                },
             ),
 
             // ── Rate limiting ─────────────────────────────────────────────
@@ -182,9 +213,9 @@ impl Compiler {
                 format!("budget({rate:.2})"),
                 NodeKind::Budget {
                     rate_per_tick: rate / 1000.0,
-                    burst:         *burst,
-                    tokens:        *burst as f64,
-                    last_refill:   0,
+                    burst: *burst,
+                    tokens: *burst as f64,
+                    last_refill: 0,
                 },
             ),
             PipeOp::BudgetAirtime { window_ticks, duty } => {
@@ -192,32 +223,38 @@ impl Compiler {
                 (
                     format!("budget.airtime({window_ticks},{duty:.3})"),
                     NodeKind::AirtimeBudget {
-                        window_ticks:      *window_ticks,
+                        window_ticks: *window_ticks,
                         budget_per_window,
-                        used:              0,
-                        window_start:      0,
-                        total_dropped:     0,
+                        used: 0,
+                        window_start: 0,
+                        total_dropped: 0,
                     },
                 )
             }
-            PipeOp::BudgetToaUs { window_ms, duty, toa_us } => {
+            PipeOp::BudgetToaUs {
+                window_ms,
+                duty,
+                toa_us,
+            } => {
                 let budget_us = (*window_ms as f64 * duty * 1_000.0).floor() as u64;
                 (
                     format!("budget.toa_us({window_ms},{duty:.3},{toa_us}us)"),
                     NodeKind::ToaBudget {
-                        window_ms:        *window_ms,
+                        window_ms: *window_ms,
                         budget_us,
-                        used_us:          0,
-                        window_start:     0,
+                        used_us: 0,
+                        window_start: 0,
                         toa_us_per_event: *toa_us,
-                        total_dropped:    0,
+                        total_dropped: 0,
                     },
                 )
             }
 
             PipeOp::Tag(label) => (
                 format!("tag({})", label),
-                NodeKind::Tag { label: label.clone() },
+                NodeKind::Tag {
+                    label: label.clone(),
+                },
             ),
         }
     }
@@ -226,12 +263,13 @@ impl Compiler {
 
     fn compile_expr(&mut self, expr: &Expr) -> Option<NodeId> {
         match expr {
-            Expr::Ident(name) => {
-                match self.resolve(name) {
-                    Some(id) => Some(id),
-                    None => { self.error(format!("undefined stream `{name}`")); None }
+            Expr::Ident(name) => match self.resolve(name) {
+                Some(id) => Some(id),
+                None => {
+                    self.error(format!("undefined stream `{name}`"));
+                    None
                 }
-            }
+            },
             Expr::Lit(_) => {
                 self.warn("standalone literals are not yet supported as stream expressions");
                 None
@@ -241,16 +279,28 @@ impl Compiler {
                 let (name, kind) = self.compile_op(op);
                 let node_name = self.fresh(&name);
                 let node = Node::new(self.engine.nodes.len(), node_name, kind);
-                let id   = self.engine.add_node(node);
+                let id = self.engine.add_node(node);
                 self.engine.connect(upstream, id);
                 Some(id)
             }
             Expr::Merge(a, b) => {
-                let id_a = match self.resolve(a) { Some(x) => x, None => { self.error(format!("undefined stream `{a}` in merge")); return None; } };
-                let id_b = match self.resolve(b) { Some(x) => x, None => { self.error(format!("undefined stream `{b}` in merge")); return None; } };
+                let id_a = match self.resolve(a) {
+                    Some(x) => x,
+                    None => {
+                        self.error(format!("undefined stream `{a}` in merge"));
+                        return None;
+                    }
+                };
+                let id_b = match self.resolve(b) {
+                    Some(x) => x,
+                    None => {
+                        self.error(format!("undefined stream `{b}` in merge"));
+                        return None;
+                    }
+                };
                 let name = self.fresh("merge");
                 let node = Node::new(self.engine.nodes.len(), name, NodeKind::Merge);
-                let id   = self.engine.add_node(node);
+                let id = self.engine.add_node(node);
                 self.engine.connect(id_a, id);
                 self.engine.connect(id_b, id);
                 Some(id)
@@ -264,10 +314,7 @@ impl Compiler {
         match stmt {
             Stmt::Source { name, clock, kind } => {
                 // Resolve clock id.
-                let clk_id: u8 = clock
-                    .as_ref()
-                    .map(|c| clock_id(&c.name))
-                    .unwrap_or(0); // default: mono
+                let clk_id: u8 = clock.as_ref().map(|c| clock_id(&c.name)).unwrap_or(0); // default: mono
 
                 // For timer sources use clock 0 (mono) regardless of annotation.
                 let (effective_clock, interval_ms) = match kind {
@@ -276,17 +323,19 @@ impl Compiler {
                 };
 
                 let node_kind = NodeKind::Source {
-                    name:        name.clone(),
-                    clock:       effective_clock,
+                    name: name.clone(),
+                    clock: effective_clock,
                     interval_ms,
                 };
                 let node = Node::new(self.engine.nodes.len(), name.clone(), node_kind);
-                let id   = self.engine.add_node(node);
+                let id = self.engine.add_node(node);
                 self.engine.register_source(name.clone(), id);
                 self.bindings.insert(name.clone(), id);
 
                 if matches!(kind, SourceKind::Programmatic) {
-                    self.warn(format!("source `{name}` is programmatic – events must be injected by the host"));
+                    self.warn(format!(
+                        "source `{name}` is programmatic – events must be injected by the host"
+                    ));
                 }
             }
 
@@ -301,18 +350,25 @@ impl Compiler {
             Stmt::Emit { sinks } => {
                 for sink in sinks {
                     let (stream_name, sink_kind) = match sink {
-                        Sink::UsbPrint(n)   => (n, SinkKind::UsbPrint),
-                        Sink::LoraTx(n)     => (n, SinkKind::LoraTx),
+                        Sink::UsbPrint(n) => (n, SinkKind::UsbPrint),
+                        Sink::LoraTx(n) => (n, SinkKind::LoraTx),
                         Sink::LoraBeacon(n) => (n, SinkKind::LoraBeacon),
-                        Sink::DebugDump(n)  => (n, SinkKind::DebugDump),
+                        Sink::DebugDump(n) => (n, SinkKind::DebugDump),
                     };
                     let upstream = match self.resolve(stream_name) {
                         Some(id) => id,
-                        None => { self.error(format!("emit references undefined stream `{stream_name}`")); continue; }
+                        None => {
+                            self.error(format!("emit references undefined stream `{stream_name}`"));
+                            continue;
+                        }
                     };
                     let node_name = format!("emit({})", stream_name);
-                    let node = Node::new(self.engine.nodes.len(), node_name, NodeKind::Emit { sink: sink_kind });
-                    let id   = self.engine.add_node(node);
+                    let node = Node::new(
+                        self.engine.nodes.len(),
+                        node_name,
+                        NodeKind::Emit { sink: sink_kind },
+                    );
+                    let id = self.engine.add_node(node);
                     self.engine.connect(upstream, id);
                 }
             }
@@ -320,10 +376,20 @@ impl Compiler {
     }
 
     fn type_check(&mut self) {
-        if !self.engine.nodes.iter().any(|n| matches!(n.kind, NodeKind::Source { .. })) {
+        if !self
+            .engine
+            .nodes
+            .iter()
+            .any(|n| matches!(n.kind, NodeKind::Source { .. }))
+        {
             self.warn("program declares no `source` – no events will flow");
         }
-        if !self.engine.nodes.iter().any(|n| matches!(n.kind, NodeKind::Emit { .. })) {
+        if !self
+            .engine
+            .nodes
+            .iter()
+            .any(|n| matches!(n.kind, NodeKind::Emit { .. }))
+        {
             self.warn("program has no `emit` block – events are silently discarded");
         }
     }
@@ -336,8 +402,101 @@ impl Compiler {
 /// Compile a [`Program`] into a ready-to-run [`Engine`].
 pub fn compile(program: &Program) -> CompileResult {
     let mut c = Compiler::new();
-    for stmt in &program.stmts { c.compile_stmt(stmt); }
+    for stmt in &program.stmts {
+        c.compile_stmt(stmt);
+    }
     c.type_check();
     let has_errors = c.diags.iter().any(|d| d.kind == ErrorKind::Error);
-    if has_errors { Err(c.diags) } else { Ok((c.engine, c.diags)) }
+    if has_errors {
+        Err(c.diags)
+    } else {
+        Ok((c.engine, c.diags))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser;
+
+    fn compile_src(src: &str) -> CompileResult {
+        let prog = parser::parse(src).expect("test source must parse");
+        compile(&prog)
+    }
+
+    /// A well-formed program compiles successfully and produces no errors.
+    #[test]
+    fn compile_valid_program_succeeds() {
+        let src = r#"
+            source radio = rf;
+            let stream = radio;
+            emit { io.lora.tx(stream); }
+        "#;
+        let result = compile_src(src);
+        assert!(
+            result.is_ok(),
+            "valid program must compile: {:?}",
+            result.err()
+        );
+        let (_, warnings) = result.unwrap();
+        assert!(warnings.is_empty(), "no warnings expected: {:?}", warnings);
+    }
+
+    /// Emitting from an undeclared identifier must produce a compile error.
+    #[test]
+    fn compile_unknown_source_produces_error() {
+        let src = r#"
+            let stream = ghost;
+            emit { io.lora.tx(stream); }
+        "#;
+        let result = compile_src(src);
+        assert!(
+            result.is_err(),
+            "unknown source must produce a compile error"
+        );
+    }
+
+    /// A program using a pipe operator with no emit still compiles (warning at most).
+    #[test]
+    fn compile_no_emit_is_allowed() {
+        // The compiler should not crash on a program with only a source + let.
+        let src = r#"
+            source kbd = usb;
+            let up = kbd |> map.upper();
+        "#;
+        // May succeed with warnings; must not panic.
+        let _ = compile_src(src);
+    }
+
+    /// An empty program compiles to an engine with zero nodes.
+    #[test]
+    fn compile_empty_program() {
+        let src = "";
+        let result = compile_src(src);
+        assert!(result.is_ok(), "empty program must compile");
+        let (engine, _) = result.unwrap();
+        assert!(
+            engine.nodes.is_empty(),
+            "empty program should produce zero nodes"
+        );
+    }
+
+    /// timer() source compiles without error.
+    #[test]
+    fn compile_timer_source() {
+        let src = r#"
+            source tick = timer(1000);
+            emit { io.debug.dump(tick); }
+        "#;
+        let result = compile_src(src);
+        assert!(
+            result.is_ok(),
+            "timer source must compile: {:?}",
+            result.err()
+        );
+    }
 }

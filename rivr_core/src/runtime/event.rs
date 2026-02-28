@@ -21,10 +21,13 @@
 //! clock-tick.
 
 #[cfg(not(feature = "std"))]
-use alloc::{format, string::{String, ToString}};
+use alloc::{
+    format,
+    string::{String, ToString},
+};
 
-use serde::{Deserialize, Serialize};
 use super::value::Value;
+use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stamp
@@ -41,16 +44,22 @@ pub struct Stamp {
 
 impl Stamp {
     /// Convenience constructor.
-    pub fn new(clock: u8, tick: u64) -> Self { Self { clock, tick } }
+    pub fn new(clock: u8, tick: u64) -> Self {
+        Self { clock, tick }
+    }
 
     /// Shorthand: mono clock tick 0.
     pub const ZERO: Self = Self { clock: 0, tick: 0 };
 
     /// Mono clock (id 0) at the given millisecond.
-    pub fn mono(ms: u64) -> Self { Self { clock: 0, tick: ms } }
+    pub fn mono(ms: u64) -> Self {
+        Self { clock: 0, tick: ms }
+    }
 
     /// Named-clock tick.
-    pub fn at(clock: u8, tick: u64) -> Self { Self { clock, tick } }
+    pub fn at(clock: u8, tick: u64) -> Self {
+        Self { clock, tick }
+    }
 }
 
 /// Natural ordering: first by `clock`, then by `tick`.
@@ -62,7 +71,8 @@ impl PartialOrd for Stamp {
 }
 impl Ord for Stamp {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.clock.cmp(&other.clock)
+        self.clock
+            .cmp(&other.clock)
             .then(self.tick.cmp(&other.tick))
     }
 }
@@ -89,7 +99,12 @@ pub struct Event {
 impl Event {
     /// Create a plain untagged event with sequence 0.
     pub fn new(stamp: Stamp, v: Value) -> Self {
-        Self { stamp, v, tag: None, seq: 0 }
+        Self {
+            stamp,
+            v,
+            tag: None,
+            seq: 0,
+        }
     }
 
     /// Convenience: mono clock event at `ms` milliseconds.
@@ -99,7 +114,10 @@ impl Event {
 
     /// Clone attaching (or replacing) the trace tag.
     pub fn with_tag(self, tag: impl Into<String>) -> Self {
-        Self { tag: Some(tag.into()), ..self }
+        Self {
+            tag: Some(tag.into()),
+            ..self
+        }
     }
 
     /// Clone on a new stamp.
@@ -110,20 +128,30 @@ impl Event {
 
     /// The tick value of this event on its clock.
     #[inline]
-    pub fn tick(&self) -> u64 { self.stamp.tick }
+    pub fn tick(&self) -> u64 {
+        self.stamp.tick
+    }
 
     /// The clock domain of this event.
     #[inline]
-    pub fn clock(&self) -> u8 { self.stamp.clock }
+    pub fn clock(&self) -> u8 {
+        self.stamp.clock
+    }
 }
 
 impl core::fmt::Display for Event {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let tag_part = self.tag.as_deref().map(|t| format!(" tag={t}")).unwrap_or_default();
+        let tag_part = self
+            .tag
+            .as_deref()
+            .map(|t| format!(" tag={t}"))
+            .unwrap_or_default();
         write!(
             f,
             "[{}@clk{}:tick{}{tag_part}]",
-            self.v.display(), self.stamp.clock, self.stamp.tick
+            self.v.display(),
+            self.stamp.clock,
+            self.stamp.tick
         )
     }
 }

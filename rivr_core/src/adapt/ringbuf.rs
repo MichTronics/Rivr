@@ -35,15 +35,21 @@ use crate::runtime::value::Value;
 /// `CAP` must be a power of two for the modulo-free index wrap to be optimal
 /// (non-powers also work; the ring simply uses `% CAP`).
 pub struct RingBuf<T: Copy, const CAP: usize> {
-    buf:         [MaybeUninit<T>; CAP],
+    buf: [MaybeUninit<T>; CAP],
     /// Write index (producer advances this).
-    head:        usize,
+    head: usize,
     /// Read index (consumer advances this).
-    tail:        usize,
+    tail: usize,
     /// Total items dropped due to overflow (diagnostics).
-    pub drops:   u64,
+    pub drops: u64,
     /// Total items successfully enqueued.
-    pub pushed:  u64,
+    pub pushed: u64,
+}
+
+impl<T: Copy, const CAP: usize> Default for RingBuf<T, CAP> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T: Copy, const CAP: usize> RingBuf<T, CAP> {
@@ -53,10 +59,10 @@ impl<T: Copy, const CAP: usize> RingBuf<T, CAP> {
     pub const fn new() -> Self {
         Self {
             // SAFETY: `MaybeUninit` does not require initialisation.
-            buf:    unsafe { MaybeUninit::uninit().assume_init() },
-            head:   0,
-            tail:   0,
-            drops:  0,
+            buf: unsafe { MaybeUninit::uninit().assume_init() },
+            head: 0,
+            tail: 0,
+            drops: 0,
             pushed: 0,
         }
     }
@@ -67,11 +73,15 @@ impl<T: Copy, const CAP: usize> RingBuf<T, CAP> {
         self.head.wrapping_sub(self.tail) % (CAP + 1)
     }
 
-    pub fn is_empty(&self) -> bool { self.len() == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// `true` when the buffer can hold no more items without overwriting.
     #[inline]
-    pub fn is_full(&self) -> bool { self.len() >= CAP }
+    pub fn is_full(&self) -> bool {
+        self.len() >= CAP
+    }
 
     /// **Producer**: push one item.  Returns `false` if the buffer is full
     /// and the item was dropped.
@@ -89,7 +99,9 @@ impl<T: Copy, const CAP: usize> RingBuf<T, CAP> {
 
     /// **Consumer**: pop one item.  Returns `None` if the buffer is empty.
     pub fn pop(&mut self) -> Option<T> {
-        if self.is_empty() { return None; }
+        if self.is_empty() {
+            return None;
+        }
         let slot = self.tail % CAP;
         // SAFETY: slot is in [tail..head) which we have written.
         let item = unsafe { self.buf[slot].assume_init() };
@@ -102,8 +114,11 @@ impl<T: Copy, const CAP: usize> RingBuf<T, CAP> {
         let mut n = 0;
         while n < limit {
             match self.pop() {
-                Some(item) => { f(item); n += 1; }
-                None       => break,
+                Some(item) => {
+                    f(item);
+                    n += 1;
+                }
+                None => break,
             }
         }
         n
@@ -125,15 +140,15 @@ impl<const CAP: usize> RingBuf<[u8; 64], CAP> {
     /// Returns the number of events injected.
     pub fn drain_into_engine(
         &mut self,
-        engine:      &mut Engine,
+        engine: &mut Engine,
         source_name: &str,
-        stamp:       Stamp,
+        stamp: Stamp,
     ) -> usize {
         let mut n = 0usize;
         while let Some(frame) = self.pop() {
             let ev = Event {
                 stamp,
-                v:   Value::Bytes(frame.to_vec()),
+                v: Value::Bytes(frame.to_vec()),
                 tag: None,
                 seq: 0,
             };
@@ -146,6 +161,12 @@ impl<const CAP: usize> RingBuf<[u8; 64], CAP> {
 
 impl<T: Copy, const CAP: usize> core::fmt::Debug for RingBuf<T, CAP> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "RingBuf {{ len: {}/{}, drops: {} }}", self.len(), CAP, self.drops)
+        write!(
+            f,
+            "RingBuf {{ len: {}/{}, drops: {} }}",
+            self.len(),
+            CAP,
+            self.drops
+        )
     }
 }
