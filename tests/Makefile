@@ -75,9 +75,23 @@ REP_BIN   := replay_test
 REP_FLAGS := $(COMMON_FLAGS)
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all test acceptance recovery replay clean
+# DUTY CYCLE TEST
+#   Tests the sliding-window limiter: normal operation, budget gate,
+#   window expiry, buffer-overflow LRU eviction, and full recovery.
+# ─────────────────────────────────────────────────────────────────────────────
+DC_SRCS := \
+    $(FW)/dutycycle.c     \
+    $(FW)/rivr_metrics.c  \
+    $(FW)/rivr_log.c      \
+    test_dutycycle.c
 
-all: acceptance recovery replay
+DC_BIN   := dutycycle_test
+DC_FLAGS := $(COMMON_FLAGS)
+
+# ─────────────────────────────────────────────────────────────────────────────
+.PHONY: all test acceptance recovery replay dutycycle clean
+
+all: acceptance recovery replay dutycycle
 
 # `make test` is the CI-friendly single-command alias.
 test: all
@@ -97,6 +111,11 @@ replay: $(REP_BIN)
 	./$(REP_BIN)
 	@echo
 
+dutycycle: $(DC_BIN)
+	@echo "── Running duty-cycle tests ─────────────────────────────────────"
+	./$(DC_BIN)
+	@echo
+
 $(ACC_BIN): $(ACC_SRCS)
 	$(CC) $(ACC_FLAGS) $^ -o $@
 
@@ -106,5 +125,8 @@ $(REC_BIN): $(REC_SRCS)
 $(REP_BIN): $(REP_SRCS)
 	$(CC) $(REP_FLAGS) $^ -o $@
 
+$(DC_BIN): $(DC_SRCS)
+	$(CC) $(DC_FLAGS) $^ -o $@
+
 clean:
-	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN)
+	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN)

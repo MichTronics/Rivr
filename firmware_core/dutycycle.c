@@ -10,7 +10,15 @@
  *      Mark stale slots by setting tx_end_ms = 0 (sentinel).
  *   2. Check if used_us + toa_us <= DC_BUDGET_US.
  *
- * Complexity: O(DC_HISTORY_CAP) per check – bounded and fast for CAP=64.
+ * On each record:
+ *   1. expire_old() is called first to free stale slots.
+ *   2. If a free slot is found, write the record.
+ *   3. If the buffer is full even after expiry (burst > DC_HISTORY_CAP TX/hour),
+ *      the OLDEST active entry is evicted: its airtime is subtracted from
+ *      used_us before overwriting.  This keeps used_us consistent instead of
+ *      silently accumulating un-expirable airtime (the previous bug).
+ *
+ * Complexity: O(DC_HISTORY_CAP) per check/record – bounded (CAP=512).
  */
 
 #include "dutycycle.h"
@@ -72,17 +80,43 @@ bool dutycycle_check(dc_ctx_t *dc, uint32_t now_ms, uint32_t toa_us)
 /* ── Record ──────────────────────────────────────────────────────────────── */
 void dutycycle_record(dc_ctx_t *dc, uint32_t now_ms, uint32_t toa_us)
 {
-    /* Find a free slot (tx_end_ms == 0) */
-    uint32_t slot = dc->head;
+    /* Expire stale records first: frees slots so the search below succeeds
+     * even when check() was not called immediately before record(). */
+    expire_old(dc, now_ms);
+
+    /* Search for a free slot; simultaneously track the oldest active entry
+     * so we have an LRU candidate ready if the buffer is still full. */
+    uint32_t slot     = dc->head;
+    uint32_t free_idx = DC_HISTORY_CAP;  /* DC_HISTORY_CAP = "not found" sentinel */
+    uint32_t lru_idx  = 0u;
+    uint32_t lru_age  = 0u;
+
     for (uint32_t i = 0; i < DC_HISTORY_CAP; i++) {
         uint32_t idx = (slot + i) & (DC_HISTORY_CAP - 1u);
-        if (dc->history[idx].tx_end_ms == 0) {
-            dc->history[idx].tx_end_ms = now_ms ? now_ms : 1u; /* avoid 0 sentinel */
-            dc->history[idx].toa_us    = toa_us;
-            dc->head = (idx + 1u) & (DC_HISTORY_CAP - 1u);
-            break;
+        if (dc->history[idx].tx_end_ms == 0u) {
+            free_idx = idx;
+            break;                           /* fast path: free slot found */
+        }
+        /* Age = unsigned delta; correct across 32-bit millis wrap. */
+        uint32_t age = now_ms - dc->history[idx].tx_end_ms;
+        if (age > lru_age) {
+            lru_age = age;
+            lru_idx = idx;
         }
     }
+
+    if (free_idx == DC_HISTORY_CAP) {
+        /* Buffer still full after expiry (burst exceeded DC_HISTORY_CAP TX).
+         * Evict the oldest record: subtract its airtime so used_us stays
+         * consistent.  Without this the previous bug caused used_us to climb
+         * permanently until reboot. */
+        dc->used_us -= dc->history[lru_idx].toa_us;
+        free_idx     = lru_idx;
+    }
+
+    dc->history[free_idx].tx_end_ms = now_ms ? now_ms : 1u; /* avoid 0 sentinel */
+    dc->history[free_idx].toa_us    = toa_us;
+    dc->head = (free_idx + 1u) & (DC_HISTORY_CAP - 1u);
     dc->used_us += toa_us;
 }
 

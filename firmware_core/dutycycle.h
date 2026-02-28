@@ -43,8 +43,17 @@ extern "C" {
  */
 #define DC_BUDGET_US      (DC_WINDOW_MS * (uint64_t)(DC_DUTY_PCT_X10) * 1000ULL / 1000ULL)
 
-/** History ring length (power-of-2). Each slot = one TX record. */
-#define DC_HISTORY_CAP    64u
+/**
+ * History ring length (power-of-2). Each slot = one TX record (8 bytes).
+ *
+ * Sizing rationale:
+ *   - Worst case: repeater relaying 3 clients × 2 beacons/min = 6 TX/min
+ *   - Over a full 1-hour window: 6 × 60 = 360 TX minimum
+ *   - Add headroom for chat bursts and route discovery: 512 covers 8.5 TX/min
+ *   - Memory cost: 512 × 8 bytes = 4 096 bytes – negligible on ESP32
+ *   - MUST be a power of 2 (used as a bitmask)
+ */
+#define DC_HISTORY_CAP    512u
 
 /* ── TX history slot ──────────────────────────────────────────────────────── */
 typedef struct {
