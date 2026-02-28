@@ -1,0 +1,12 @@
+# RIVR replay determinism golden snapshot
+#
+# SHA-256 of the stdout produced by tests/replay_test when all 22 assertions pass.
+# Generated: 2026-02-28  (commit 68c043d, P2 complete)
+#
+# To regenerate:
+#   make -C tests replay
+#   cd tests && ./replay_test | sha256sum | awk '{print $1}' \
+#       > golden/replay_sha256.txt
+#
+# CI check script: tests/ci_determinism_check.sh
+0aaddba973a927df017526f9c7d13e978d85fadd2b4451e33926f477178f2150

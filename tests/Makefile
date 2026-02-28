@@ -89,9 +89,42 @@ DC_BIN   := dutycycle_test
 DC_FLAGS := $(COMMON_FLAGS)
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all test acceptance recovery replay dutycycle clean
+# POLICY ENGINE TEST (P2)
+#   Tests policy_init, policy_classify, policy_check (TTL cap + token bucket).
+# ─────────────────────────────────────────────────────────────────────────────
+POL_SRCS := \
+    $(FW)/policy.c \
+    test_policy.c
 
-all: acceptance recovery replay dutycycle
+POL_BIN   := policy_test
+POL_FLAGS := $(COMMON_FLAGS)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OTA GATE TEST (P2)
+#   Tests rivr_ota_verify + rivr_ota_activate with RIVR_SIGNED_PROG enabled.
+#   Ed25519 verify compiled in directly (no shared-object dep).
+# ─────────────────────────────────────────────────────────────────────────────
+OTA_SRCS := \
+    $(FW)/ed25519_verify.c \
+    $(FW)/rivr_ota.c \
+    test_ota.c
+
+OTA_BIN   := ota_test
+OTA_FLAGS := $(COMMON_FLAGS) -DRIVR_SIGNED_PROG
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ASAN / UBSAN (P3.2)
+#   Rebuilds the four main suites + P2 suites with AddressSanitizer and
+#   UndefinedBehaviourSanitizer.  Binaries are suffixed _asan so they do
+#   not overwrite the normal builds.
+# ─────────────────────────────────────────────────────────────────────────────
+ASAN_FLAGS := $(COMMON_FLAGS) -O1 -g -fsanitize=address,undefined \
+              -fno-omit-frame-pointer
+
+# ─────────────────────────────────────────────────────────────────────────────
+.PHONY: all test acceptance recovery replay dutycycle policy ota asan clean
+
+all: acceptance recovery replay dutycycle policy ota
 
 # `make test` is the CI-friendly single-command alias.
 test: all
@@ -128,5 +161,42 @@ $(REP_BIN): $(REP_SRCS)
 $(DC_BIN): $(DC_SRCS)
 	$(CC) $(DC_FLAGS) $^ -o $@
 
+
+policy: $(POL_BIN)
+	@echo "── Running policy-engine tests (P2) ─────────────────────────────"
+	./$(POL_BIN)
+	@echo
+
+ota: $(OTA_BIN)
+	@echo "── Running OTA gate tests (P2, signed) ──────────────────────────"
+	./$(OTA_BIN)
+	@echo
+
+asan:
+	@echo "── ASan/UBSan: acceptance ────────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) $(ACC_SRCS) -o acceptance_asan && ./acceptance_asan
+	@echo
+	@echo "── ASan/UBSan: radio-recovery ────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) -DRIVR_FAULT_INJECT=1 $(REC_SRCS) -o recovery_asan && ./recovery_asan
+	@echo
+	@echo "── ASan/UBSan: replay ────────────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) $(REP_SRCS) -o replay_asan && ./replay_asan
+	@echo
+	@echo "── ASan/UBSan: duty-cycle ────────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) $(DC_SRCS) -o dutycycle_asan && ./dutycycle_asan
+	@echo
+	@echo "── ASan/UBSan: policy ────────────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) $(POL_SRCS) -o policy_asan && ./policy_asan
+	@echo
+	@echo "── ASan/UBSan: OTA (signed) ──────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) -DRIVR_SIGNED_PROG $(OTA_SRCS) -o ota_asan && timeout 60 ./ota_asan
+	@echo
+
+$(POL_BIN): $(POL_SRCS)
+	$(CC) $(POL_FLAGS) $^ -o $@
+
+$(OTA_BIN): $(OTA_SRCS)
+	$(CC) $(OTA_FLAGS) $^ -o $@
+
 clean:
-	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN)
+	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan

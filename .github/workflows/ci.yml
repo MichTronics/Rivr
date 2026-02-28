@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feat/**", "fix/**", "p3/**"]
   pull_request:
     branches: [main]
 
@@ -58,3 +58,119 @@ jobs:
 
       - name: Build and run all C test suites
         run: make -C tests
+
+      - name: Build + run policy-engine tests (P2)
+        run: |
+          gcc -O2 -Ifirmware_core -DIRAM_ATTR="" \
+              firmware_core/policy.c \
+              tests/test_policy.c \
+              -o /tmp/test_policy && /tmp/test_policy
+
+      - name: Build + run OTA gate tests – signed (P2)
+        run: |
+          gcc -O2 -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG \
+              firmware_core/ed25519_verify.c \
+              firmware_core/rivr_ota.c \
+              tests/test_ota.c \
+              -o /tmp/test_ota && timeout 60 /tmp/test_ota
+
+      - name: Build + run OTA gate tests – unsigned (P2)
+        run: |
+          gcc -O2 -Ifirmware_core -DIRAM_ATTR="" \
+              firmware_core/ed25519_verify.c \
+              firmware_core/rivr_ota.c \
+              tests/test_ota.c \
+              -o /tmp/test_ota_unsigned && /tmp/test_ota_unsigned
+
+  # ── ASan + UBSan (P3.2) ──────────────────────────────────────────────────
+  asan-tests:
+    name: ASan + UBSan C tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC
+        run: sudo apt-get install -y gcc make
+
+      - name: Build + run core suites under ASan/UBSan
+        working-directory: tests
+        run: make asan
+
+      - name: Build + run policy under ASan/UBSan
+        run: |
+          gcc -O1 -g -fsanitize=address,undefined \
+              -Ifirmware_core -DIRAM_ATTR="" \
+              firmware_core/policy.c \
+              tests/test_policy.c \
+              -o /tmp/test_policy_asan && /tmp/test_policy_asan
+
+      - name: Build + run OTA under ASan/UBSan (signed)
+        run: |
+          gcc -O1 -g -fsanitize=address,undefined \
+              -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG \
+              firmware_core/ed25519_verify.c \
+              firmware_core/rivr_ota.c \
+              tests/test_ota.c \
+              -o /tmp/test_ota_asan && timeout 60 /tmp/test_ota_asan
+
+  # ── Size regression (P3.1) ───────────────────────────────────────────────
+  size-check:
+    name: Size regression (+5% host binaries)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC + make
+        run: sudo apt-get install -y gcc make
+
+      - name: Build host test binaries
+        working-directory: tests
+        run: make all
+
+      - name: Size regression check
+        run: bash tests/ci_size_check.sh tests/baselines/host_sizes.txt 5
+
+  # ── Determinism (P3.1) ───────────────────────────────────────────────────
+  determinism:
+    name: Replay determinism hash
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC + make
+        run: sudo apt-get install -y gcc make
+
+      - name: Build replay test
+        working-directory: tests
+        run: make replay
+
+      - name: Compare against golden snapshot
+        run: bash tests/ci_determinism_check.sh tests/golden/replay_sha256.txt
+
+  # ── ESP32 firmware variants ───────────────────────────────────────────────
+  # Requires self-hosted runner tagged "esp32-runner" with ESP-IDF v5.3+.
+  # Remove the `if: false` guard and provision a runner to enable.
+  esp32-firmware:
+    name: ESP32 firmware variants (self-hosted)
+    runs-on: [self-hosted, esp32-runner]
+    if: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build client – esp32devkit / E22-900
+        run: |
+          idf.py -B build_client_e22 -G Ninja build \
+            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.esp32_hw;sdkconfig.client_esp32devkit_e22_900"
+      - name: Build repeater – esp32devkit / E22-900
+        run: |
+          idf.py -B build_repeater_e22 -G Ninja build \
+            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.esp32_hw;sdkconfig.repeater_esp32devkit_e22_900"
+      - name: Build client – LilyGo LoRa32 v2.1
+        run: |
+          idf.py -B build_client_lilygo -G Ninja build \
+            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.esp32_hw;sdkconfig.client_lilygo_lora32_v21"
+      - name: Build repeater – LilyGo LoRa32 v2.1
+        run: |
+          idf.py -B build_repeater_lilygo -G Ninja build \
+            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.esp32_hw;sdkconfig.repeater_lilygo_lora32_v21"
+      - name: ESP32 size regression check
+        run: bash tests/ci_size_check.sh tests/baselines/esp32_sizes.txt 5
