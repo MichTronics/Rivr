@@ -468,9 +468,11 @@ uint32_t sources_rf_rx_drain(void)
 #if RIVR_ROLE_CLIENT
             skip_enqueue_client:;
 #endif
-            /* skip_relay_policy: used when neither RIVR_ROLE_CLIENT nor
-             * RIVR_FABRIC_REPEATER is defined — pure repeater without fabric */
+#if !defined(RIVR_ROLE_CLIENT) && !defined(RIVR_FABRIC_REPEATER)
+            /* Used when neither RIVR_ROLE_CLIENT nor RIVR_FABRIC_REPEATER is
+             * defined — pure repeater without fabric relay logic. */
             skip_relay_policy:;
+#endif
         } else if (fwd == RIVR_FWD_DROP_TTL) {
             g_rivr_metrics.drop_ttl_relay++;
             ESP_LOGD(TAG, "rf_rx: TTL=0 src=0x%08lx – not relayed",

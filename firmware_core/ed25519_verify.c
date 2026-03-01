@@ -463,7 +463,7 @@ static bool unpackneg(pt r, const uint8_t p[32])
  * l = 2^252 + 27742317777372353535851937790883648493
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static const uint8_t L[32] = {
+static const uint8_t L[32] __attribute__((unused)) = {
     0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
     0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -499,7 +499,16 @@ static uint64_t load4(const uint8_t *in)
  */
 static void sc_reduce(uint8_t out[32], const uint8_t s[64])
 {
+#if defined(__SIZEOF_INT128__)
     typedef __int128 i128;
+#else
+    /* Xtensa/xtensa-esp32 does not support __int128.
+     * Intermediate sums stay within int64_t range because the 21-bit input
+     * limbs (≤ 2^21) multiplied by the largest reduction constant (997805 ≈
+     * 2^20) and accumulated over at most ~6 source limbs yield at most
+     * ~6 × 2^41 ≈ 2^43.6 — well inside the int64_t range of 2^63. */
+    typedef int64_t i128;
+#endif
 
     /* Load 24 overlapping 21-bit windows from the 64-byte LE input. */
     i128 s0  = 2097151LL & (int64_t)load3(s);
