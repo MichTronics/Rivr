@@ -23,15 +23,16 @@ extern bool rivr_nvs_store_program(const char *src);
 #ifdef ESP_IDF_VERSION   /* real firmware build */
 #  include "nvs_flash.h"
 #  include "nvs.h"
-#  define NVS_NS  "rivr"
-#  define NVS_KEY "ota_seq"
+#  define NVS_NS      "rivr"
+#  define NVS_KEY_SEQ "ota_seq"
+#  define NVS_KEY_PND "ota_pending"
 
 static uint32_t load_last_seq(void)
 {
     nvs_handle_t h;
     uint32_t val = 0;
     if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
-        nvs_get_u32(h, NVS_KEY, &val);
+        nvs_get_u32(h, NVS_KEY_SEQ, &val);
         nvs_close(h);
     }
     return val;
@@ -41,7 +42,28 @@ static bool save_last_seq(uint32_t seq)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return false;
-    bool ok = (nvs_set_u32(h, NVS_KEY, seq) == ESP_OK)
+    bool ok = (nvs_set_u32(h, NVS_KEY_SEQ, seq) == ESP_OK)
+           && (nvs_commit(h) == ESP_OK);
+    nvs_close(h);
+    return ok;
+}
+
+static uint32_t load_ota_pending(void)
+{
+    nvs_handle_t h;
+    uint32_t val = 0;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u32(h, NVS_KEY_PND, &val);
+        nvs_close(h);
+    }
+    return val;
+}
+
+static bool save_ota_pending(uint32_t v)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return false;
+    bool ok = (nvs_set_u32(h, NVS_KEY_PND, v) == ESP_OK)
            && (nvs_commit(h) == ESP_OK);
     nvs_close(h);
     return ok;
@@ -50,8 +72,12 @@ static bool save_last_seq(uint32_t seq)
 #else   /* host / unit-test build — stubs provided by tests/test_stubs.c */
 extern uint32_t ota_stub_load_seq(void);
 extern bool     ota_stub_save_seq(uint32_t seq);
-static uint32_t load_last_seq(void)      { return ota_stub_load_seq(); }
-static bool     save_last_seq(uint32_t s){ return ota_stub_save_seq(s); }
+extern uint32_t ota_stub_load_pending(void);
+extern bool     ota_stub_save_pending(uint32_t v);
+static uint32_t load_last_seq(void)            { return ota_stub_load_seq(); }
+static bool     save_last_seq(uint32_t s)      { return ota_stub_save_seq(s); }
+static uint32_t load_ota_pending(void)         { return ota_stub_load_pending(); }
+static bool     save_ota_pending(uint32_t v)   { return ota_stub_save_pending(v); }
 #endif
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
@@ -65,29 +91,24 @@ bool rivr_ota_verify(const uint8_t *payload, size_t payload_len)
 #else
     if (!payload || payload_len <= RIVR_OTA_HDR_LEN) return false;
 
-    /* Split payload: sig | seq_bytes | program_text */
-    const uint8_t *sig      = payload;
-    const uint8_t *seq_bytes = payload + RIVR_OTA_SIG_LEN;        /* 4 bytes */
-    const uint8_t *msg       = payload + RIVR_OTA_HDR_LEN;         /* text   */
-    size_t         msg_len   = payload_len - RIVR_OTA_HDR_LEN;
+    /* Split payload: sig | key_id | seq_bytes | program_text */
+    const uint8_t *sig       = payload;
+    uint8_t        key_id    = payload[RIVR_OTA_SIG_LEN];
+    const uint8_t *seq_bytes = payload + RIVR_OTA_SIG_LEN + RIVR_OTA_KEY_LEN;
 
-    /* The signed message is (seq_bytes ‖ program_text) so the seq is covered
-     * by the signature and cannot be tampered with independently.            */
+    /* Reject out-of-range key_id before any crypto work */
+    if (key_id >= RIVR_OTA_KEY_COUNT) return false;
+    const uint8_t *pub_key = RIVR_OTA_KEYS[key_id];
 
-    /* 1. Signature check: sig over (seq ‖ text) using the device public key */
-    /* Build the full message buffer seq ‖ text for verification */
-    /* We pass it as two parts via a small stack-allocated concat buffer.
-     * payload_len is bounded by PKT_PROG_PUSH's uint8_t payload_len field
-     * (max 255), so the full signing input is at most 255 - 64 = 191 bytes,
-     * well within the 256-byte VLA below.                                    */
+    /* The signed message is (key_id ‖ seq_bytes ‖ program_text): everything
+     * after the 64-byte signature.  key_id is inside the coverage so an
+     * attacker cannot substitute a different key_id post-hoc.               */
     uint8_t signed_msg[256];
     if (payload_len - RIVR_OTA_SIG_LEN > sizeof(signed_msg)) return false;
     size_t signed_len = payload_len - RIVR_OTA_SIG_LEN;
-    /* seq_bytes + text are contiguous directly after sig: */
-    __builtin_memcpy(signed_msg, seq_bytes, signed_len);
+    __builtin_memcpy(signed_msg, payload + RIVR_OTA_SIG_LEN, signed_len);
 
-    if (!ed25519_verify_detached(sig, signed_msg, signed_len,
-                                 RIVR_OTA_PUBLIC_KEY)) {
+    if (!ed25519_verify_detached(sig, signed_msg, signed_len, pub_key)) {
         return false;
     }
 
@@ -103,7 +124,6 @@ bool rivr_ota_verify(const uint8_t *payload, size_t payload_len)
     /* 3. Persist the new seq so reboots don't allow replay */
     if (!save_last_seq(seq)) return false;
 
-    (void)msg; (void)msg_len;
     return true;
 #endif /* RIVR_SIGNED_PROG */
 }
@@ -124,5 +144,20 @@ bool rivr_ota_activate(const uint8_t *payload, size_t payload_len)
     __builtin_memcpy(buf, text, text_len);
     buf[text_len] = '\0';
 
-    return rivr_nvs_store_program(buf);
+    if (!rivr_nvs_store_program(buf)) return false;
+
+    /* Mark the update as pending-confirm so a rollback can occur if the
+     * new program crashes before rivr_ota_confirm() is called.              */
+    (void)save_ota_pending(1u);
+    return true;
+}
+
+bool rivr_ota_confirm(void)
+{
+    return save_ota_pending(0u);
+}
+
+bool rivr_ota_is_pending(void)
+{
+    return load_ota_pending() != 0u;
 }
