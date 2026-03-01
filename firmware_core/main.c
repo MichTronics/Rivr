@@ -63,6 +63,7 @@
 #include "firmware_core/rivr_log.h"
 #include "firmware_core/build_info.h"
 #include "firmware_core/airtime_sched.h"
+#include "firmware_core/rivr_panic.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
 #include "rivr_layer/rivr_cli.h"
@@ -470,6 +471,11 @@ static void tx_drain_loop(void)
 
 void app_main(void)
 {
+    /* ── Check for crash/WDT from previous boot — emits @CRASH JSON if needed ─ */
+#ifndef RIVR_SIM_MODE
+    rivr_panic_check_prev();
+#endif
+
     RIVR_LOGI(TAG, "═══ RIVR Embedded Node booting ═══");
     RIVR_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
 
@@ -664,6 +670,17 @@ void app_main(void)
                 (unsigned long)rivr_fabric_get_tx_blocked());
         }
 #endif /* RIVR_FABRIC_REPEATER */
+
+        /* ─ 3b2. Clear panic reset counter after 60 s of clean operation ─
+         * Once the node has been running for a full minute without WDT/panic,
+         * treat the previous reset streak as resolved.  Subsequent normal
+         * reboots will not show a @CRASH line.
+         * loop_count ≈ 6000 × 10 ms = 60 s.  Fires exactly once per boot. */
+#ifndef RIVR_SIM_MODE
+        if (loop_count == 6000u) {
+            rivr_panic_clear_reset_count();
+        }
+#endif
 
         /* ─ 3c. Unified metrics (all builds) ─ */
         if (now - last_met_print >= 5000u) {

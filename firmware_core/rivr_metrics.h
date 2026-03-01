@@ -47,6 +47,16 @@ typedef struct {
     uint32_t ota_rejected;       /* OTA rejected: bad sig, replay, or short payload   */
     uint32_t policy_drop;        /* packets dropped by policy token-bucket gate       */
     uint32_t policy_ttl_clamp;   /* packets TTL-clamped by policy engine              */
+    /* ── RF airtime accounting (Phase 4 / EU868 compliance audit) ───────── */
+    /** Cumulative time-on-air in milliseconds for all transmitted frames.
+     *  Incremented in the TX path after each successful radio_transmit() call.
+     *  Mirrors dc_ctx_t.used_us but in uint32 ms for the @MET JSON output.
+     *  Saturates at UINT32_MAX (~49 days of continuous TX — will never happen). */
+    uint32_t rf_airtime_ms_total;
+    /** Total TX attempts blocked by the duty-cycle gate (dutycycle_check()
+     *  returned false).  Combines the hardware and token-bucket layers.
+     *  Distinct from duty_blocked (which is only the dc_ctx hardware gate). */
+    uint32_t rf_duty_blocked_total;
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;

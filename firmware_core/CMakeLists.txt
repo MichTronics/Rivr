@@ -36,6 +36,10 @@ idf_component_register(
         "ed25519_verify.c"
         "rivr_ota.c"
         "policy.c"
+        # HAL abstraction layer (additive — does not change existing driver code)
+        "hal/radio_if.c"
+        # Watchdog / panic marker
+        "rivr_panic.c"
         # RIVR glue layer (relative to firmware_core/)
         "../rivr_layer/rivr_embed.c"
         "../rivr_layer/rivr_sinks.c"
@@ -55,6 +59,7 @@ idf_component_register(
         log
         spi_flash
         nvs_flash  # P2: signed OTA anti-replay via NVS
+        esp_system  # rivr_panic: esp_reset_reason(), RTC_DATA_ATTR
 )
 
 # ── Link the pre-built Rust rivr_core static library ─────────────────────────
