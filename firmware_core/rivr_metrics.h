@@ -51,5 +51,24 @@ typedef struct {
 
 extern rivr_metrics_t g_rivr_metrics;
 
-/** Emit one log line (ESP_LOGI) with all counters. */
-void rivr_metrics_print(void);
+/**
+ * Live stats populated by the call site and included in the @MET JSON so
+ * the Rivr Lab desktop app can render gauges and charts.
+ *
+ * All fields are optional — pass NULL to omit them (they will be emitted
+ * as zero).
+ */
+typedef struct {
+    uint32_t node_id;     /**< Node ID (g_my_node_id)                        */
+    uint8_t  dc_pct;      /**< Used duty-cycle %, 0-100                      */
+    uint8_t  q_depth;     /**< Current TX queue occupancy (rb_available)     */
+    uint32_t tx_total;    /**< Total TX frames since boot (g_tx_frame_count) */
+    uint32_t rx_total;    /**< Total RX frames since boot (g_rx_frame_count) */
+    uint8_t  route_cache; /**< Live route-cache entries                      */
+} rivr_live_stats_t;
+
+/**
+ * Emit one @MET JSON line on stdout with all counters plus live stats.
+ * @param live  Pointer to live stats struct, or NULL for all-zero live fields.
+ */
+void rivr_metrics_print(const rivr_live_stats_t *live);

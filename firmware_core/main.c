@@ -669,7 +669,18 @@ void app_main(void)
         if (now - last_met_print >= 5000u) {
             last_met_print = now;
             if (rivr_log_get_mode() != RIVR_LOG_SILENT) {
-                rivr_metrics_print();
+                const rivr_live_stats_t ls = {
+                    .node_id     = g_my_node_id,
+                    .dc_pct      = (uint8_t)(DC_BUDGET_US > 0u
+                                   ? ((DC_BUDGET_US - dutycycle_remaining_us(&g_dc)) * 100ULL
+                                      / DC_BUDGET_US)
+                                   : 0u),
+                    .q_depth     = (uint8_t)rb_available(&rf_tx_queue),
+                    .tx_total    = g_tx_frame_count,
+                    .rx_total    = g_rx_frame_count,
+                    .route_cache = route_cache_count(&g_route_cache, now),
+                };
+                rivr_metrics_print(&ls);
             }
         }
 

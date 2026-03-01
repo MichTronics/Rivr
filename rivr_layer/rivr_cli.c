@@ -331,7 +331,19 @@ static void cli_handle_line(void)
 
     /* ── "metrics" ── */
     if (strncmp(p, "metrics", 7u) == 0 && (p[7] == '\0' || p[7] == ' ')) {
-        rivr_metrics_print();
+        uint32_t now_ms = tb_millis();
+        const rivr_live_stats_t ls = {
+            .node_id     = g_my_node_id,
+            .dc_pct      = (uint8_t)(DC_BUDGET_US > 0u
+                           ? ((DC_BUDGET_US - dutycycle_remaining_us(&g_dc)) * 100ULL
+                              / DC_BUDGET_US)
+                           : 0u),
+            .q_depth     = (uint8_t)rb_available(&rf_tx_queue),
+            .tx_total    = g_tx_frame_count,
+            .rx_total    = g_rx_frame_count,
+            .route_cache = route_cache_count(&g_route_cache, now_ms),
+        };
+        rivr_metrics_print(&ls);
         fflush(stdout);
         return;
     }

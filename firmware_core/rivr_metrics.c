@@ -5,13 +5,22 @@
 
 rivr_metrics_t g_rivr_metrics = {0};
 
-void rivr_metrics_print(void)
+void rivr_metrics_print(const rivr_live_stats_t *live)
 {
     if (g_rivr_log_mode == RIVR_LOG_SILENT) {
         return;
     }
 
+    const rivr_live_stats_t zero = {0};
+    if (!live) live = &zero;
+
     printf("@MET {"
+           "\"node_id\":%" PRIu32 ","
+           "\"dc_pct\":%" PRIu8 ","
+           "\"q_depth\":%" PRIu8 ","
+           "\"tx_total\":%" PRIu32 ","
+           "\"rx_total\":%" PRIu32 ","
+           "\"route_cache\":%" PRIu8 ","
            "\"rx_fail\":%" PRIu32 ","
            "\"rx_dup\":%" PRIu32 ","
            "\"rx_ttl\":%" PRIu32 ","
@@ -47,6 +56,12 @@ void rivr_metrics_print(void)
            "\"rst_spurious\":%" PRIu32 ","
            "\"rst_rxtmo\":%" PRIu32
            "}\n",
+        live->node_id,
+        live->dc_pct,
+        live->q_depth,
+        live->tx_total,
+        live->rx_total,
+        live->route_cache,
         g_rivr_metrics.rx_decode_fail,
         g_rivr_metrics.rx_dedupe_drop,
         g_rivr_metrics.rx_ttl_drop,
