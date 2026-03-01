@@ -1,0 +1,37 @@
+// examples/telemetry_periodic.rivr
+//
+// Periodic uptime / heartbeat transmitter.
+//
+// Use case: a sensor node that must prove it is alive at regular intervals
+// without carrying any meaningful sensor data.  Transmits a monotonically
+// increasing counter ("uptime ticks") as a PKT_DATA frame over LoRa every
+// 5 minutes.  A receiving node can detect gaps if a tick count is missing.
+//
+// Resource budget:
+//   Interval    : 300 000 ms (5 minutes)
+//   Payload size: ~4 bytes (Int value)
+//   ToA at SF8  : ~50 ms for a minimal frame
+//   Daily TX    : 288 packets × 50 ms = 14.4 s  (well under 1 % daily limit)
+//
+// Pipeline:
+//   timer fires every 300 s
+//     └── fold.count()      → uptime tick counter (1, 2, 3, …)
+//           ├── io.lora.tx  → push PKT_DATA over LoRa mesh
+//           └── io.usb.print → echo to UART for local monitoring
+//
+// To customise interval change "300000" (ms).  Minimum recommended: 60000.
+
+source tick = timer(300000);  // fires every 5 minutes
+
+// Turn each timer event into a monotonically increasing integer counter.
+// On the first tick this emits 1, on the second 2, and so on.  The
+// counter resets to 0 at boot (not persisted) so receivers should treat
+// a lower value than expected as a node reboot, not a gap.
+
+let uptime = tick
+  |> fold.count();
+
+// ── Emit ────────────────────────────────────────────────────────────────────
+
+emit { io.lora.tx(uptime); }    // transmit heartbeat over LoRa (PKT_DATA)
+emit { io.usb.print(uptime); }  // echo counter to UART for debugging

@@ -1,0 +1,59 @@
+// examples/store_forward_mailbox.rivr
+//
+// Store-and-forward message buffer for intermittently-reachable nodes.
+//
+// Use case: a node at the edge of the mesh that only becomes reachable for
+// brief periods (e.g. a mobile node, or one with a directional antenna).
+// This program collects incoming chat messages in a bounded ring buffer and
+// re-forwards them in a burst when the retry timer fires, giving late-joining
+// nodes a chance to receive recent traffic even after the original flood.
+//
+// Key design choices:
+//
+//   window.ticks(12, 8, "drop_oldest")
+//     Accumulates up to 8 PKT_CHAT frames in a 12-tick sliding window.
+//     If a 9th message arrives before the window closes, the oldest is
+//     evicted ("drop_oldest"), so recent messages always take priority.
+//     A full Window event is emitted at tick boundary or when CAP is hit.
+//
+//   delay.ticks(3)
+//     Defers forwarding by 3 Lamport ticks after the window closes.
+//     This separates the re-forward burst from the original flood so the
+//     two do not collide on the channel.
+//
+//   budget.toa_us(600000, 0.04, 280000)
+//     Tight 4 % duty-cycle budget over a 10-minute window: the store-and-
+//     forward burst is explicitly rate-limited so it cannot starve live
+//     traffic on congested mesh segments.
+//
+// Topology note:
+//   The re-forwarded frames have an incremented hop count (handled by the
+//   C-layer relay) so they are distinguishable from originals and will
+//   not be deduplicated against them by receiving nodes that already
+//   processed the first pass.
+//
+// Tuning for your environment:
+//   - Increase CAP (8) to store more messages per window.
+//   - Decrease delay.ticks (3) on fast-hopping meshes.
+//   - Replace budget.toa_us parameters to match your sub-band limits.
+
+source rf_rx @lmp = rf;           // LoRa receive stream (Lamport clock)
+source beacon_tick = timer(30000); // 30 s beacon so we show up in neighbour lists
+
+// ── Message buffer ──────────────────────────────────────────────────────────
+// 1. Filter to only PKT_CHAT frames.
+// 2. Collect into a capped window — oldest messages are dropped on overflow.
+// 3. Delay the flush by 3 ticks so re-forwards and originals do not overlap.
+// 4. Apply a duty-cycle guard on the re-forward burst.
+
+let buffered = rf_rx
+  |> filter.pkt_type(1)
+  |> window.ticks(12, 8, "drop_oldest")
+  |> delay.ticks(3)
+  |> budget.toa_us(600000, 0.04, 280000);
+
+// ── Emit ────────────────────────────────────────────────────────────────────
+
+emit { io.lora.tx(buffered); }         // re-forward stored burst over LoRa
+emit { io.usb.print(buffered); }       // local serial log of re-forwarded msgs
+emit { io.lora.beacon(beacon_tick); }  // periodic presence advertisement

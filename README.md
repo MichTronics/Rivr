@@ -165,6 +165,28 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 | Language reference | [en/language-reference.md](docs/en/language-reference.md) | [nl/taalreferentie.md](docs/nl/taalreferentie.md) |
 | Build guide | [en/build-guide.md](docs/en/build-guide.md) | [nl/bouwhandleiding.md](docs/nl/bouwhandleiding.md) |
 | Firmware integration | [en/firmware-integration.md](docs/en/firmware-integration.md) | [nl/firmware-integratie.md](docs/nl/firmware-integratie.md) |
+| Wire protocol | [en/protocol.md](docs/en/protocol.md) | — |
+| Release process | [releasing.md](docs/releasing.md) | — |
+
+---
+
+## Example programs
+
+Ready-to-use `.rivr` programs in [`examples/`](examples/):
+
+| File | Description |
+|---|---|
+| [chat_relay.rivr](examples/chat_relay.rivr) | Full mesh relay with EU868 duty-cycle guard and beacon |
+| [telemetry_periodic.rivr](examples/telemetry_periodic.rivr) | Periodic heartbeat / uptime counter transmitted over LoRa |
+| [store_forward_mailbox.rivr](examples/store_forward_mailbox.rivr) | Buffered store-and-forward with capped window and delayed re-flood |
+
+Load a program over the mesh with the OTA push mechanism:
+
+```bash
+# Sign and push (requires a signing key matching rivr_pubkey.h)
+rivr_sign --key key0.pem --key-id 0 --seq 1 examples/chat_relay.rivr > payload.bin
+# (Delivery via PKT_PROG_PUSH is handled by the mesh transport layer)
+```
 
 ---
 
@@ -199,7 +221,9 @@ Rivr/
 ├── rivr_host/src/              — Host tooling (rivrc compiler CLI, replay)
 ├── rivr_layer/                 — RIVR ↔ C firmware glue (init, sinks, sources)
 ├── variants/                   — Board-specific config headers
-└── tests/                      — C test suites (acceptance, recovery, replay, dutycycle)
+├── examples/                   — Ready-to-use .rivr programs
+├── tools/                      — Host utilities (rivr_decode wire decoder)
+└── tests/                      — C test suites (acceptance, recovery, replay, dutycycle, OTA)
 ```
 
 ---
