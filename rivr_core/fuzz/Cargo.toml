@@ -1,0 +1,37 @@
+[package]
+name    = "rivr-core-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# cargo-fuzz requires this metadata marker.
+[package.metadata]
+cargo-fuzz = true
+
+# Fuzz targets are standalone binaries (not tests/benchmarks).
+[dependencies]
+libfuzzer-sys = "0.4"
+rivr_core     = { path = "..", features = ["std", "ffi"] }
+
+# ── Fuzz targets ─────────────────────────────────────────────────────────────
+
+[[bin]]
+name = "dsl_parse"
+path = "fuzz_targets/dsl_parse.rs"
+test = false
+doc  = false
+
+[[bin]]
+name = "compiler"
+path = "fuzz_targets/compiler.rs"
+test = false
+doc  = false
+
+[[bin]]
+name = "ffi_entrypoints"
+path = "fuzz_targets/ffi_entrypoints.rs"
+test = false
+doc  = false
+
+# Isolate this package from the outer workspace.
+[workspace]

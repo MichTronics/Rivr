@@ -122,7 +122,7 @@ ASAN_FLAGS := $(COMMON_FLAGS) -O1 -g -fsanitize=address,undefined \
               -fno-omit-frame-pointer
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all test acceptance recovery replay dutycycle policy ota asan clean
+.PHONY: all test acceptance recovery replay dutycycle policy ota asan fuzz_harness clean
 
 all: acceptance recovery replay dutycycle policy ota
 
@@ -198,5 +198,29 @@ $(POL_BIN): $(POL_SRCS)
 $(OTA_BIN): $(OTA_SRCS)
 	$(CC) $(OTA_FLAGS) $^ -o $@
 
+# ─────────────────────────────────────────────────────────────────────────────
+# FUZZ HARNESS (P3.2)
+#   Builds fuzz_ffi_harness with ASan for manual AFL++/libFuzzer runs.
+#   Sources mirror the acceptance suite (protocol + routing + deps).
+# ─────────────────────────────────────────────────────────────────────────────
+FUZZ_SRCS := \
+    $(FW)/protocol.c      \
+    $(FW)/routing.c       \
+    $(FW)/route_cache.c   \
+    $(FW)/rivr_metrics.c  \
+    $(FW)/rivr_log.c      \
+    $(FW)/airtime_sched.c \
+    test_stubs.c           \
+    fuzz_ffi_harness.c
+
+FUZZ_BIN  := fuzz_ffi_harness
+FUZZ_FLAGS := $(ASAN_FLAGS)
+
+fuzz_harness: $(FUZZ_BIN)
+	@echo "fuzz_ffi_harness built — run: echo '' | ./$(FUZZ_BIN)"
+
+$(FUZZ_BIN): $(FUZZ_SRCS)
+	$(CC) $(FUZZ_FLAGS) $^ -o $@
+
 clean:
-	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan
+	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan

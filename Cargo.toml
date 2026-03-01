@@ -1,5 +1,6 @@
 [workspace]
 members  = ["rivr_core", "rivr_host"]
+exclude  = ["rivr_core/fuzz"]   # cargo-fuzz package — built separately
 resolver = "2"
 
 [workspace.dependencies]
