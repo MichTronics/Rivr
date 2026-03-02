@@ -29,6 +29,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -79,8 +80,8 @@ typedef struct {
     uint32_t last_params_update_uptime_ms; /**< tb_millis() at last successful param update */
     uint32_t policy_rebuild_count;      /**< rivr_policy_build_program() successes          */
     uint32_t policy_reload_count;       /**< Engine hot-reloads triggered by policy change  */
-    uint32_t duty_blocked_count;        /**< Reserved — set to 0 (use g_dc.blocked_count)  */
-    uint32_t origination_drop_count;    /**< Reserved for future USB-origination gate       */
+    uint32_t duty_blocked_count;        /**< Reserved — set to 0 (use g_dc.blocked_count)      */
+    uint32_t origination_drop_count;    /**< Frames dropped by rivr_policy_allow_origination() */
 } rivr_policy_metrics_t;
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
@@ -115,6 +116,26 @@ uint8_t rivr_policy_role_from_str(const char *s);
  * Return a short ASCII name for a role value ("client", "repeater", "gateway", "?").
  */
 const char *rivr_policy_role_name(uint8_t role);
+
+/**
+ * Origination policy gate — call before building/enqueuing any locally
+ * originated packet (PKT_CHAT or PKT_DATA from USB/CLI).
+ *
+ * Implements a per-type token-bucket using g_policy_params.chat_throttle_ms
+ * and g_policy_params.data_throttle_ms.  Returns true when the packet is
+ * allowed; updates the internal last-TX timestamp atomically.
+ * Returns false when the packet should be dropped; increments
+ * s_policy_metrics.origination_drop_count.
+ *
+ * Thread/ISR safety: main-loop only.  Do NOT call from ISR context.
+ * No heap allocation, no FreeRTOS primitives.
+ *
+ * @param pkt_type  PKT_CHAT (1) or PKT_DATA (6).  Other types always pass.
+ * @param now_ms    Current uptime in milliseconds (tb_millis()).
+ * @return true     Packet is allowed; caller should transmit it.
+ * @return false    Packet is throttled; caller must drop it.
+ */
+bool rivr_policy_allow_origination(uint8_t pkt_type, uint32_t now_ms);
 
 /**
  * Generate the current RIVR program string from g_policy_params into buf.

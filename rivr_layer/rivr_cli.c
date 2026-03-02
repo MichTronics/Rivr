@@ -435,6 +435,17 @@ static void cli_enqueue_chat(const char *msg, size_t len)
         return;
     }
 
+    /* ── Origination policy gate ────────────────────────────────────────── *
+     * Rivr policy decides ALLOW/DENY only.  Frame construction and queuing  *
+     * are unchanged — they only run when the gate passes.                   *
+     * The throttle window is OTA-adjustable via "@PARAMS chat=<ms>".        *
+     * ─────────────────────────────────────────────────────────────────────  */
+    if (!rivr_policy_allow_origination(PKT_CHAT, tb_millis())) {
+        printf("@DROP origination throttled type=CHAT\r\n");
+        fflush(stdout);
+        return;
+    }
+
     /* Build packet header — identical pattern to the relay path in
      * rivr_sources.c so every PKT_CHAT has a consistent wire format.         */
     rivr_pkt_hdr_t hdr;

@@ -38,7 +38,11 @@
 /*
  * Rivr Policy Parameters are now runtime-adjustable via PKT_PROG_PUSH.
  * Mechanism (routing, ACK, queue) remains in C.
- * Rivr continues to serve as policy layer only.
+ * Rivr policy gates two traffic streams:
+ *   1. Relay   — incoming RF frames filtered/throttled by the Rivr engine.
+ *   2. Origination — outgoing chat/data from CLI gated by
+ *                    rivr_policy_allow_origination() in rivr_policy.c.
+ *                    Uses the same chat_throttle_ms / data_throttle_ms params.
  *
  * Send "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10> [role=client|repeater|gateway]" as a
  * PKT_PROG_PUSH payload to update runtime policy without reflashing.
@@ -51,7 +55,9 @@
  * observe the current parameter values and update counters:
  *   @POLICY {"beacon":30000,"chat":2000,"data":2000,"duty":10,"role":"client",
  *            "updates":N,"last_update_ms":N,"rebuilds":N,"reloads":N,
- *            "duty_blocked":0,"orig_drops":0}
+ *            "duty_blocked":0,"orig_drops":N}
+ * orig_drops counts frames rejected by the origination gate.
+ * Dropped frames print: @DROP origination throttled type=CHAT
  */
 
 /* ── Time-on-Air constants for the default configuration ─────────────────── *

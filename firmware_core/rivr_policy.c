@@ -22,6 +22,11 @@ rivr_policy_params_t g_policy_params;
 
 static rivr_policy_metrics_t s_policy_metrics;
 
+/* ── Origination throttle timestamps (main-loop only, no ISR access) ─────── */
+
+static uint32_t s_last_chat_orig_ms = 0u;  /**< Last allowed PKT_CHAT origination */
+static uint32_t s_last_data_orig_ms = 0u;  /**< Last allowed PKT_DATA origination */
+
 /* ── API ─────────────────────────────────────────────────────────────────── */
 
 void rivr_policy_init(void)
@@ -38,6 +43,8 @@ void rivr_policy_init(void)
     s_policy_metrics.policy_reload_count       = 0u;
     s_policy_metrics.duty_blocked_count        = 0u;
     s_policy_metrics.origination_drop_count    = 0u;
+    s_last_chat_orig_ms = 0u;
+    s_last_data_orig_ms = 0u;
     RIVR_LOGI(TAG, "policy init: beacon=%lums chat=%lums data=%lums duty=%u%%",
               (unsigned long)g_policy_params.beacon_interval_ms,
               (unsigned long)g_policy_params.chat_throttle_ms,
@@ -135,6 +142,41 @@ const char *rivr_policy_role_name(uint8_t role)
         case RIVR_NODE_ROLE_GATEWAY:  return "gateway";
         default:                      return "?";
     }
+}
+
+/* ── Origination gate ────────────────────────────────────────────────────── */
+
+bool rivr_policy_allow_origination(uint8_t pkt_type, uint32_t now_ms)
+{
+    uint32_t throttle_ms;
+    uint32_t *last_ms;
+
+    switch (pkt_type) {
+        case 1u: /* PKT_CHAT */
+            throttle_ms = g_policy_params.chat_throttle_ms;
+            last_ms     = &s_last_chat_orig_ms;
+            break;
+        case 6u: /* PKT_DATA */
+            throttle_ms = g_policy_params.data_throttle_ms;
+            last_ms     = &s_last_data_orig_ms;
+            break;
+        default:
+            /* Unknown types are not throttled. */
+            return true;
+    }
+
+    /* Allow if no packet has ever been sent, or if the window has elapsed. */
+    if (*last_ms == 0u || (now_ms - *last_ms) >= throttle_ms) {
+        *last_ms = now_ms;
+        return true;
+    }
+
+    /* Throttled — increment counter and deny. */
+    s_policy_metrics.origination_drop_count++;
+    RIVR_LOGD(TAG, "origination throttled: pkt_type=%u drops=%lu",
+              (unsigned)pkt_type,
+              (unsigned long)s_policy_metrics.origination_drop_count);
+    return false;
 }
 
 void rivr_policy_build_program(char *buf, size_t bufsz)
@@ -363,7 +405,36 @@ void rivr_policy_selftest(void)
     assert(rivr_policy_role_from_str("junk")     == (uint8_t)RIVR_NODE_ROLE_CLIENT);
     assert(rivr_policy_role_from_str(NULL)       == (uint8_t)RIVR_NODE_ROLE_CLIENT);
 
-    RIVR_LOGI(TAG, "RIVR_POLICY_SELFTEST: all assertions passed (including role tests)");
+    /* ── Origination gate tests ── */
+    {
+        rivr_policy_init();   /* resets timestamps and drops counter */
+        rivr_policy_set_param(RIVR_PARAM_ID_CHAT_THROTTLE, 500u);
+        rivr_policy_set_param(RIVR_PARAM_ID_DATA_THROTTLE, 500u);
+        const rivr_policy_metrics_t *om = rivr_policy_metrics_get();
+
+        /* First call at t=0 → always passes. */
+        assert(rivr_policy_allow_origination(1u, 100u) == true);
+        assert(om->origination_drop_count == 0u);
+
+        /* Second call within throttle window (t=100+100=200 < 100+500) → drops. */
+        assert(rivr_policy_allow_origination(1u, 200u) == false);
+        assert(om->origination_drop_count == 1u);
+
+        /* Call after the window elapses → passes again. */
+        assert(rivr_policy_allow_origination(1u, 700u) == true);
+        assert(om->origination_drop_count == 1u);
+
+        /* PKT_DATA uses its own independent timestamp. */
+        assert(rivr_policy_allow_origination(6u, 800u) == true);
+        assert(rivr_policy_allow_origination(6u, 850u) == false);
+        assert(om->origination_drop_count == 2u);
+
+        /* Unknown pkt_type always passes without touching the counter. */
+        assert(rivr_policy_allow_origination(99u, 1u) == true);
+        assert(om->origination_drop_count == 2u);
+    }
+
+    RIVR_LOGI(TAG, "RIVR_POLICY_SELFTEST: all assertions passed (including role + origination tests)");
 }
 
 #endif /* RIVR_POLICY_SELFTEST */
