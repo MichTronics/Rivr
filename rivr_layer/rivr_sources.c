@@ -216,8 +216,8 @@ uint32_t sources_rf_rx_drain(void)
                     prog_buf[copy_len] = '\0';
 
                     /* ── @PARAMS: policy parameter update (no full program push) ── *
-                     * Payload format: "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10>"
-                     * Example:        "@PARAMS beacon=60000 chat=2000 data=2000 duty=5"
+                     * Payload format: "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10> [role=client|repeater|gateway]"
+                     * Example:        "@PARAMS beacon=60000 chat=2000 data=2000 duty=5 role=repeater"
                      * Any omitted key retains its current value.
                      * Values out of bounds are silently ignored (see rivr_policy_set_param).
                      * ─────────────────────────────────────────────────────────────────── */
@@ -237,6 +237,19 @@ uint32_t sources_rf_rx_drain(void)
                         if ((kp = strstr(prog_buf, "duty=")) != NULL &&
                             sscanf(kp, "duty=%lu", &pv) == 1)
                             rivr_policy_set_param(RIVR_PARAM_ID_DUTY_PERCENT, (uint32_t)pv);
+                        /* role= accepts name (client/repeater/gateway) or digit (1/2/3) */
+                        if ((kp = strstr(prog_buf, "role=")) != NULL) {
+                            const char *rv = kp + 5u;
+                            char role_tok[12];
+                            int ti = 0;
+                            while (rv[ti] && rv[ti] != ' ' && rv[ti] != '\t'
+                                   && rv[ti] != '\r' && rv[ti] != '\n' && ti < 11) {
+                                role_tok[ti] = rv[ti]; ti++;
+                            }
+                            role_tok[ti] = '\0';
+                            rivr_policy_set_param(RIVR_PARAM_ID_ROLE,
+                                                  (uint32_t)rivr_policy_role_from_str(role_tok));
+                        }
                         /* Build updated program from new params and store to NVS   */
                         /* so rivr_embed_reload() picks it up on next iteration.    */
                         char policy_prog[512];

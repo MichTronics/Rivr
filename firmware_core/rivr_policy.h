@@ -10,8 +10,12 @@
  * that begins with "@PARAMS " (see rivr_sources.c for the handler).
  *
  * Wire format for param-update payload:
- *   @PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10>
- *   Example: "@PARAMS beacon=60000 chat=2000 data=2000 duty=5"
+ *   @PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10> [role=client|repeater|gateway]
+ *   Examples:
+ *     "@PARAMS beacon=60000 chat=2000 data=2000 duty=5"
+ *     "@PARAMS role=repeater"
+ *     "@PARAMS beacon=30000 role=gateway"
+ *   role= accepts name (client/repeater/gateway) or numeric (1/2/3).
  *
  * On receiving an @PARAMS payload:
  *   - g_policy_params is updated with validated values.
@@ -32,6 +36,13 @@ extern "C" {
 
 /* ── Policy parameter struct ─────────────────────────────────────────────── */
 
+/** Node role — controls relay policy in rivr_policy_build_program(). */
+typedef enum {
+    RIVR_NODE_ROLE_CLIENT   = 1,  /**< Client node: standard throttle */
+    RIVR_NODE_ROLE_REPEATER = 2,  /**< Repeater node: halved throttle for higher relay throughput */
+    RIVR_NODE_ROLE_GATEWAY  = 3,  /**< Gateway (maps to repeater behaviour for now) */
+} rivr_node_role_t;
+
 /**
  * Runtime-adjustable Rivr policy parameters.
  * Updated via rivr_policy_set_param(); read by rivr_policy_build_program().
@@ -41,6 +52,7 @@ typedef struct {
     uint32_t chat_throttle_ms;     /**< PKT_CHAT stream throttle window, ms */
     uint32_t data_throttle_ms;     /**< PKT_DATA stream throttle window, ms */
     uint8_t  duty_percent;         /**< TX duty-cycle limit 1–10 %          */
+    uint8_t  role;                 /**< Node role (rivr_node_role_t)        */
 } rivr_policy_params_t;
 
 /** Param IDs used with rivr_policy_set_param(). */
@@ -49,6 +61,7 @@ typedef enum {
     RIVR_PARAM_ID_CHAT_THROTTLE   = 2,
     RIVR_PARAM_ID_DATA_THROTTLE   = 3,
     RIVR_PARAM_ID_DUTY_PERCENT    = 4,
+    RIVR_PARAM_ID_ROLE            = 5,  /**< Node role (rivr_node_role_t value) */
 } rivr_param_id_t;
 
 /** Global policy parameter state — read-only outside rivr_policy.c. */
@@ -87,8 +100,21 @@ void rivr_policy_init(void);
  *   chat_throttle_ms    >= 100
  *   data_throttle_ms    >= 100
  *   duty_percent        in [1..10]
+ *   role                in [1..3]  (RIVR_NODE_ROLE_CLIENT/REPEATER/GATEWAY)
  */
 void rivr_policy_set_param(uint8_t param_id, uint32_t value);
+
+/**
+ * Parse a role string ("client"/"repeater"/"gateway") or decimal digit ("1".."3")
+ * and return the corresponding rivr_node_role_t value.
+ * Returns RIVR_NODE_ROLE_CLIENT for any unrecognised input.
+ */
+uint8_t rivr_policy_role_from_str(const char *s);
+
+/**
+ * Return a short ASCII name for a role value ("client", "repeater", "gateway", "?").
+ */
+const char *rivr_policy_role_name(uint8_t role);
 
 /**
  * Generate the current RIVR program string from g_policy_params into buf.
@@ -120,7 +146,7 @@ void rivr_policy_notify_reload(void);
  * Print current policy params + metrics as a single @POLICY JSON line to.
  * stdout (printf).  Use from CLI "policy" command or periodic diagnostics.
  * Format:
- *   @POLICY {"beacon":30000,"chat":2000,"data":2000,"duty":10,
+ *   @POLICY {"beacon":30000,"chat":2000,"data":2000,"duty":10,"role":"client",
  *            "updates":0,"last_update_ms":0,"rebuilds":0,"reloads":0,
  *            "duty_blocked":0,"orig_drops":0}\r\n
  */

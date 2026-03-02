@@ -10,6 +10,7 @@
 #include "timebase.h"                         /* tb_millis() */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>   /* strtoul — rivr_policy_role_from_str */
 
 #define TAG "RIVR_POLICY"
 
@@ -29,6 +30,7 @@ void rivr_policy_init(void)
     g_policy_params.chat_throttle_ms   = RIVR_PARAM_CHAT_THROTTLE_MS;
     g_policy_params.data_throttle_ms   = RIVR_PARAM_DATA_THROTTLE_MS;
     g_policy_params.duty_percent       = RIVR_PARAM_DUTY_PERCENT;
+    g_policy_params.role               = (uint8_t)RIVR_NODE_ROLE_CLIENT;
     /* Zero all metrics counters on (re)init. */
     s_policy_metrics.params_update_count       = 0u;
     s_policy_metrics.last_params_update_uptime_ms = 0u;
@@ -94,15 +96,55 @@ void rivr_policy_set_param(uint8_t param_id, uint32_t value)
             s_policy_metrics.last_params_update_uptime_ms = tb_millis();
             break;
 
+        case RIVR_PARAM_ID_ROLE:
+            if (value < 1u || value > 3u) {
+                RIVR_LOGW(TAG, "role=%lu out of range [1..3], ignored", (unsigned long)value);
+                return;
+            }
+            g_policy_params.role = (uint8_t)value;
+            RIVR_LOGI(TAG, "param update: role=%s", rivr_policy_role_name(g_policy_params.role));
+            s_policy_metrics.params_update_count++;
+            s_policy_metrics.last_params_update_uptime_ms = tb_millis();
+            break;
+
         default:
             RIVR_LOGW(TAG, "unknown param_id=%u, ignored", (unsigned)param_id);
             break;
     }
 }
 
+/* ── Role helpers ──────────────────────────────────────────────────────── */
+
+uint8_t rivr_policy_role_from_str(const char *s)
+{
+    if (!s || *s == '\0') return (uint8_t)RIVR_NODE_ROLE_CLIENT;
+    if (strcmp(s, "client")   == 0) return (uint8_t)RIVR_NODE_ROLE_CLIENT;
+    if (strcmp(s, "repeater") == 0) return (uint8_t)RIVR_NODE_ROLE_REPEATER;
+    if (strcmp(s, "gateway")  == 0) return (uint8_t)RIVR_NODE_ROLE_GATEWAY;
+    /* Numeric fallback: "1", "2", "3" */
+    unsigned long v = strtoul(s, NULL, 10);
+    if (v >= 1u && v <= 3u) return (uint8_t)v;
+    return (uint8_t)RIVR_NODE_ROLE_CLIENT;
+}
+
+const char *rivr_policy_role_name(uint8_t role)
+{
+    switch ((rivr_node_role_t)role) {
+        case RIVR_NODE_ROLE_CLIENT:   return "client";
+        case RIVR_NODE_ROLE_REPEATER: return "repeater";
+        case RIVR_NODE_ROLE_GATEWAY:  return "gateway";
+        default:                      return "?";
+    }
+}
+
 void rivr_policy_build_program(char *buf, size_t bufsz)
 {
     /*
+     * Role-adjusted effective throttle values:
+     *   CLIENT   — use params as-is (standard relay rate).
+     *   REPEATER/GATEWAY — halve the throttle window (floor 100 ms)
+     *     to allow higher relay throughput within the same duty budget.
+     *
      * Generated program shape (RIVR_MESH_PROGRAM with runtime params):
      *
      *   source rf_rx @lmp = rf;
@@ -111,11 +153,11 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
      *   let chat = rf_rx
      *     |> filter.pkt_type(1)
      *     |> budget.toa_us(280000, 0.<duty_percent:02d>, 280000)
-     *     |> throttle.ms(<chat_throttle_ms>);
+     *     |> throttle.ms(<eff_chat_throttle_ms>);
      *
      *   let data = rf_rx
      *     |> filter.pkt_type(6)
-     *     |> throttle.ms(<data_throttle_ms>);
+     *     |> throttle.ms(<eff_data_throttle_ms>);
      *
      *   emit { io.lora.beacon(beacon_tick); }
      *
@@ -127,6 +169,14 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
      * Max generated length (all params at u32 max, duty=10): ~340 chars.
      * bufsz must be >= 512. Truncation is detected and handled below.
      */
+    uint32_t eff_chat = g_policy_params.chat_throttle_ms;
+    uint32_t eff_data = g_policy_params.data_throttle_ms;
+    if (g_policy_params.role == (uint8_t)RIVR_NODE_ROLE_REPEATER ||
+        g_policy_params.role == (uint8_t)RIVR_NODE_ROLE_GATEWAY) {
+        eff_chat = (eff_chat / 2u < 100u) ? 100u : eff_chat / 2u;
+        eff_data = (eff_data / 2u < 100u) ? 100u : eff_data / 2u;
+    }
+
     int len = snprintf(buf, bufsz,
         "source rf_rx @lmp = rf;\n"
         "source beacon_tick = timer(%lu);\n"
@@ -143,8 +193,8 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
         "emit { io.lora.beacon(beacon_tick); }\n",
         (unsigned long)g_policy_params.beacon_interval_ms,
         (unsigned)g_policy_params.duty_percent,
-        (unsigned long)g_policy_params.chat_throttle_ms,
-        (unsigned long)g_policy_params.data_throttle_ms);
+        (unsigned long)eff_chat,
+        (unsigned long)eff_data);
 
     /* Guarantee NUL termination regardless of snprintf outcome. */
     buf[bufsz - 1u] = '\0';
@@ -196,6 +246,7 @@ void rivr_policy_print(void)
            "\"chat\":%lu,"
            "\"data\":%lu,"
            "\"duty\":%u,"
+           "\"role\":\"%s\","
            "\"updates\":%lu,"
            "\"last_update_ms\":%lu,"
            "\"rebuilds\":%lu,"
@@ -207,6 +258,7 @@ void rivr_policy_print(void)
            (unsigned long)g_policy_params.chat_throttle_ms,
            (unsigned long)g_policy_params.data_throttle_ms,
            (unsigned)g_policy_params.duty_percent,
+           rivr_policy_role_name(g_policy_params.role),
            (unsigned long)s_policy_metrics.params_update_count,
            (unsigned long)s_policy_metrics.last_params_update_uptime_ms,
            (unsigned long)s_policy_metrics.policy_rebuild_count,
@@ -260,8 +312,58 @@ void rivr_policy_selftest(void)
     rivr_policy_set_param(99u, 1000u);
     assert(m->params_update_count == 4u);
 
-    RIVR_LOGI(TAG, "RIVR_POLICY_SELFTEST: all %u assertions passed",
-              (unsigned)m->params_update_count + 5u);
+    /* ── Role parameter tests ── */
+
+    /* Valid role (repeater) → increments. */
+    rivr_policy_set_param(RIVR_PARAM_ID_ROLE, (uint32_t)RIVR_NODE_ROLE_REPEATER);
+    assert(m->params_update_count == 5u);
+    assert(g_policy_params.role == (uint8_t)RIVR_NODE_ROLE_REPEATER);
+
+    /* Invalid role (out of [1..3]) → no increment. */
+    rivr_policy_set_param(RIVR_PARAM_ID_ROLE, 99u);
+    assert(m->params_update_count == 5u);
+    rivr_policy_set_param(RIVR_PARAM_ID_ROLE, 0u);
+    assert(m->params_update_count == 5u);
+
+    /* Role-based program generation: repeater throttle < client throttle */
+    {
+        char prog_client[512];
+        char prog_repeater[512];
+        char prog_gateway[512];
+
+        /* Reset to client with known throttle values */
+        rivr_policy_init();
+        rivr_policy_set_param(RIVR_PARAM_ID_CHAT_THROTTLE, 2000u);
+        rivr_policy_set_param(RIVR_PARAM_ID_DATA_THROTTLE, 2000u);
+        rivr_policy_build_program(prog_client, sizeof(prog_client));
+
+        /* Repeater: throttle halved → different program */
+        rivr_policy_set_param(RIVR_PARAM_ID_ROLE, (uint32_t)RIVR_NODE_ROLE_REPEATER);
+        rivr_policy_build_program(prog_repeater, sizeof(prog_repeater));
+        assert(strcmp(prog_client, prog_repeater) != 0);
+
+        /* Gateway produces same result as repeater */
+        rivr_policy_set_param(RIVR_PARAM_ID_ROLE, (uint32_t)RIVR_NODE_ROLE_GATEWAY);
+        rivr_policy_build_program(prog_gateway, sizeof(prog_gateway));
+        assert(strcmp(prog_repeater, prog_gateway) == 0);
+
+        /* Restore to client → program matches original */
+        rivr_policy_set_param(RIVR_PARAM_ID_ROLE, (uint32_t)RIVR_NODE_ROLE_CLIENT);
+        char prog_client2[512];
+        rivr_policy_build_program(prog_client2, sizeof(prog_client2));
+        assert(strcmp(prog_client, prog_client2) == 0);
+    }
+
+    /* rivr_policy_role_from_str: named strings */
+    assert(rivr_policy_role_from_str("client")   == (uint8_t)RIVR_NODE_ROLE_CLIENT);
+    assert(rivr_policy_role_from_str("repeater") == (uint8_t)RIVR_NODE_ROLE_REPEATER);
+    assert(rivr_policy_role_from_str("gateway")  == (uint8_t)RIVR_NODE_ROLE_GATEWAY);
+    assert(rivr_policy_role_from_str("1")        == (uint8_t)RIVR_NODE_ROLE_CLIENT);
+    assert(rivr_policy_role_from_str("2")        == (uint8_t)RIVR_NODE_ROLE_REPEATER);
+    assert(rivr_policy_role_from_str("junk")     == (uint8_t)RIVR_NODE_ROLE_CLIENT);
+    assert(rivr_policy_role_from_str(NULL)       == (uint8_t)RIVR_NODE_ROLE_CLIENT);
+
+    RIVR_LOGI(TAG, "RIVR_POLICY_SELFTEST: all assertions passed (including role tests)");
 }
 
 #endif /* RIVR_POLICY_SELFTEST */

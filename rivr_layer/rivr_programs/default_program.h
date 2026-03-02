@@ -40,13 +40,16 @@
  * Mechanism (routing, ACK, queue) remains in C.
  * Rivr continues to serve as policy layer only.
  *
- * Send "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10>" as a
+ * Send "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10> [role=client|repeater|gateway]" as a
  * PKT_PROG_PUSH payload to update runtime policy without reflashing.
  * Default values are the RIVR_PARAM_* macros below.
+ * The role= key controls relay throttle:
+ *   client   (default): standard throttle windows
+ *   repeater/gateway:   halved throttle (min 100 ms) for higher relay throughput
  *
  * Use the CLI command "policy" or watch for @POLICY JSON lines to
  * observe the current parameter values and update counters:
- *   @POLICY {"beacon":30000,"chat":2000,"data":2000,"duty":10,
+ *   @POLICY {"beacon":30000,"chat":2000,"data":2000,"duty":10,"role":"client",
  *            "updates":N,"last_update_ms":N,"rebuilds":N,"reloads":N,
  *            "duty_blocked":0,"orig_drops":0}
  */
