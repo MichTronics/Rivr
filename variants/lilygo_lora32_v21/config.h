@@ -75,34 +75,6 @@
 #  define RIVR_RF_FREQ_HZ  869480000UL
 #endif
 
-/* ── LoRa modulation parameters ─────────────────────────────────────────── */
-/* All overrideable with -D or earlier #define before the -include.          */
-
-/** Spreading factor: 7 (fastest/shortest range) … 12 (slowest/longest). */
-#ifndef RF_SPREADING_FACTOR
-#  define RF_SPREADING_FACTOR  8u
-#endif
-
-/** Bandwidth in kHz: 7 / 10 / 15 / 20 / 31 / 41 / 62 / 125 / 250 / 500. */
-#ifndef RF_BANDWIDTH_KHZ
-#  define RF_BANDWIDTH_KHZ     125u
-#endif
-
-/** Coding-rate denominator (4/N): 5 = least overhead, 8 = most redundancy. */
-#ifndef RF_CODING_RATE
-#  define RF_CODING_RATE       8u
-#endif
-
-/**
- * TX output power in dBm for the SX1276 chip (PA_BOOST pin on LilyGo).
- * > 17 dBm: uses +20 dBm PA_DAC mode (needs ~200 mA from the 3.3V rail).
- * 2..17 dBm: standard PA_BOOST; Pout = 2 + OutputPower.
- * SX1276 achievable range: 2..17 dBm (standard) or 20 dBm (+20 dBm mode).
- */
-#ifndef RF_TX_POWER_DBM
-#  define RF_TX_POWER_DBM      20
-#endif
-
 /* ── SPI / control pins  (reusing PIN_SX1262_* namespace) ──────────────── */
 
 /* SPI clock — LilyGo uses GPIO5 (different from the E22 DevKit wiring).    */
