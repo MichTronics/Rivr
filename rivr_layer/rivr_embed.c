@@ -49,6 +49,7 @@
 #include "nvs.h"
 #include "esp_log.h"
 #include "../firmware_core/rivr_log.h"
+#include "../firmware_core/rivr_policy.h"
 
 /* Weak stub — overridden by strong symbol from Rust rivr_core when
  * compiled with --features ffi.  Allows linking even against a
@@ -83,6 +84,10 @@ bool             g_program_reload_pending = false;
 #define RIVR_NVS_PROG_MAX   2048u
 
 static char s_nvs_program[RIVR_NVS_PROG_MAX];
+
+/* Buffer for dynamically-generated policy program (from g_policy_params). */
+#define RIVR_POLICY_PROG_MAX  512u
+static char s_policy_buf[RIVR_POLICY_PROG_MAX];
 
 static const char *nvs_load_program(void)
 {
@@ -294,8 +299,9 @@ void rivr_embed_init(void)
        compiled-in default on first boot or after flash. */
     const char *prog_src = nvs_load_program();
     if (!prog_src) {
-        prog_src = RIVR_ACTIVE_PROGRAM;
-        RIVR_LOGI(TAG, "rivr_embed_init: no NVS program – using compiled-in default");
+        rivr_policy_build_program(s_policy_buf, sizeof(s_policy_buf));
+        prog_src = s_policy_buf;
+        RIVR_LOGI(TAG, "rivr_embed_init: no NVS program – using policy defaults");
     }
     rivr_result_t rc = rivr_engine_init(prog_src);
     if (rc.code != RIVR_OK) {
@@ -339,8 +345,9 @@ bool rivr_embed_reload(void)
     /* Load new program (NVS or default) */
     const char *prog_src = nvs_load_program();
     if (!prog_src) {
-        prog_src = RIVR_ACTIVE_PROGRAM;
-        RIVR_LOGI(TAG, "rivr_embed_reload: NVS empty – reverting to compiled-in default");
+        rivr_policy_build_program(s_policy_buf, sizeof(s_policy_buf));
+        prog_src = s_policy_buf;
+        RIVR_LOGI(TAG, "rivr_embed_reload: NVS empty – rebuilding from policy params");
     }
 
     rivr_result_t rc = rivr_engine_init(prog_src);

@@ -35,6 +35,16 @@
 #ifndef DEFAULT_PROGRAM_H
 #define DEFAULT_PROGRAM_H
 
+/*
+ * Rivr Policy Parameters are now runtime-adjustable via PKT_PROG_PUSH.
+ * Mechanism (routing, ACK, queue) remains in C.
+ * Rivr continues to serve as policy layer only.
+ *
+ * Send "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10>" as a
+ * PKT_PROG_PUSH payload to update runtime policy without reflashing.
+ * Default values are the RIVR_PARAM_* macros below.
+ */
+
 /* ── Time-on-Air constants for the default configuration ─────────────────── *
  *
  *  SX1262 at SF8, BW=125kHz, CR=4/8, Preamble=8, Header=explicit, CRC=on
@@ -56,6 +66,19 @@
 #define RIVR_WINDOW_MS        280000UL   /**< ~4.7-minute sliding window     */
 #define RIVR_DUTY_PCT_STR     "0.10"     /**< 10% duty cycle (as string)     */
 #define RIVR_BEACON_TIMER_MS  30000UL    /**< 30-second periodic beacon interval */
+
+/* ── Runtime-adjustable policy parameters (OTA via PKT_PROG_PUSH @PARAMS) ── *
+ *
+ * These are the compiled-in defaults.  rivr_policy_init() loads them into
+ * g_policy_params at boot.  rivr_policy_set_param() validates and updates
+ * them at runtime.  rivr_policy_build_program() generates the active RIVR
+ * program string from g_policy_params (used instead of the static macros
+ * below when a param-update OTA has been applied).
+ * ────────────────────────────────────────────────────────────────────────── */
+#define RIVR_PARAM_BEACON_INTERVAL_MS   30000UL  /**< Beacon period, ms (OTA-adjustable) */
+#define RIVR_PARAM_CHAT_THROTTLE_MS      2000UL  /**< PKT_CHAT throttle window, ms       */
+#define RIVR_PARAM_DATA_THROTTLE_MS      2000UL  /**< PKT_DATA throttle window, ms       */
+#define RIVR_PARAM_DUTY_PERCENT             10u  /**< TX duty-cycle limit 1–10 %         */
 
 /* ── Packet type constants (mirror protocol.h for use in RIVR programs) ──── */
 #define RIVR_PKT_TYPE_CHAT    1   /**< PKT_CHAT = 1 (see protocol.h)         */
@@ -115,18 +138,11 @@
     "\n"                                                        \
     "emit { io.usb.print(chat); }\n"
 
-/** Auto-select program based on build mode.
- *
- * In sim mode (Phase A+D) we use the mesh program so that:
- *   - PKT_CHAT (type=1) is rate-limited by RIVR and forwarded to rf_tx
- *   - PKT_DATA (type=6) reaches the rf_tx sink (C-layer relay handles it)
- *   - usb_print gives a console view of every CHAT that passed RIVR policy
- */
-#ifdef RIVR_SIM_MODE
-#  define RIVR_ACTIVE_PROGRAM  RIVR_MESH_PROGRAM
-#else
-#  define RIVR_ACTIVE_PROGRAM  RIVR_DEFAULT_PROGRAM
-#endif
+// Using RIVR_MESH_PROGRAM to ensure both PKT_CHAT and PKT_DATA
+// are subject to unified policy gating.
+// RIVR_ACTIVE_PROGRAM is the compiled-in fallback used by rivr_embed.c
+// when neither NVS program nor @PARAMS OTA update is present.
+#define RIVR_ACTIVE_PROGRAM  RIVR_MESH_PROGRAM
 
 /* ── Extended mesh program — Phase D default for sim + production ─────────
  *
@@ -142,6 +158,7 @@
  * ────────────────────────────────────────────────────────────────────────── */
 #define RIVR_MESH_PROGRAM                                       \
     "source rf_rx @lmp = rf;\n"                                \
+    "source beacon_tick = timer(30000);\n"                     \
     "\n"                                                        \
     "let chat = rf_rx\n"                                       \
     "  |> filter.pkt_type(1)\n"                                \
@@ -152,6 +169,6 @@
     "  |> filter.pkt_type(6)\n"                                \
     "  |> throttle.ticks(1);\n"                                \
     "\n"                                                        \
-    "emit { io.usb.print(chat); }\n"
+    "emit { io.lora.beacon(beacon_tick); }\n"
 
 #endif /* DEFAULT_PROGRAM_H */

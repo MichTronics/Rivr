@@ -23,6 +23,7 @@
 #include "../firmware_core/rivr_log.h"
 #include "../firmware_core/rivr_ota.h"
 #include "../firmware_core/policy.h"
+#include "../firmware_core/rivr_policy.h"
 
 #define TAG "RIVR_SRC"
 
@@ -213,11 +214,47 @@ uint32_t sources_rf_rx_drain(void)
                     uint8_t copy_len = pkt_hdr.payload_len;
                     memcpy(prog_buf, payload_ptr, copy_len);
                     prog_buf[copy_len] = '\0';
-                    if (rivr_nvs_store_program(prog_buf)) {
-                        g_program_reload_pending = true;
-                        RIVR_LOGI(TAG,
-                            "OTA: new program received from 0x%08lx (%u bytes) – reload scheduled",
-                            (unsigned long)pkt_hdr.src_id, copy_len);
+
+                    /* ── @PARAMS: policy parameter update (no full program push) ── *
+                     * Payload format: "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10>"
+                     * Example:        "@PARAMS beacon=60000 chat=2000 data=2000 duty=5"
+                     * Any omitted key retains its current value.
+                     * Values out of bounds are silently ignored (see rivr_policy_set_param).
+                     * ─────────────────────────────────────────────────────────────────── */
+                    if (copy_len >= 7u &&
+                        strncmp(prog_buf, "@PARAMS", 7) == 0) {
+                        unsigned long pv = 0;
+                        const char *kp;
+                        if ((kp = strstr(prog_buf, "beacon=")) != NULL &&
+                            sscanf(kp, "beacon=%lu", &pv) == 1)
+                            rivr_policy_set_param(RIVR_PARAM_ID_BEACON_INTERVAL, (uint32_t)pv);
+                        if ((kp = strstr(prog_buf, "chat=")) != NULL &&
+                            sscanf(kp, "chat=%lu", &pv) == 1)
+                            rivr_policy_set_param(RIVR_PARAM_ID_CHAT_THROTTLE, (uint32_t)pv);
+                        if ((kp = strstr(prog_buf, "data=")) != NULL &&
+                            sscanf(kp, "data=%lu", &pv) == 1)
+                            rivr_policy_set_param(RIVR_PARAM_ID_DATA_THROTTLE, (uint32_t)pv);
+                        if ((kp = strstr(prog_buf, "duty=")) != NULL &&
+                            sscanf(kp, "duty=%lu", &pv) == 1)
+                            rivr_policy_set_param(RIVR_PARAM_ID_DUTY_PERCENT, (uint32_t)pv);
+                        /* Build updated program from new params and store to NVS   */
+                        /* so rivr_embed_reload() picks it up on next iteration.    */
+                        char policy_prog[512];
+                        rivr_policy_build_program(policy_prog, sizeof(policy_prog));
+                        if (rivr_nvs_store_program(policy_prog)) {
+                            g_program_reload_pending = true;
+                            RIVR_LOGI(TAG,
+                                "OTA: @PARAMS update accepted from 0x%08lx – reload scheduled",
+                                (unsigned long)pkt_hdr.src_id);
+                        }
+                    } else {
+                        /* Full program text push — existing path */
+                        if (rivr_nvs_store_program(prog_buf)) {
+                            g_program_reload_pending = true;
+                            RIVR_LOGI(TAG,
+                                "OTA: new program received from 0x%08lx (%u bytes) – reload scheduled",
+                                (unsigned long)pkt_hdr.src_id, copy_len);
+                        }
                     }
 #endif /* RIVR_SIGNED_PROG */
                 }

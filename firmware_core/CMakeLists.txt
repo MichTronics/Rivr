@@ -40,6 +40,8 @@ idf_component_register(
         "hal/radio_if.c"
         # Watchdog / panic marker
         "rivr_panic.c"
+        # Runtime-adjustable policy parameters
+        "rivr_policy.c"
         # RIVR glue layer (relative to firmware_core/)
         "../rivr_layer/rivr_embed.c"
         "../rivr_layer/rivr_sinks.c"

@@ -64,6 +64,7 @@
 #include "firmware_core/build_info.h"
 #include "firmware_core/airtime_sched.h"
 #include "firmware_core/rivr_panic.h"
+#include "firmware_core/rivr_policy.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
 #include "rivr_layer/rivr_cli.h"
@@ -534,6 +535,7 @@ void app_main(void)
     strncpy(g_callsign, RIVR_CALLSIGN, sizeof(g_callsign) - 1u);
     g_callsign[sizeof(g_callsign) - 1u] = '\0';
     rivr_nvs_load_identity();   /* NVS values silently override compile-time defaults */
+    rivr_policy_init();          /* load compiled-in defaults into g_policy_params */
     rivr_fabric_init();
     rivr_embed_init();
 
