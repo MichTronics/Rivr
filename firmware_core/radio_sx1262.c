@@ -48,6 +48,44 @@
 #include "rivr_log.h"
 #include <string.h>
 #include <stdio.h>
+
+/* ── Compile-time SX1262 register encodings ─────────────────────────────── */
+/* BW kHz → SetModulationParams param2 (SX1262 UM v2.1 Table 13-47)        */
+#if   RF_BANDWIDTH_KHZ == 7
+#  define _RF_BW_SX1262_REG  0x00u
+#elif RF_BANDWIDTH_KHZ == 10
+#  define _RF_BW_SX1262_REG  0x08u
+#elif RF_BANDWIDTH_KHZ == 15
+#  define _RF_BW_SX1262_REG  0x01u
+#elif RF_BANDWIDTH_KHZ == 20
+#  define _RF_BW_SX1262_REG  0x09u
+#elif RF_BANDWIDTH_KHZ == 31
+#  define _RF_BW_SX1262_REG  0x02u
+#elif RF_BANDWIDTH_KHZ == 41
+#  define _RF_BW_SX1262_REG  0x0Au
+#elif RF_BANDWIDTH_KHZ == 62
+#  define _RF_BW_SX1262_REG  0x03u
+#elif RF_BANDWIDTH_KHZ == 125
+#  define _RF_BW_SX1262_REG  0x04u
+#elif RF_BANDWIDTH_KHZ == 250
+#  define _RF_BW_SX1262_REG  0x05u
+#elif RF_BANDWIDTH_KHZ == 500
+#  define _RF_BW_SX1262_REG  0x06u
+#else
+#  error "RF_BANDWIDTH_KHZ: unsupported — use 7/10/15/20/31/41/62/125/250/500"
+#endif
+/* CR denominator (4/N) → SetModulationParams param3                        */
+#if   RF_CODING_RATE == 5
+#  define _RF_CR_SX1262_REG  0x01u
+#elif RF_CODING_RATE == 6
+#  define _RF_CR_SX1262_REG  0x02u
+#elif RF_CODING_RATE == 7
+#  define _RF_CR_SX1262_REG  0x03u
+#elif RF_CODING_RATE == 8
+#  define _RF_CR_SX1262_REG  0x04u
+#else
+#  error "RF_CODING_RATE: unsupported — use 5, 6, 7, or 8 (for CR 4/5..4/8)"
+#endif
 #include <inttypes.h>
 
 #define TAG "RADIO"
@@ -221,7 +259,7 @@ static void radio_apply_config(void)
      *   0x00=7.8   0x08=10.4  0x01=15.6  0x09=20.8  0x02=31.25
      *   0x0A=41.7  0x03=62.5  0x04=125   0x05=250   0x06=500  kHz */
     {
-        uint8_t mod_params[4] = { RF_SPREADING_FACTOR, 0x04, 0x04, 0x00 };
+        uint8_t mod_params[4] = { RF_SPREADING_FACTOR, _RF_BW_SX1262_REG, _RF_CR_SX1262_REG, 0x00 };
         sx1262_cmd(0x8B, mod_params, 4);   /* 0x8B = SetModulationParams */
         platform_sx1262_wait_busy(10);
     }
@@ -239,10 +277,11 @@ static void radio_apply_config(void)
         platform_sx1262_wait_busy(10);
     }
 
-    /* SetTxParams: +22 dBm (SX1262 max), rampTime=40µs.
-     * The E22-900M30S external PA boosts this to ~30 dBm. */
+    /* SetTxParams: RF_TX_POWER_DBM (default 22 = SX1262 max), rampTime=40µs.
+     * Override via -DRF_TX_POWER_DBM=<x> or in variants/<board>/config.h.
+     * The E22-900M30S external PA boosts the on-chip output by ~8 dBm. */
     {
-        uint8_t tx_params[2] = { 0x16, 0x04 };
+        uint8_t tx_params[2] = { (uint8_t)RF_TX_POWER_DBM, 0x04 };
         sx1262_cmd(0x8E, tx_params, 2);   /* 0x8E = SetTxParams */
         platform_sx1262_wait_busy(10);
     }

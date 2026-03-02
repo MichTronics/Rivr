@@ -34,16 +34,42 @@ extern "C" {
 #define RF_RX_RINGBUF_CAP    8u     /**< Power-of-2; max 8 unread RX frames   */
 #define RF_TX_QUEUE_CAP      4u     /**< Power-of-2; max 4 pending TX frames  */
 
-/* LoRa parameters (SF8 BW125kHz CR4/8 – 869.480 MHz EU868 high-power sub-band g3) */
-#define RF_SPREADING_FACTOR  8u
-#define RF_BANDWIDTH_KHZ     125u
-#define RF_CODING_RATE       8u     /**< 4/8 */
-#define RF_PREAMBLE_LEN      8u
-#define RF_FREQ_HZ           869480000UL  /**< 869.480 MHz (EU868 g3 high-power) */
+/* LoRa parameters — all overrideable via variants/<device>/config.h or -D.
+ * Set BEFORE including this header (e.g. via the -include force-include).
+ * ─── Common values ───────────────────────────────────────────────────────
+ *   SF: 7..12         higher = longer range, slower, more airtime
+ *   BW: 125 kHz       standard EU868; 250/500 for higher throughput
+ *   CR: 8 (= 4/8)     highest redundancy; 5 (= 4/5) for least overhead
+ *   Power (SX1262): -9..22 dBm; E22 external PA adds ~8 dBm on top       */
+#ifndef RF_SPREADING_FACTOR
+#  define RF_SPREADING_FACTOR  8u     /**< SF7..SF12 */
+#endif
+#ifndef RF_BANDWIDTH_KHZ
+#  define RF_BANDWIDTH_KHZ     125u   /**< 7/10/15/20/31/41/62/125/250/500 kHz */
+#endif
+#ifndef RF_CODING_RATE
+#  define RF_CODING_RATE       8u     /**< denominator of 4/N — 5..8 */
+#endif
+#ifndef RF_PREAMBLE_LEN
+#  define RF_PREAMBLE_LEN      8u
+#endif
+#ifndef RF_TX_POWER_DBM
+#  define RF_TX_POWER_DBM      22     /**< SX1262: -9..22; SX1276: 2..20 dBm */
+#endif
+/* RF_FREQ_HZ — actual chip register value; falls back to RIVR_RF_FREQ_HZ so
+ * a single -DRIVR_RF_FREQ_HZ=… updates both the boot banner AND the radio. */
+#ifndef RF_FREQ_HZ
+#  ifdef RIVR_RF_FREQ_HZ
+#    define RF_FREQ_HZ  RIVR_RF_FREQ_HZ
+#  else
+#    define RF_FREQ_HZ  869480000UL   /**< 869.480 MHz (EU868 g3 high-power) */
+#  endif
+#endif
 
 /**
  * Time-on-Air in microseconds for a payload of `pl` bytes.
- * SF8, BW=125kHz, CR=4/8, explicit header, CRC on, LDRO off.
+ * Valid for SF8, BW=125kHz, CR=4/8, explicit header, CRC on, LDRO off.
+ * NOTE: if you change SF or BW, update this formula accordingly.
  * Formula: SX1262 datasheet §6.1.4
  *
  *   T_sym      = 2^SF / BW = 2^8 / 125000 = 2048 µs

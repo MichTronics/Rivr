@@ -51,6 +51,48 @@
 #include <stdio.h>
 #include <stdatomic.h>
 
+/* ── Compile-time SX1276 register encodings ─────────────────────────────── */
+/* BW kHz → RegModemConfig1 bits[7:4]  (SX1276 DS §4.1.1.4)                */
+#if   RF_BANDWIDTH_KHZ == 7
+#  define _RF_BW_SX1276_BITS  0u
+#elif RF_BANDWIDTH_KHZ == 10
+#  define _RF_BW_SX1276_BITS  1u
+#elif RF_BANDWIDTH_KHZ == 15
+#  define _RF_BW_SX1276_BITS  2u
+#elif RF_BANDWIDTH_KHZ == 20
+#  define _RF_BW_SX1276_BITS  3u
+#elif RF_BANDWIDTH_KHZ == 31
+#  define _RF_BW_SX1276_BITS  4u
+#elif RF_BANDWIDTH_KHZ == 41
+#  define _RF_BW_SX1276_BITS  5u
+#elif RF_BANDWIDTH_KHZ == 62
+#  define _RF_BW_SX1276_BITS  6u
+#elif RF_BANDWIDTH_KHZ == 125
+#  define _RF_BW_SX1276_BITS  7u
+#elif RF_BANDWIDTH_KHZ == 250
+#  define _RF_BW_SX1276_BITS  8u
+#elif RF_BANDWIDTH_KHZ == 500
+#  define _RF_BW_SX1276_BITS  9u
+#else
+#  error "RF_BANDWIDTH_KHZ: unsupported — use 7/10/15/20/31/41/62/125/250/500"
+#endif
+/* CR denominator (4/N) → RegModemConfig1 bits[3:1]                         */
+#if   RF_CODING_RATE == 5
+#  define _RF_CR_SX1276_BITS  1u
+#elif RF_CODING_RATE == 6
+#  define _RF_CR_SX1276_BITS  2u
+#elif RF_CODING_RATE == 7
+#  define _RF_CR_SX1276_BITS  3u
+#elif RF_CODING_RATE == 8
+#  define _RF_CR_SX1276_BITS  4u
+#else
+#  error "RF_CODING_RATE: unsupported — use 5, 6, 7, or 8 (for CR 4/5..4/8)"
+#endif
+/* RegModemConfig1: [BW:4][CR:3][ImplicitHeader:1] — explicit header = 0    */
+#define _SX1276_MODEM_CFG1  ((uint8_t)((_RF_BW_SX1276_BITS << 4) | (_RF_CR_SX1276_BITS << 1)))
+/* RegModemConfig2: [SF:4][TxCont:1][CRCon:1][SymbTO_MSB:2] — CRC on       */
+#define _SX1276_MODEM_CFG2  ((uint8_t)((RF_SPREADING_FACTOR << 4) | 0x04u))
+
 #define TAG "RADIO"
 
 /* ── SX1276 register map ─────────────────────────────────────────────────── */
@@ -237,11 +279,19 @@ void radio_init(void)
      * → with PA_DAC=0x87 this gives +20 dBm.
      * Without +20 dBm PaDac setting max is +17 dBm.
      */
-    sx1276_write_reg(REG_PA_CONFIG, PA_CFG_BOOST_MAX);
-    sx1276_write_reg(REG_PA_DAC,    PA_DAC_20DBM);
-
-    /* Over-current protection: enable, 240 mA (needed for 20 dBm mode). */
-    sx1276_write_reg(REG_OCP, 0x3Bu);   /* OcpOn=1, OcpTrim=0x1B → 240 mA */
+    /* PA configuration — RF_TX_POWER_DBM sets the target output power.
+     * SX1276 PA_BOOST pin (LilyGo wiring): Pout = 2 + OutputPower [dBm].
+     * +20 dBm mode (PaDac=0x87): OutputPower must be 15; needs 150–240 mA.
+     * Standard mode (PaDac=0x84): max +17 dBm.                            */
+#if RF_TX_POWER_DBM > 17
+    sx1276_write_reg(REG_PA_CONFIG, 0x8Fu);   /* PA_BOOST, OutputPower=15  */
+    sx1276_write_reg(REG_PA_DAC,    0x87u);   /* enable +20 dBm mode       */
+    sx1276_write_reg(REG_OCP, 0x3Bu);         /* OCP: 240 mA               */
+#else
+    sx1276_write_reg(REG_PA_CONFIG, (uint8_t)(0x80u | ((uint8_t)(RF_TX_POWER_DBM) - 2u)));
+    sx1276_write_reg(REG_PA_DAC,    0x84u);   /* standard PA_BOOST         */
+    sx1276_write_reg(REG_OCP, 0x2Bu);         /* OCP: ~100 mA              */
+#endif
 
     /* LNA: maximum gain (3-dB steps), LNA boost on for HF port. */
     sx1276_write_reg(REG_LNA, 0x23u);   /* LnaGain=0b001(max), LnaBoostHf=0b11 */
@@ -252,23 +302,22 @@ void radio_init(void)
      *   bits[7:4] = Bw          0111 = 125 kHz
      *   bits[3:1] = CodingRate  100  = 4/8
      *   bit [0]   = ImplicitHeaderModeOn  0 = explicit header
-     *   → 0b01111000 = 0x78
+     *   → computed at compile time as _SX1276_MODEM_CFG1
      *
      * RegModemConfig2 (0x1E)
-     *   bits[7:4] = SpreadingFactor  1000 = SF8
+     *   bits[7:4] = SpreadingFactor  (RF_SPREADING_FACTOR)
      *   bit [3]   = TxContinuousMode 0
      *   bit [2]   = RxPayloadCrcOn   1    ← drop frames with bad CRC
      *   bits[1:0] = SymbTimeout MSBs 00
-     *   → 0b10000100 = 0x84
+     *   → computed at compile time as _SX1276_MODEM_CFG2
      *
      * RegModemConfig3 (0x26)
-     *   bit[3] = LowDataRateOptimize  0 (not needed: symbol time for SF8
-     *            BW125 = 2.048 ms < 16 ms threshold)
+     *   bit[3] = LowDataRateOptimize  0 (not needed for SF8/BW125)
      *   bit[2] = AgcAutoOn            1 (automatic gain control)
      *   → 0x04
      */
-    sx1276_write_reg(REG_MODEM_CFG1, 0x78u);
-    sx1276_write_reg(REG_MODEM_CFG2, 0x84u);
+    sx1276_write_reg(REG_MODEM_CFG1, _SX1276_MODEM_CFG1);
+    sx1276_write_reg(REG_MODEM_CFG2, _SX1276_MODEM_CFG2);
     sx1276_write_reg(REG_MODEM_CFG3, 0x04u);
 
     /* Symbol timeout: 0x3FF = 1023 symbols (generous window for SF8). */

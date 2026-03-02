@@ -46,6 +46,33 @@
 #  define RIVR_RF_FREQ_HZ 869480000UL
 #endif
 
+/* ── LoRa modulation parameters ─────────────────────────────────────────── */
+/* All overrideable with -D or earlier #define before the -include.          */
+
+/** Spreading factor: 7 (fastest/shortest range) … 12 (slowest/longest). */
+#ifndef RF_SPREADING_FACTOR
+#  define RF_SPREADING_FACTOR  8u
+#endif
+
+/** Bandwidth in kHz: 7 / 10 / 15 / 20 / 31 / 41 / 62 / 125 / 250 / 500. */
+#ifndef RF_BANDWIDTH_KHZ
+#  define RF_BANDWIDTH_KHZ     125u
+#endif
+
+/** Coding-rate denominator (4/N): 5 = least overhead, 8 = most redundancy. */
+#ifndef RF_CODING_RATE
+#  define RF_CODING_RATE       8u
+#endif
+
+/**
+ * TX output power in dBm for the SX1262 chip itself.
+ * The E22-900M30S / M33S external PA adds ~8 dBm on top.
+ * SX1262 hardware range: -9 … +22 dBm.
+ */
+#ifndef RF_TX_POWER_DBM
+#  define RF_TX_POWER_DBM      22
+#endif
+
 /* ── SX1262 GPIO pin mapping ────────────────────────────────────────────── */
 /* Matches the standard ESP32 DevKit V1 + EBYTE E22 wiring used for RIVR.   */
 /* Override any pin with -DPIN_SX1262_XXX=<gpio> before the -include.       */
