@@ -141,18 +141,29 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 | **EU868 duty-cycle limiter** | 1-hour sliding window, 512-slot ring buffer with LRU eviction; 10 % default (g3) |
 | **Mesh routing** | Flood (TTL/hop/dedupe) + unicast (reverse-path cache) + 16-slot pending queue |
 | **Rivr Fabric** | Congestion-aware relay suppression for repeater nodes |
-| **OTA program push** | `PKT_PROG_PUSH` delivers a new RIVR program over the mesh; hot-reloaded from NVS |
+| **OTA program push** | `PKT_PROG_PUSH` delivers a new RIVR program over the mesh; Ed25519-signed, hot-reloaded from NVS |
+| **Policy engine** | `@PARAMS` over the mesh updates beacon interval, TX power, relay throttle, and node role at runtime; `@POLICY` JSON response reports current state and metrics |
+| **Signed `@PARAMS`** | Optional HMAC-SHA-256 PSK authentication of `@PARAMS` updates; `sig=<64hex>` wire field; rejected frames emit `@PARAMS REJECTED sig` |
+| **USB origination gate** | `rivr_policy_allow_origination()` blocks new chat originations when airtime budget is depleted; rejected frames emit `@DROP` |
 | **OLED UI** | SSD1306 128×64; 7 auto-rotating pages: overview, RF, routing, duty-cycle, RIVR VM, neighbours, Fabric |
 | **34 metric counters** | Emitted as `@MET` JSON; attach `@SUPPORTPACK` to every bug report |
 | **Simulation mode** | 8-round mesh simulation without SX1262 hardware (`RIVR_SIM_MODE`) |
 
 ---
 
+## What's shipped (post-v0.1)
+
+- ✅ **HAL abstraction** — `hal/radio_if.h`, `hal/crypto_if.h`, `hal/feature_flags.h` unified compile-time knob table
+- ✅ **Rivr Fabric** — congestion-aware relay suppression for repeater nodes (60 s sliding-window score)
+- ✅ **Signed OTA programs** — `PKT_PROG_PUSH` payload verified with Ed25519 before NVS write; anti-replay sequence counter
+- ✅ **Policy engine** — `@PARAMS` runtime parameter updates; role-based relay throttle; USB origination gate; `@POLICY` JSON metrics; `policy` CLI command
+- ✅ **Signed `@PARAMS`** — optional HMAC-SHA-256 PSK authentication; `sig=<64hex>` wire field; metrics: `sig_ok` / `sig_fail`
+- ✅ **OLED display** — SSD1306 128×64 seven-page rotating UI; FreeRTOS task on CPU1
+
 ## Roadmap
 
-- **v0.2** — Trace system (`tag()` operator → `@TRACE` JSON log line); per-source metrics frame
-- **v0.3** — Signed `PKT_PROG_PUSH` (ED25519 manifest); policy engine (`permit` / `deny` rules)
-- **v0.4** — Frequency hopping / channel rotation; multi-channel duty-cycle tracking
+- **next** — Frequency hopping / channel rotation; multi-channel duty-cycle tracking
+- **future** — Trace system (`tag()` operator → `@TRACE` JSON log line); per-source metrics frame
 
 ---
 
@@ -210,6 +221,9 @@ Rivr/
 │   ├── dutycycle.c/.h          — EU868 sliding-window limiter (512-slot, LRU)
 │   ├── rivr_metrics.c/.h       — 34-counter metrics + @SUPPORTPACK
 │   ├── rivr_fabric.c/.h        — Rivr Fabric congestion relay policy
+│   ├── rivr_policy.c/.h        — runtime @PARAMS policy, role enforcement, origination gate, HMAC sig
+│   ├── rivr_ota.c/.h           — signed PKT_PROG_PUSH gate (Ed25519 + anti-replay)
+│   ├── crypto/hmac_sha256.c/.h — self-contained SHA-256 + HMAC-SHA-256 (no heap)
 │   └── display/display.c/.h    — SSD1306 7-page UI (FreeRTOS task, CPU1)
 │
 ├── rivr_core/src/              — Rust library (no_std + alloc)

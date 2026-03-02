@@ -387,7 +387,53 @@ I (...) MAIN: [FAB] score=34 rx=12 relay=8 delay=2 drop=0 dc_block=1
 
 ---
 
-## Knoopvarianten
+## Beleidsengine
+
+`firmware_core/rivr_policy.h` biedt een runtime-instelbare beleidslaag die
+tussen het mesh-transport en de RIVR-engine zit.
+
+### `@PARAMS` — OTA-parameterupdates
+
+Een bevoorrechte knoop zendt een `PKT_PROG_PUSH`-frame waarvan de tekst-payload
+begint met `@PARAMS`.  Ontvangende knopen parseren de sleutel-waardeparen,
+valideren ze, slaan ze op in NVS en passen ze direct toe zonder herstart:
+
+```
+@PARAMS beacon=30000 txpow=14 throttle=500 role=client sig=<64hex>
+```
+
+| Veld | Standaard | Bereik | Beschrijving |
+|------|-----------|--------|--------------|
+| `beacon` | 30 000 ms | 1 000–8 300 000 | Beacon-interval |
+| `txpow` | 22 dBm | 2–22 | LoRa TX-vermogen |
+| `throttle` | 0 ms | 0–60 000 | Minimale tussenruimte bij relay-TX (0 = onbeperkt) |
+| `role` | 0 (standaard) | 0–3 | 0=standaard 1=cliënt 2=repeater 3=gateway |
+| `sig` | *(optioneel)* | 64 hex-tekens | HMAC-SHA-256(PSK, bytes vóór ` sig=`) |
+
+Knopen reageren met `@PARAMS ACK` bij acceptatie of het juiste afwijzingsbericht.
+
+### Beleidsstatistieken
+
+```c
+const rivr_policy_metrics_t *rivr_policy_metrics_get(void);
+```
+
+Het `policy` CLI-commando (cliënt-builds) drukt een JSON-statusregel af:
+
+```json
+@POLICY {"beacon":30000,"txpow":22,"throttle":0,"role":0,
+         "applied":3,"rejected":0,"sig_ok":12,"sig_fail":0}
+```
+
+### Ingeschakeld handtekenen van `@PARAMS` (optioneel)
+
+```ini
+; platformio.ini
+build_flags =
+    -D RIVR_FEATURE_SIGNED_PARAMS=1
+    -D RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS=0
+    -D RIVR_PARAMS_PSK_HEX='\"0102...1e1f\"'   ; 32-byte sleutel als 64 hex-tekens
+```
 
 RIVR ondersteunt compilatietijd-rolselectie via variantheaders.  Elke
 variantheader staat in `variants/<board>/config.h` en wordt door PlatformIO
@@ -436,8 +482,7 @@ void rivr_cli_poll(void);
 // Niet-blokkerend: leest UART0 RX-bytes, echoet invoer, verwerkt BS/DEL.
 // Bij newline worden de volgende commando’s afgehandeld:
 //   chat <bericht>  — bouw + zet PKT_CHAT in wachtrij; print "TX CHAT: <bericht>"
-//   id              — druk node-ID en net-ID af
-//   help            — toon commando’s
+//   id              — druk node-ID en net-ID af//   policy          — druk @POLICY JSON af (parameters + statistieken)//   help            — toon commando’s
 
 void rivr_cli_on_chat_rx(uint32_t src_id,
                           const uint8_t *payload, uint8_t len);

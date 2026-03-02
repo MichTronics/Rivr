@@ -118,8 +118,7 @@ Node ID : 0xdeadbeef  Net ID : 0x0000
 | Command | Effect |
 |---|---|
 | `chat <message>` | Encode and broadcast a `PKT_CHAT` frame over LoRa |
-| `id` | Print this node’s 32-bit ID and net ID |
-| `help` | List available commands |
+| `id` | Print this node’s 32-bit ID and net ID || `policy` | Print `@POLICY` JSON (current params + cumulative metrics) || `help` | List available commands |
 
 **Incoming messages** from other mesh nodes are printed automatically:
 
@@ -297,6 +296,29 @@ extends = base_hw
 build_flags =
     ${base_hw.build_flags}
     -include variants/my_custom_board/config.h
+```
+
+### Signed `@PARAMS` flags
+
+For production deployments that want to authenticate over-the-air parameter
+updates, add these flags to your variant header or `platformio.ini`:
+
+```ini
+build_flags =
+    ; require HMAC-SHA-256 MAC on every @PARAMS frame
+    -D RIVR_FEATURE_SIGNED_PARAMS=1
+    -D RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS=0
+    ; 32-byte PSK as 64 hex characters (CHANGE THIS)
+    -D RIVR_PARAMS_PSK_HEX='\"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\"'
+```
+
+Generate a signed `@PARAMS` string:
+
+```bash
+MSG='@PARAMS beacon=30000 txpow=14'
+SIG=$(printf '%s' "$MSG" | openssl dgst -sha256 \
+      -mac hmac -macopt hexkey:"$PSK_HEX" -binary | xxd -p -c 256)
+echo "$MSG sig=$SIG"
 ```
 
 ---

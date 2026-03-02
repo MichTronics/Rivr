@@ -59,6 +59,9 @@
 | `protocol.c` | Binary packet encode/decode, CRC-16/CCITT |
 | `routing.c` | Dedupe cache (LRU ring), TTL decrement, neighbour table (with callsign) |
 | `rivr_fabric.c` | Congestion-aware relay policy: 60 s sliding-window score, DELAY / DROP decisions for `PKT_CHAT` / `PKT_DATA` relay; enabled when `RIVR_FABRIC_REPEATER=1` |
+| `rivr_policy.c` | Runtime-adjustable policy: `rivr_policy_params_t` (beacon interval, TX power, relay throttle, node role); `@PARAMS` parser + NVS-backed storage; `@POLICY` JSON reporter; USB origination gate (`rivr_policy_allow_origination()`); HMAC-SHA-256 signature verification (`rivr_verify_params_sig()`); `policy` CLI command; metrics counters (`params_sig_ok_count`, `params_sig_fail_count`); built-in selftest |
+| `rivr_ota.c` | Signed `PKT_PROG_PUSH` gate: Ed25519 verify (`rivr_ota_verify()`), anti-replay sequence counter stored in NVS, `rivr_ota_activate()` / `rivr_ota_confirm()` / `rivr_ota_is_pending()` |
+| `crypto/hmac_sha256.c` | Self-contained FIPS 180-4 SHA-256 + RFC 2104 HMAC-SHA-256; no heap allocation; stack cost ≈460 B; tested against RFC 4231 TC1 known vector |
 | `display/` | SSD1306 128×64 OLED driver; I²C 400 kHz, horizontal addressing mode, single 1025-byte bulk flush per refresh; auto-detects I²C address 0x3C / 0x3D; 7-page rotating UI (overview, RF stats, routing, duty cycle, RIVR VM, neighbours, Fabric debug); runs as FreeRTOS task on CPU1 at priority 1; feature-gated by `FEATURE_DISPLAY=1` |
 
 ### 2. `rivr_layer/` — Glue layer (C)
@@ -248,6 +251,9 @@ The HAL headers are available for new code and for future driver porting.
 | `RIVR_FEATURE_BLE` | 0 | Reserved — future BLE provisioning |
 | `RIVR_SIGNED_PROG` | 0 | OTA requires Ed25519 signature |
 | `RIVR_SIM_MODE` | 0 | Host/sim build (no SPI/GPIO) |
+| `RIVR_FEATURE_SIGNED_PARAMS` | 0 | `@PARAMS` update requires HMAC-SHA-256 MAC in `sig=` field |
+| `RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS` | 1 | Accept unsigned `@PARAMS` when `SIGNED_PARAMS=0` (dev grace period) |
+| `RIVR_PARAMS_PSK_HEX` | *64 zeros* | 32-byte PSK encoded as 64 hex chars; override for production deployments |
 
 Mutually-exclusive pairs (`ROLE_CLIENT` + `ROLE_REPEATER`, `SX1262` + `SX1276`)
 produce a `#error` at compile time.
@@ -356,3 +362,89 @@ build_flags =
 Measured firmware sizes after hardening:
 - **client_esp32devkit_e22_900**: RAM 11.5% (37,772 / 327,680 B), Flash 31.0% (609,385 / 1,966,080 B)
 - **repeater_esp32devkit_e22_900**: RAM 11.7% (38,276 / 327,680 B), Flash 30.0% (590,801 / 1,966,080 B)
+
+---
+
+### Phase 9 — Policy engine (`rivr_policy.h/.c`)
+
+A new runtime-adjustable policy layer sits between the mesh transport and the
+RIVR engine.  All changes are **backward-compatible**: no wire-format changes,
+no new packet types, zero cost when every feature flag is at its default.
+
+#### `@PARAMS` — OTA parameter updates
+
+A privileged node broadcasts a `PKT_PROG_PUSH` frame whose text payload begins
+with `@PARAMS`.  Receiving nodes parse the key/value pairs, validate them
+against compile-time bounds, persist them to NVS, and hot-apply them without a
+reboot:
+
+```
+@PARAMS beacon=30000 txpow=14 throttle=500 role=client sig=<64hex>
+```
+
+| Field | Default | Range | Description |
+|-------|---------|-------|-------------|
+| `beacon` | 30 000 ms | 1 000 – 300 000 | Beacon interval |
+| `txpow` | 22 dBm | 2 – 22 | LoRa TX power |
+| `throttle` | 0 ms | 0 – 60 000 | Minimum gap between relay TX (0 = unlimited) |
+| `role` | 0 (standard) | 0–3 | 0=standard 1=client 2=repeater 3=gateway |
+| `sig` | *(optional)* | 64 hex chars | HMAC-SHA-256(PSK, bytes before ` sig=`) |
+
+Nodes respond with `@PARAMS ACK` on acceptance or the appropriate rejection
+message on failure.
+
+#### Role-based relay throttle
+
+`rivr_node_role_t` is stored as `RIVR_PARAM_ID_ROLE` (param index 5) in the
+policy parameter block.  When `role == RIVR_NODE_ROLE_CLIENT`, the relay
+throttle interval is doubled automatically at the policy layer before being
+applied to the routing engine, reducing traffic from leaf nodes.
+
+#### USB origination gate
+
+`rivr_policy_allow_origination()` returns `false` when the node's accumulated
+airtime since last `@PARAMS reset` exceeds the configured origination budget.
+When blocked, `rivr_sources.c` emits:
+
+```
+@DROP {"reason":"origination_budget","src":"usb"}
+```
+
+#### `@POLICY` response
+
+The `policy` CLI command (client builds) or any `@POLICY?` mesh query triggers
+a JSON status line:
+
+```json
+@POLICY {"beacon":30000,"txpow":22,"throttle":0,"role":0,
+         "relayed":142,"dropped":3,"sig_ok":12,"sig_fail":0}
+```
+
+#### HMAC-SHA-256 signed `@PARAMS` (optional)
+
+Enable with `-DRIVR_FEATURE_SIGNED_PARAMS=1` in `platformio.ini`:
+
+```ini
+build_flags =
+    -D RIVR_FEATURE_SIGNED_PARAMS=1
+    -D RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS=0
+    -D RIVR_PARAMS_PSK_HEX='\"0102...1e1f\"'   ; 32-byte key as 64 hex chars
+```
+
+Generate a signed `@PARAMS` string with openssl:
+
+```bash
+MSG='@PARAMS beacon=30000 txpow=14'
+SIG=$(printf '%s' "$MSG" | openssl dgst -sha256 -hmac "$(xxd -r -p <<<"$PSK_HEX")" -binary | xxd -p -c 256)
+echo "$MSG sig=$SIG"
+```
+
+The default PSK is 32 zero bytes — **change it for any production deployment.**
+
+#### Memory impact (policy engine)
+
+| Change | RAM delta | Flash delta |
+|--------|-----------|-------------|
+| `rivr_policy.c` (params + metrics) | +48 bytes BSS | ~1.8 KB |
+| `crypto/hmac_sha256.c` | 0 (stack only) | ~1.4 KB |
+| `rivr_sources.c` sig gate | 0 | ~80 bytes |

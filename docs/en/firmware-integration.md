@@ -402,6 +402,122 @@ I (...) MAIN: [FAB] score=34 rx=12 relay=8 delay=2 drop=0 dc_block=1
 
 ---
 
+## Policy engine
+
+`firmware_core/rivr_policy.h` provides a runtime-adjustable policy layer that
+sits between the mesh transport and the RIVR engine.  All policy parameters
+are persisted to NVS and hot-applied without a reboot.
+
+### Data structures
+
+```c
+typedef enum {
+    RIVR_NODE_ROLE_STANDARD  = 0,
+    RIVR_NODE_ROLE_CLIENT    = 1,
+    RIVR_NODE_ROLE_REPEATER  = 2,
+    RIVR_NODE_ROLE_GATEWAY   = 3,
+} rivr_node_role_t;
+
+typedef struct {
+    uint32_t beacon_interval_ms;   /* default: RIVR_PARAM_BEACON_MS     */
+    uint8_t  tx_power_dbm;         /* default: RIVR_PARAM_TXPOW_DBM     */
+    uint32_t relay_throttle_ms;    /* default: RIVR_PARAM_THROTTLE_MS   */
+    rivr_node_role_t node_role;    /* default: RIVR_NODE_ROLE_STANDARD  */
+} rivr_policy_params_t;
+
+typedef struct {
+    uint32_t params_applied_count;  /* @PARAMS updates accepted        */
+    uint32_t params_rejected_count; /* @PARAMS updates rejected        */
+    uint32_t relay_dropped_count;   /* frames suppressed by throttle   */
+    uint32_t params_sig_ok_count;   /* @PARAMS accepted with valid MAC */
+    uint32_t params_sig_fail_count; /* @PARAMS rejected (bad/missing)  */
+} rivr_policy_metrics_t;
+
+extern rivr_policy_params_t g_policy_params;
+```
+
+### Lifecycle
+
+```c
+void rivr_policy_init(void);
+// Call once from app_main() after NVS init.
+// Loads persisted params from NVS; falls back to compiled-in defaults.
+// Decodes RIVR_PARAMS_PSK_HEX into the internal PSK buffer.
+
+void rivr_policy_print(void);
+// Emits @POLICY JSON on stdout:
+// @POLICY {"beacon":30000,"txpow":22,"throttle":0,"role":0,
+//          "applied":3,"rejected":0,"sig_ok":3,"sig_fail":0}
+```
+
+### `@PARAMS` parser
+
+```c
+bool rivr_policy_apply_params(const char *buf, size_t len);
+```
+
+Parses a NUL-terminated `@PARAMS` string and updates `g_policy_params`.
+Accepted fields: `beacon=`, `txpow=`, `throttle=`, `role=`.
+All values are range-checked; out-of-range values are silently clamped.
+Returns `true` if at least one field was updated.
+
+This function is called automatically from `rivr_sources.c` after
+`rivr_verify_params_sig()` approves the frame.
+
+### HMAC-SHA-256 signature gate
+
+```c
+bool rivr_verify_params_sig(const char *buf, size_t len);
+```
+
+Behaviour depends on `RIVR_FEATURE_SIGNED_PARAMS` (default 0):
+
+| `SIGNED_PARAMS` | `ALLOW_UNSIGNED` | No `sig=` field | Wrong MAC |
+|---|---|---|---|
+| 0 | 1 (default) | **accept** | **accept** |
+| 0 | 0 | reject | reject |
+| 1 | — | reject | reject |
+
+When a frame is rejected, `rivr_sources.c` emits:
+```
+@PARAMS REJECTED sig from 0x<node_id>
+```
+
+To enable signature enforcement:
+```ini
+; platformio.ini
+build_flags =
+    -D RIVR_FEATURE_SIGNED_PARAMS=1
+    -D RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS=0
+    -D RIVR_PARAMS_PSK_HEX='\"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\"'
+```
+
+### Origination gate
+
+```c
+bool rivr_policy_allow_origination(void);
+```
+
+Returns `false` when the node’s accumulated airtime since the last `@PARAMS
+reset` exceeds the configured origination budget.  When blocked,
+`rivr_sources.c` emits:
+
+```
+@DROP {"reason":"origination_budget","src":"usb"}
+```
+
+### Metrics
+
+```c
+const rivr_policy_metrics_t *rivr_policy_metrics_get(void);
+```
+
+Returns a pointer to the internal metrics struct (valid until next call to
+`rivr_policy_init()`).  Counters are reset to zero by `rivr_policy_init()`
+and are **not** persisted to NVS.
+
+---
+
 ## Node variants
 
 RIVR supports compile-time role selection through variant headers.  Each
@@ -459,6 +575,12 @@ void rivr_cli_on_chat_rx(uint32_t src_id,
 // Called from rivr_sources.c (section 6b) after a PKT_CHAT frame is decoded.
 // Prints: "\r[CHAT][XXXXXXXX]: <message>\n> "
 // The \r clears any partial prompt line; '> ' re-prompts the user.
+```
+
+In client builds a `policy` command is also available:
+
+```
+policy   — print @POLICY JSON (current params + cumulative metrics)
 ```
 
 **TX frame building** — `rivr_cli_poll()` assembles outgoing chat frames using

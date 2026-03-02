@@ -45,7 +45,10 @@ Rivr/
 │   ├── radio_sx1262.c/h      # SX1262 LoRa driver, TX-wachtrij, ring-buffer
 │   ├── display/display.c/h   # OLED-weergavetaak
 │   ├── protocol.c/h          # binaire frame-encode/decode met CRC-16
-│   └── routing.c/h           # dedupe-cache, hop-limiet, buurttabel
+│   ├── routing.c/h           # dedupe-cache, hop-limiet, buurttabel
+│   ├── rivr_policy.c/h       # @PARAMS beleid, rolhandhaving, oorsprongspoort, HMAC-handtekening
+│   ├── rivr_ota.c/h          # ondertekende PKT_PROG_PUSH-poort (Ed25519 + anti-replay)
+│   └── crypto/               # zelfstandige SHA-256 + HMAC-SHA-256 (geen heap)
 ├── rivr_layer/               # C — lijmlaag RIVR↔firmware
 │   ├── rivr_embed.c/h        # engine_init, tick, NVS opslaan/laden, hot-reload
 │   ├── rivr_sources.c/h      # bronregistratie (rf, usb, timer…)

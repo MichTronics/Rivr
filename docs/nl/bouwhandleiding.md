@@ -107,8 +107,7 @@ Node ID : 0xdeadbeef  Net ID : 0x0000
 | Commando | Effect |
 |---|---|
 | `chat <bericht>` | Codeer en verzend een `PKT_CHAT`-frame via LoRa |
-| `id` | Druk het 32-bits node-ID en net-ID af |
-| `help` | Toon beschikbare commando’s |
+| `id` | Druk het 32-bits node-ID en net-ID af || `policy` | Druk `@POLICY` JSON af (huidige parameters + cumulatieve statistieken) || `help` | Toon beschikbare commando’s |
 
 **Inkomende berichten** van andere meshnodes worden automatisch afgedrukt:
 
