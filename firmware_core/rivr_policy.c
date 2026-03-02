@@ -103,8 +103,11 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
      * decrement, jitter) is handled exclusively by the C-layer (maybe_relay).
      * budget.toa_us second arg uses 0.<duty_percent_2digit> format so that
      * duty=1 → "0.01", duty=10 → "0.10" (RIVR parser accepts plain decimal).
+     *
+     * Max generated length (all params at u32 max, duty=10): ~340 chars.
+     * bufsz must be >= 512. Truncation is detected and handled below.
      */
-    snprintf(buf, bufsz,
+    int len = snprintf(buf, bufsz,
         "source rf_rx @lmp = rf;\n"
         "source beacon_tick = timer(%lu);\n"
         "\n"
@@ -123,6 +126,19 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
         (unsigned long)g_policy_params.chat_throttle_ms,
         (unsigned long)g_policy_params.data_throttle_ms);
 
-    /* Guarantee NUL termination even if snprintf truncated. */
+    /* Guarantee NUL termination regardless of snprintf outcome. */
     buf[bufsz - 1u] = '\0';
+
+    if (len < 0) {
+        /* Encoding error (should never happen with %lu/%u format). */
+        RIVR_LOGE(TAG, "rivr_policy_build_program: snprintf encoding error");
+        buf[0] = '\0';
+    } else if ((size_t)len >= bufsz) {
+        /* Output was truncated — bufsz is too small. This should not happen
+         * with bufsz=512 and validated param values, but guard defensively. */
+        RIVR_LOGE(TAG, "rivr_policy_build_program: output truncated "
+                  "(%d chars needed, buf=%u) — using empty program",
+                  len, (unsigned)bufsz);
+        buf[0] = '\0';
+    }
 }
