@@ -96,9 +96,13 @@ chatshell over UART0 op 115200 baud.  Open de seriële monitor na het flashen:
 
 **Opstartbanner:**
 ```
-Rivr Client Node Ready
-Type 'help' for commands
-Node ID : 0xdeadbeef  Net ID : 0x0000
+╔══════════════════════════════════╗
+║   Rivr Client Node — Serial CLI  ║
+╚══════════════════════════════════╝
+Node ID  : 0xDEADBEEF
+Callsign : CALL
+Net ID   : 0x0000
+Type 'help' for full command list.
 > 
 ```
 
@@ -107,7 +111,17 @@ Node ID : 0xdeadbeef  Net ID : 0x0000
 | Commando | Effect |
 |---|---|
 | `chat <bericht>` | Codeer en verzend een `PKT_CHAT`-frame via LoRa |
-| `id` | Druk het 32-bits node-ID en net-ID af || `policy` | Druk `@POLICY` JSON af (huidige parameters + cumulatieve statistieken) || `help` | Toon beschikbare commando’s |
+| `id` | Druk het 32-bits node-ID, roepnaam en net-ID af |
+| `info` | Druk bouwinfo af (omgeving, git-SHA, radioprofiel) |
+| `metrics` | Druk alle tellers als JSON af (`@MET`-regel) |
+| `policy` | Druk `@POLICY` JSON af (huidige parameters + statistieken) |
+| `supportpack` | JSON-dump: bouwinfo + volledige statistieken-snapshot (`@SUPPORTPACK`) |
+| `neighbors` | Toon live buurttabel met RSSI/SNR/linkscores |
+| `routes` | Toon route-cache met scores en leeftijden |
+| `set callsign <CS>` | Stel roepnaam in en sla op (1–11 tekens: A–Z a–z 0–9 -) |
+| `set netid <HEX>` | Stel net-ID in en sla op (hex 0…FFFF) |
+| `log <debug\|metrics\|silent>` | Stel logverbositeit in |
+| `help` | Toon deze commandolijst |
 
 **Inkomende berichten** van andere meshnodes worden automatisch afgedrukt:
 

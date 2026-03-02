@@ -74,8 +74,17 @@ routing layer stays intact.
 
 ```
 > chat hello from node B        — broadcast PKT_CHAT
-> id                             — print node ID and net ID
-> help                           — list commands
+> id                             — print node ID, callsign and net ID
+> info                           — build info (env, sha, radio profile)
+> metrics                        — print @MET JSON (all counters)
+> policy                         — print @POLICY JSON (params + counters)
+> supportpack                    — @SUPPORTPACK JSON snapshot
+> neighbors                      — live neighbour table (RSSI/SNR/score)
+> routes                         — route cache (score, age)
+> set callsign CALL              — set and persist callsign
+> set netid 0x0001               — set and persist network ID
+> log debug                      — set log verbosity (debug|metrics|silent)
+> help                           — show this list
 ```
 
 Received `PKT_CHAT` frames are printed automatically:

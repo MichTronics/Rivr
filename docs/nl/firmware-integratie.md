@@ -481,8 +481,18 @@ void rivr_cli_poll(void);
 // Aanroepen als EERSTE regel van de hoofdlus (vóór radio_service_rx()).
 // Niet-blokkerend: leest UART0 RX-bytes, echoet invoer, verwerkt BS/DEL.
 // Bij newline worden de volgende commando’s afgehandeld:
-//   chat <bericht>  — bouw + zet PKT_CHAT in wachtrij; print "TX CHAT: <bericht>"
-//   id              — druk node-ID en net-ID af//   policy          — druk @POLICY JSON af (parameters + statistieken)//   help            — toon commando’s
+//   chat <bericht>               — bouw + zet PKT_CHAT in wachtrij
+//   id                           — druk node-ID, roepnaam en net-ID af
+//   info                         — druk bouwinfo af (omgeving, sha, radio)
+//   metrics                      — druk @MET JSON af (alle tellers)
+//   policy                       — druk @POLICY JSON af (params + handtekening-tellers)
+//   supportpack                  — druk @SUPPORTPACK JSON-snapshot af
+//   neighbors                    — live buurttabel
+//   routes                       — route-cache
+//   set callsign <CS>            — stel roepnaam in en sla op (1-11 tekens)
+//   set netid <HEX>              — stel net-ID in en sla op (0..FFFF)
+//   log <debug|metrics|silent>   — stel logverbositeit in
+//   help                         — toon commandolijst
 
 void rivr_cli_on_chat_rx(uint32_t src_id,
                           const uint8_t *payload, uint8_t len);

@@ -122,7 +122,7 @@ void rivr_cli_init(void)
            "Node ID  : 0x%08lX\r\n"
            "Callsign : %s\r\n"
            "Net ID   : 0x%04X\r\n"
-           "Commands : chat <msg> | id | neighbors | routes | set callsign <CS> | set netid <HEX> | help\r\n",
+           "Type 'help' for full command list.\r\n",
            (unsigned long)g_my_node_id,
            g_callsign,
            (unsigned)g_net_id);

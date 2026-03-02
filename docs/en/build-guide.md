@@ -107,9 +107,13 @@ chat shell over UART0 at 115200 baud.  After flashing, open the serial monitor:
 
 **Boot banner:**
 ```
-Rivr Client Node Ready
-Type 'help' for commands
-Node ID : 0xdeadbeef  Net ID : 0x0000
+╔══════════════════════════════════╗
+║   Rivr Client Node — Serial CLI  ║
+╚══════════════════════════════════╝
+Node ID  : 0xDEADBEEF
+Callsign : CALL
+Net ID   : 0x0000
+Type 'help' for full command list.
 > 
 ```
 
@@ -118,7 +122,17 @@ Node ID : 0xdeadbeef  Net ID : 0x0000
 | Command | Effect |
 |---|---|
 | `chat <message>` | Encode and broadcast a `PKT_CHAT` frame over LoRa |
-| `id` | Print this node’s 32-bit ID and net ID || `policy` | Print `@POLICY` JSON (current params + cumulative metrics) || `help` | List available commands |
+| `id` | Print this node’s 32-bit ID, callsign and net ID |
+| `info` | Print build info (env, git SHA, radio profile) |
+| `metrics` | Print all counters/gauges as JSON (`@MET` line) |
+| `policy` | Print `@POLICY` JSON (current params + cumulative metrics) |
+| `supportpack` | JSON dump: build info + full metrics snapshot (`@SUPPORTPACK`) |
+| `neighbors` | Show live neighbour table with RSSI/SNR/link scores |
+| `routes` | Show route cache with scores and ages |
+| `set callsign <CS>` | Set and persist callsign (1–11 chars: A–Z a–z 0–9 -) |
+| `set netid <HEX>` | Set and persist network ID (hex 0…FFFF) |
+| `log <debug\|metrics\|silent>` | Set log verbosity |
+| `help` | Show this command list |
 
 **Incoming messages** from other mesh nodes are printed automatically:
 

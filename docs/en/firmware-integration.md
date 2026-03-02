@@ -566,21 +566,24 @@ void rivr_cli_poll(void);
 // Call as the FIRST statement of the main loop (before radio_service_rx()).
 // Non-blocking: drains UART0 RX bytes, echoes input, handles BS/DEL.
 // On newline dispatches:
-//   chat <message>  — build + enqueue PKT_CHAT; prints "TX CHAT: <message>"
-//   id              — print node ID and net ID
-//   help            — list commands
+//   chat <message>          — build + enqueue PKT_CHAT
+//   id                      — print node ID, callsign and net ID
+//   info                    — print build info (env, sha, radio profile)
+//   metrics                 — print @MET JSON (all counters/gauges)
+//   policy                  — print @POLICY JSON (params + sigcounters)
+//   supportpack             — print @SUPPORTPACK JSON snapshot
+//   neighbors               — live neighbour table
+//   routes                  — route cache
+//   set callsign <CS>       — set and persist callsign (1-11 chars)
+//   set netid <HEX>         — set and persist network ID (0..FFFF)
+//   log <debug|metrics|silent> — set log verbosity
+//   help                    — show command list
 
 void rivr_cli_on_chat_rx(uint32_t src_id,
                           const uint8_t *payload, uint8_t len);
-// Called from rivr_sources.c (section 6b) after a PKT_CHAT frame is decoded.
+// Called from rivr_sources.c after a PKT_CHAT frame is decoded.
 // Prints: "\r[CHAT][XXXXXXXX]: <message>\n> "
 // The \r clears any partial prompt line; '> ' re-prompts the user.
-```
-
-In client builds a `policy` command is also available:
-
-```
-policy   — print @POLICY JSON (current params + cumulative metrics)
 ```
 
 **TX frame building** — `rivr_cli_poll()` assembles outgoing chat frames using
