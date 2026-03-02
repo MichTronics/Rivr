@@ -5,9 +5,11 @@
  */
 
 #include "rivr_policy.h"
+#include "hal/feature_flags.h"               /* RIVR_FEATURE_SIGNED_PARAMS et al.  */
 #include "rivr_programs/default_program.h"   /* RIVR_PARAM_* compiled-in defaults */
 #include "rivr_log.h"
 #include "timebase.h"                         /* tb_millis() */
+#include "crypto/hmac_sha256.h"               /* rivr_hmac_sha256()                */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>   /* strtoul — rivr_policy_role_from_str */
@@ -27,6 +29,24 @@ static rivr_policy_metrics_t s_policy_metrics;
 static uint32_t s_last_chat_orig_ms = 0u;  /**< Last allowed PKT_CHAT origination */
 static uint32_t s_last_data_orig_ms = 0u;  /**< Last allowed PKT_DATA origination */
 
+/* ── @PARAMS HMAC-SHA-256 key (32 bytes, initialised from RIVR_PARAMS_PSK_HEX) ── */
+
+static uint8_t s_params_psk[32];   /**< Decoded PSK — zero-filled until init   */
+static bool    s_params_psk_ready; /**< Set to true after first rivr_policy_init */
+
+/** Decode RIVR_PARAMS_PSK_HEX at init time into s_params_psk[32]. */
+static void s_psk_init(void)
+{
+    const char *hex = RIVR_PARAMS_PSK_HEX;
+    for (uint8_t i = 0u; i < 32u; i++) {
+        unsigned int b = 0u;
+        /* sscanf is available (libc) and small — no heap use here */
+        if (sscanf(hex + (size_t)i * 2u, "%02x", &b) != 1) { b = 0u; }
+        s_params_psk[i] = (uint8_t)b;
+    }
+    s_params_psk_ready = true;
+}
+
 /* ── API ─────────────────────────────────────────────────────────────────── */
 
 void rivr_policy_init(void)
@@ -43,8 +63,11 @@ void rivr_policy_init(void)
     s_policy_metrics.policy_reload_count       = 0u;
     s_policy_metrics.duty_blocked_count        = 0u;
     s_policy_metrics.origination_drop_count    = 0u;
+    s_policy_metrics.params_sig_ok_count       = 0u;
+    s_policy_metrics.params_sig_fail_count     = 0u;
     s_last_chat_orig_ms = 0u;
     s_last_data_orig_ms = 0u;
+    s_psk_init();   /* decode RIVR_PARAMS_PSK_HEX once */
     RIVR_LOGI(TAG, "policy init: beacon=%lums chat=%lums data=%lums duty=%u%%",
               (unsigned long)g_policy_params.beacon_interval_ms,
               (unsigned long)g_policy_params.chat_throttle_ms,
@@ -179,6 +202,93 @@ bool rivr_policy_allow_origination(uint8_t pkt_type, uint32_t now_ms)
     return false;
 }
 
+/* ── @PARAMS signature verification ────────────────────────────────────── */
+
+bool rivr_verify_params_sig(const char *buf, size_t len)
+{
+#if !RIVR_FEATURE_SIGNED_PARAMS
+    /* Signing disabled — accept everything unconditionally.                 */
+    (void)buf; (void)len;
+    return true;
+
+#else /* RIVR_FEATURE_SIGNED_PARAMS == 1 */
+
+    /* Locate the " sig=" token that marks the boundary of signed content.  */
+    const char *sig_field = strstr(buf, " sig=");
+
+    if (!sig_field) {
+        /* No signature present. */
+#  if RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS
+        /* Dev grace: silently accept, don't touch counters. */
+        RIVR_LOGD(TAG, "verify_params_sig: no sig= — accepted (allow-unsigned)");
+        return true;
+#  else
+        /* Production: reject unsigned. */
+        s_policy_metrics.params_sig_fail_count++;
+        RIVR_LOGW(TAG, "verify_params_sig: no sig= — REJECTED (allow-unsigned=0)");
+        return false;
+#  endif
+    }
+
+    /* Signed content = everything before " sig=". */
+    size_t msg_len = (size_t)(sig_field - buf);
+
+    /* Hex-encoded HMAC-SHA-256 = 64 hex chars (32 bytes).                  */
+    const char *hex = sig_field + 5u;   /* skip " sig=" (5 chars)           */
+
+    /* Require exactly 64 hex nibbles, optionally followed by NUL or space. */
+    size_t hex_avail = 0u;
+    while (hex[hex_avail] && hex[hex_avail] != ' ' && hex[hex_avail] != '\t'
+           && hex[hex_avail] != '\r' && hex[hex_avail] != '\n') {
+        hex_avail++;
+    }
+    if (hex_avail != 64u) {
+        s_policy_metrics.params_sig_fail_count++;
+        RIVR_LOGW(TAG, "verify_params_sig: sig= length %u != 64 — REJECTED",
+                  (unsigned)hex_avail);
+        return false;
+    }
+
+    /* Decode 32-byte received MAC from hex. */
+    uint8_t received_mac[32];
+    for (uint8_t i = 0u; i < 32u; i++) {
+        unsigned int bv = 0u;
+        if (sscanf(hex + (size_t)i * 2u, "%02x", &bv) != 1) {
+            s_policy_metrics.params_sig_fail_count++;
+            RIVR_LOGW(TAG, "verify_params_sig: hex decode error at byte %u", (unsigned)i);
+            return false;
+        }
+        received_mac[i] = (uint8_t)bv;
+    }
+
+    /* Compute expected HMAC-SHA-256 over the signed content. */
+    if (!s_params_psk_ready) { s_psk_init(); }
+    uint8_t expected_mac[32];
+    rivr_hmac_sha256(s_params_psk, sizeof(s_params_psk),
+                     (const uint8_t *)buf, msg_len,
+                     expected_mac);
+
+    /* Constant-time compare (prevents timing oracle). */
+    uint8_t diff = 0u;
+    for (uint8_t i = 0u; i < 32u; i++) {
+        diff |= expected_mac[i] ^ received_mac[i];
+    }
+
+    if (diff != 0u) {
+        s_policy_metrics.params_sig_fail_count++;
+        RIVR_LOGW(TAG, "verify_params_sig: MAC mismatch — REJECTED");
+        return false;
+    }
+
+    s_policy_metrics.params_sig_ok_count++;
+    RIVR_LOGI(TAG, "verify_params_sig: sig OK (ok=%lu fail=%lu)",
+              (unsigned long)s_policy_metrics.params_sig_ok_count,
+              (unsigned long)s_policy_metrics.params_sig_fail_count);
+    return true;
+
+#endif /* RIVR_FEATURE_SIGNED_PARAMS */
+}
+
 void rivr_policy_build_program(char *buf, size_t bufsz)
 {
     /*
@@ -294,7 +404,9 @@ void rivr_policy_print(void)
            "\"rebuilds\":%lu,"
            "\"reloads\":%lu,"
            "\"duty_blocked\":%lu,"
-           "\"orig_drops\":%lu"
+           "\"orig_drops\":%lu,"
+           "\"sig_ok\":%lu,"
+           "\"sig_fail\":%lu"
            "}\r\n",
            (unsigned long)g_policy_params.beacon_interval_ms,
            (unsigned long)g_policy_params.chat_throttle_ms,
@@ -306,7 +418,9 @@ void rivr_policy_print(void)
            (unsigned long)s_policy_metrics.policy_rebuild_count,
            (unsigned long)s_policy_metrics.policy_reload_count,
            (unsigned long)s_policy_metrics.duty_blocked_count,
-           (unsigned long)s_policy_metrics.origination_drop_count);
+           (unsigned long)s_policy_metrics.origination_drop_count,
+           (unsigned long)s_policy_metrics.params_sig_ok_count,
+           (unsigned long)s_policy_metrics.params_sig_fail_count);
     fflush(stdout);
 }
 
@@ -434,7 +548,108 @@ void rivr_policy_selftest(void)
         assert(om->origination_drop_count == 2u);
     }
 
-    RIVR_LOGI(TAG, "RIVR_POLICY_SELFTEST: all assertions passed (including role + origination tests)");
+    /* ── HMAC-SHA-256 test vector (RFC 4231, Test Case 1) ── *
+     *
+     *  Key  = 20 × 0x0b                                     *
+     *  Data = "Hi There"                                     *
+     *  Expected (hex):                                        *
+     *    b0344c61 d8db3853 5ca8afce af0bf12b                 *
+     *    881dc200 c9833da7 26e9376c 2e32cff7                 *
+     *                                                         *
+     * This validates the raw HMAC implementation independent  *
+     * of the RIVR_FEATURE_SIGNED_PARAMS build flag.          *
+     * ─────────────────────────────────────────────────────── */
+    {
+        static const uint8_t tc1_key[20] = {
+            0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,
+            0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b
+        };
+        static const uint8_t tc1_data[] = "Hi There";
+        static const uint8_t tc1_exp[32] = {
+            0xb0,0x34,0x4c,0x61, 0xd8,0xdb,0x38,0x53,
+            0x5c,0xa8,0xaf,0xce, 0xaf,0x0b,0xf1,0x2b,
+            0x88,0x1d,0xc2,0x00, 0xc9,0x83,0x3d,0xa7,
+            0x26,0xe9,0x37,0x6c, 0x2e,0x32,0xcf,0xf7
+        };
+        uint8_t got[32];
+        rivr_hmac_sha256(tc1_key, sizeof(tc1_key),
+                         tc1_data, 8u,   /* "Hi There" = 8 bytes */
+                         got);
+        assert(memcmp(got, tc1_exp, 32u) == 0);
+        RIVR_LOGI(TAG, "SELFTEST: HMAC-SHA-256 RFC-4231 TC1 OK");
+    }
+
+    /* ── @PARAMS signature round-trip (FEATURE_SIGNED_PARAMS-gated path) ── *
+     *                                                                        *
+     * Whether RIVR_FEATURE_SIGNED_PARAMS is 0 or 1, we test the low-level  *
+     * HMAC path directly so the test is always meaningful.  The             *
+     * rivr_verify_params_sig() assertions are additionally protected by a  *
+     * #if so they match the active flag combination.                        *
+     * ─────────────────────────────────────────────────────────────────────  */
+    {
+        rivr_policy_init();   /* resets PSK + counters */
+        const rivr_policy_metrics_t *sm = rivr_policy_metrics_get();
+
+        /* Build a params string, sign it with the compiled-in PSK. */
+        const char *test_content = "@PARAMS beacon=30000 chat=2000";
+        uint8_t test_mac[32];
+        rivr_hmac_sha256(s_params_psk, sizeof(s_params_psk),
+                         (const uint8_t *)test_content, strlen(test_content),
+                         test_mac);
+
+        /* Hex-encode the MAC. */
+        char test_sig_hex[65];
+        for (uint8_t ci = 0u; ci < 32u; ci++) {
+            (void)snprintf(test_sig_hex + (size_t)ci * 2u, 3u,
+                           "%02x", (unsigned)test_mac[ci]);
+        }
+
+        /* Build full @PARAMS string: content + " sig=" + hex. */
+        char full_params[256];
+        (void)snprintf(full_params, sizeof(full_params),
+                       "%s sig=%s", test_content, test_sig_hex);
+
+        /* Round-trip: verify must accept this. */
+        assert(rivr_verify_params_sig(full_params, strlen(full_params)) == true);
+
+        /* Confirm counters: with SIGNED_PARAMS=0, counters stay at 0.
+         * With SIGNED_PARAMS=1, sig_ok increments. */
+#if RIVR_FEATURE_SIGNED_PARAMS
+        assert(sm->params_sig_ok_count == 1u);
+        assert(sm->params_sig_fail_count == 0u);
+#else
+        assert(sm->params_sig_ok_count == 0u);
+        assert(sm->params_sig_fail_count == 0u);
+#endif
+
+        /* Tamper: change one byte of signed content → must reject.
+         * When SIGNED_PARAMS=0, the stub still accepts — guard accordingly. */
+        char tampered[256];
+        memcpy(tampered, full_params, strlen(full_params) + 1u);
+        tampered[10] ^= 0x01u;   /* flip one bit in the params payload */
+#if RIVR_FEATURE_SIGNED_PARAMS
+        assert(rivr_verify_params_sig(tampered, strlen(tampered)) == false);
+        assert(sm->params_sig_fail_count == 1u);
+#endif
+
+        /* Unsigned @PARAMS: accepted or rejected based on ALLOW_UNSIGNED. */
+        const char *unsigned_params = "@PARAMS beacon=60000";
+#if RIVR_FEATURE_SIGNED_PARAMS && !RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS
+        assert(rivr_verify_params_sig(unsigned_params,
+                                      strlen(unsigned_params)) == false);
+#else
+        assert(rivr_verify_params_sig(unsigned_params,
+                                      strlen(unsigned_params)) == true);
+#endif
+
+        RIVR_LOGI(TAG, "SELFTEST: @PARAMS sig round-trip OK "
+                  "(SIGNED_PARAMS=%d ALLOW_UNSIGNED=%d)",
+                  RIVR_FEATURE_SIGNED_PARAMS,
+                  RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS);
+    }
+
+    RIVR_LOGI(TAG, "RIVR_POLICY_SELFTEST: all assertions passed "
+              "(params+role+origination+hmac+sig)");
 }
 
 #endif /* RIVR_POLICY_SELFTEST */

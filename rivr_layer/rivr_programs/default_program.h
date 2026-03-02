@@ -44,20 +44,35 @@
  *                    rivr_policy_allow_origination() in rivr_policy.c.
  *                    Uses the same chat_throttle_ms / data_throttle_ms params.
  *
- * Send "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10> [role=client|repeater|gateway]" as a
- * PKT_PROG_PUSH payload to update runtime policy without reflashing.
+ * Send "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10> [role=client|repeater|gateway]
+ *             [sig=<64 hex chars>]" as a PKT_PROG_PUSH payload to update
+ * runtime policy without reflashing.
  * Default values are the RIVR_PARAM_* macros below.
  * The role= key controls relay throttle:
  *   client   (default): standard throttle windows
  *   repeater/gateway:   halved throttle (min 100 ms) for higher relay throughput
  *
+ * SIGNATURE
+ * ─────────
+ * When RIVR_FEATURE_SIGNED_PARAMS=1 the sig= field is mandatory (unless
+ * RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS=1 provides a dev grace period).
+ * sig= is HMAC-SHA-256 over the exact ASCII bytes before " sig=", using the
+ * key compiled in as RIVR_PARAMS_PSK_HEX (64 hex chars = 32 bytes).
+ *
+ * To sign a params string on the command line:
+ *   echo -n "@PARAMS beacon=30000 chat=2000" | \
+ *     openssl dgst -sha256 -hmac "$(xxd -r -p <<<$RIVR_PARAMS_PSK_HEX)" -binary \
+ *     | xxd -p -c32
+ *
  * Use the CLI command "policy" or watch for @POLICY JSON lines to
  * observe the current parameter values and update counters:
  *   @POLICY {"beacon":30000,"chat":2000,"data":2000,"duty":10,"role":"client",
  *            "updates":N,"last_update_ms":N,"rebuilds":N,"reloads":N,
- *            "duty_blocked":0,"orig_drops":N}
+ *            "duty_blocked":0,"orig_drops":N,"sig_ok":N,"sig_fail":N}
+ * sig_ok/sig_fail count HMAC verifications (0 when SIGNED_PARAMS=0).
  * orig_drops counts frames rejected by the origination gate.
  * Dropped frames print: @DROP origination throttled type=CHAT
+ * Rejected @PARAMS print: @PARAMS REJECTED sig from 0x<node-id>
  */
 
 /* ── Time-on-Air constants for the default configuration ─────────────────── *

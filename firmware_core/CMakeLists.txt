@@ -42,6 +42,8 @@ idf_component_register(
         "rivr_panic.c"
         # Runtime-adjustable policy parameters
         "rivr_policy.c"
+        # @PARAMS HMAC-SHA-256 signing support
+        "crypto/hmac_sha256.c"
         # RIVR glue layer (relative to firmware_core/)
         "../rivr_layer/rivr_embed.c"
         "../rivr_layer/rivr_sinks.c"

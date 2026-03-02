@@ -82,6 +82,8 @@ typedef struct {
     uint32_t policy_reload_count;       /**< Engine hot-reloads triggered by policy change  */
     uint32_t duty_blocked_count;        /**< Reserved — set to 0 (use g_dc.blocked_count)      */
     uint32_t origination_drop_count;    /**< Frames dropped by rivr_policy_allow_origination() */
+    uint32_t params_sig_ok_count;       /**< @PARAMS accepted with valid HMAC signature         */
+    uint32_t params_sig_fail_count;     /**< @PARAMS rejected: invalid or missing signature     */
 } rivr_policy_metrics_t;
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
@@ -136,6 +138,38 @@ const char *rivr_policy_role_name(uint8_t role);
  * @return false    Packet is throttled; caller must drop it.
  */
 bool rivr_policy_allow_origination(uint8_t pkt_type, uint32_t now_ms);
+
+/**
+ * @PARAMS signature verification gate (HMAC-SHA-256 with PSK).
+ *
+ * Call this in the @PARAMS handler BEFORE applying any parameter updates.
+ * The function parses the " sig=<hex>" suffix if present, computes
+ * HMAC-SHA-256 over the bytes that precede it, and compares in constant time.
+ *
+ * Behaviour depends on compile-time flags (see feature_flags.h):
+ *
+ *   FEATURE_SIGNED_PARAMS=0 (default, backward compatible):
+ *     → Always returns true; sig= field is silently ignored.
+ *       params_sig_ok/fail counters are not changed in this mode.
+ *
+ *   FEATURE_SIGNED_PARAMS=1, ALLOW_UNSIGNED_PARAMS=1 (transitional):
+ *     → sig= present and valid:   accept, increment params_sig_ok_count.
+ *     → sig= present and invalid: reject, increment params_sig_fail_count.
+ *     → sig= absent:              accept (dev grace), no counter change.
+ *
+ *   FEATURE_SIGNED_PARAMS=1, ALLOW_UNSIGNED_PARAMS=0 (production):
+ *     → sig= present and valid:   accept, increment params_sig_ok_count.
+ *     → sig= present and invalid: reject, increment params_sig_fail_count.
+ *     → sig= absent:              reject, increment params_sig_fail_count.
+ *
+ * No heap, no ISR safe.  Main-loop only.
+ *
+ * @param buf   Full @PARAMS payload string, NUL-terminated.
+ * @param len   strlen(buf) — must not include the NUL.
+ * @return true  Caller may apply the parameter updates.
+ * @return false Caller must discard this @PARAMS message.
+ */
+bool rivr_verify_params_sig(const char *buf, size_t len);
 
 /**
  * Generate the current RIVR program string from g_policy_params into buf.

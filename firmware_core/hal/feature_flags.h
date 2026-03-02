@@ -10,18 +10,22 @@
  * All flags use #ifndef guards so any earlier definition always wins.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │ FLAG                        │ DEFAULT │ DESCRIPTION                  │
+ * │ FLAG                         │ DEFAULT │ DESCRIPTION                  │
  * ├──────────────────────────────────────────────────────────────────────┤
- * │ RIVR_ROLE_CLIENT            │  0      │ Node is a client (chat only) │
- * │ RIVR_ROLE_REPEATER          │  0      │ Node relays CHAT+DATA        │
- * │ RIVR_FABRIC_REPEATER        │  0      │ Congestion fabric enabled    │
- * │ RIVR_RADIO_SX1262           │  1      │ Use SX1262/E22 driver        │
- * │ RIVR_RADIO_SX1276           │  0      │ Use SX1276/RFM95 driver      │
- * │ RIVR_FEATURE_ENCRYPTION     │  0      │ PSK frame encryption         │
- * │ RIVR_FEATURE_COMPRESSION    │  0      │ Payload compression (future) │
- * │ RIVR_FEATURE_BLE            │  0      │ BLE provisioning (future)    │
- * │ RIVR_SIGNED_PROG            │  0      │ OTA requires Ed25519 sig     │
- * │ RIVR_SIM_MODE               │  0      │ Simulation / host-test build │
+ * │ RIVR_ROLE_CLIENT             │  0      │ Node is a client (chat only) │
+ * │ RIVR_ROLE_REPEATER           │  0      │ Node relays CHAT+DATA        │
+ * │ RIVR_FABRIC_REPEATER         │  0      │ Congestion fabric enabled    │
+ * │ RIVR_RADIO_SX1262            │  1      │ Use SX1262/E22 driver        │
+ * │ RIVR_RADIO_SX1276            │  0      │ Use SX1276/RFM95 driver      │
+ * │ RIVR_FEATURE_ENCRYPTION      │  0      │ PSK frame encryption         │
+ * │ RIVR_FEATURE_COMPRESSION     │  0      │ Payload compression (future) │
+ * │ RIVR_FEATURE_BLE             │  0      │ BLE provisioning (future)    │
+ * │ RIVR_SIGNED_PROG             │  0      │ OTA requires Ed25519 sig     │
+ * │ RIVR_FEATURE_SIGNED_PARAMS   │  0      │ @PARAMS require HMAC-SHA-256 │
+ * │ RIVR_FEATURE_ALLOW_UNSIGNED  │  1      │ Accept unsigned @PARAMS when │
+ * │   _PARAMS                    │         │ SIGNED_PARAMS=1 (dev grace)  │
+ * │ RIVR_PARAMS_PSK_HEX          │ "000…"  │ 64-hex 32-byte HMAC key      │
+ * │ RIVR_SIM_MODE                │  0      │ Simulation / host-test build │
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * ROLE GUARD
@@ -105,6 +109,54 @@
  */
 #ifndef RIVR_SIGNED_PROG
 #  define RIVR_SIGNED_PROG          0
+#endif
+
+/**
+ * Require HMAC-SHA-256 signature on all @PARAMS OTA parameter updates.
+ *
+ * When RIVR_FEATURE_SIGNED_PARAMS=1:
+ *   - A valid   sig= field causes the update to be accepted.
+ *   - A missing sig= field is accepted only when
+ *     RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS=1 (dev grace period).
+ *   - An invalid sig= field always causes the update to be rejected.
+ *
+ * When RIVR_FEATURE_SIGNED_PARAMS=0 (default):
+ *   - sig= field is silently ignored.
+ *   - All @PARAMS are accepted unconditionally (backward compatible).
+ *
+ * Wire format:
+ *   @PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10>
+ *           role=<client|repeater|gateway> sig=<64 hex chars>
+ *
+ * The HMAC covers the exact ASCII bytes BEFORE the " sig=" token.
+ * Key source: RIVR_PARAMS_PSK_HEX (compile-time) overridable per-board.
+ */
+#ifndef RIVR_FEATURE_SIGNED_PARAMS
+#  define RIVR_FEATURE_SIGNED_PARAMS        0
+#endif
+
+/**
+ * When RIVR_FEATURE_SIGNED_PARAMS=1, also accept unsigned @PARAMS.
+ * Default ON to ease initial deployment.  Set to 0 for production hardening:
+ *   -DRIVR_FEATURE_ALLOW_UNSIGNED_PARAMS=0 -DRIVR_FEATURE_SIGNED_PARAMS=1
+ */
+#ifndef RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS
+#  define RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS  1
+#endif
+
+/**
+ * Pre-shared key for @PARAMS HMAC-SHA-256 signing (64 hex nibbles = 32 bytes).
+ *
+ * ⚠ SECURITY: The default all-zero key is insecure and should be replaced
+ *   in every production build with a secret value unique per fleet/network:
+ *     -DRIVR_PARAMS_PSK_HEX=\"<64 random hex chars>\"
+ *
+ * Example (generate with: openssl rand -hex 32):
+ *   -DRIVR_PARAMS_PSK_HEX=\"a3f2...1b9c\"
+ */
+#ifndef RIVR_PARAMS_PSK_HEX
+#  define RIVR_PARAMS_PSK_HEX \
+    "0000000000000000000000000000000000000000000000000000000000000000"
 #endif
 
 /* ── Build mode flags ───────────────────────────────────────────────────── */

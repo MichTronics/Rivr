@@ -216,13 +216,30 @@ uint32_t sources_rf_rx_drain(void)
                     prog_buf[copy_len] = '\0';
 
                     /* ── @PARAMS: policy parameter update (no full program push) ── *
-                     * Payload format: "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10> [role=client|repeater|gateway]"
-                     * Example:        "@PARAMS beacon=60000 chat=2000 data=2000 duty=5 role=repeater"
-                     * Any omitted key retains its current value.
-                     * Values out of bounds are silently ignored (see rivr_policy_set_param).
-                     * ─────────────────────────────────────────────────────────────────── */
+                     * Payload format: "@PARAMS beacon=<ms> chat=<ms> data=<ms>       *
+                     *   duty=<1..10> [role=client|repeater|gateway] [sig=<64hex>]"   *
+                     * Example:        "@PARAMS beacon=60000 chat=2000 role=repeater  *
+                     *                  sig=<hmac-sha256-hex>"                         *
+                     * sig= is required when RIVR_FEATURE_SIGNED_PARAMS=1.            *
+                     * Any omitted (non-sig) key retains its current value.           *
+                     * Values out of bounds are silently ignored (see set_param).     *
+                     * ─────────────────────────────────────────────────────────────── */
                     if (copy_len >= 7u &&
                         strncmp(prog_buf, "@PARAMS", 7) == 0) {
+
+                        /* ── Signature gate ─────────────────────────────── *
+                         * Must pass before any param is applied or NVS      *
+                         * written.  On reject, log and abort silently.      *
+                         * ─────────────────────────────────────────────────  */
+                        if (!rivr_verify_params_sig(prog_buf, (size_t)copy_len)) {
+                            printf("@PARAMS REJECTED sig from 0x%08lx\r\n",
+                                   (unsigned long)pkt_hdr.src_id);
+                            fflush(stdout);
+                            RIVR_LOGW(TAG,
+                                "OTA: @PARAMS from 0x%08lx REJECTED — sig verification failed",
+                                (unsigned long)pkt_hdr.src_id);
+                            continue;  /* skip NVS write and reload */
+                        }
                         unsigned long pv = 0;
                         const char *kp;
                         if ((kp = strstr(prog_buf, "beacon=")) != NULL &&

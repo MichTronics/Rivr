@@ -7,6 +7,7 @@
 #include "rivr_ota.h"
 #include "rivr_pubkey.h"
 #include "ed25519_verify.h"
+#include "hal/feature_flags.h"   /* RIVR_SIM_MODE, RIVR_SIGNED_PROG */
 
 /* rivr_nvs_store_program() is declared in rivr_embed.h (ESP-IDF layer).
  * We reach it through a forward declaration here so this translation unit
@@ -20,7 +21,7 @@ extern bool rivr_nvs_store_program(const char *src);
  * linker pulls in the stubs from tests/test_stubs.c.
  */
 
-#ifdef ESP_IDF_VERSION   /* real firmware build */
+#if !RIVR_SIM_MODE   /* real firmware build */
 #  include "nvs_flash.h"
 #  include "nvs.h"
 #  define NVS_NS      "rivr"
@@ -69,7 +70,7 @@ static bool save_ota_pending(uint32_t v)
     return ok;
 }
 
-#else   /* host / unit-test build — stubs provided by tests/test_stubs.c */
+#else   /* host / unit-test / sim build — stubs provided by tests/test_stubs.c */
 extern uint32_t ota_stub_load_seq(void);
 extern bool     ota_stub_save_seq(uint32_t seq);
 extern uint32_t ota_stub_load_pending(void);
@@ -84,7 +85,7 @@ static bool     save_ota_pending(uint32_t v)   { return ota_stub_save_pending(v)
 
 bool rivr_ota_verify(const uint8_t *payload, size_t payload_len)
 {
-#ifndef RIVR_SIGNED_PROG
+#if !RIVR_SIGNED_PROG
     /* Unsigned build: accept everything */
     (void)payload; (void)payload_len;
     return true;
@@ -125,7 +126,7 @@ bool rivr_ota_verify(const uint8_t *payload, size_t payload_len)
     if (!save_last_seq(seq)) return false;
 
     return true;
-#endif /* RIVR_SIGNED_PROG */
+#endif /* !RIVR_SIGNED_PROG */
 }
 
 bool rivr_ota_activate(const uint8_t *payload, size_t payload_len)
