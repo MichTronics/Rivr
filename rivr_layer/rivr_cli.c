@@ -46,7 +46,7 @@
  * idempotent (safe to call in a future unified init path).
  */
 
-#ifdef RIVR_ROLE_CLIENT
+#if RIVR_ROLE_CLIENT
 
 #include "rivr_cli.h"
 

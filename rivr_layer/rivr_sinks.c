@@ -51,7 +51,7 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
     rf_tx_request_t req;
     memset(&req, 0, sizeof(req));
 
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
     if (v->tag == RIVR_VAL_STR) {
         /* Legacy: Decode "CHAT:<text>" → frame type 0x04 + Lamport tick header + text */
         const char *s    = (const char *)v->as_str.buf;
@@ -221,7 +221,7 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
         return;
     }
 
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
     /* ── Non-BYTES path (RIVR_VAL_STR legacy) push ── */
     bool pushed = rb_try_push(&rf_tx_queue, &req);
     if (!pushed) {

@@ -113,12 +113,7 @@ int build_info_write_json(char *buf, size_t buf_len)
         (unsigned)RF_BANDWIDTH_KHZ,
         (unsigned)RF_CODING_RATE,
         (unsigned)RIVR_FABRIC_REPEATER,
-        (unsigned)
-#ifdef RIVR_SIM_MODE
-        1u,
-#else
-        0u,
-#endif
+        (unsigned)RIVR_SIM_MODE,
         RIVR_COMPILER_VER,
         /* metrics snapshot */
         g_rivr_metrics.rx_decode_fail,
@@ -255,18 +250,8 @@ int build_info_write_supportpack(char    *buf,
         (unsigned)RF_SPREADING_FACTOR,
         (unsigned)RF_BANDWIDTH_KHZ,
         (unsigned)RF_CODING_RATE,
-        (unsigned)
-#ifndef RIVR_FABRIC_REPEATER
-        0u,
-#else
         (unsigned)RIVR_FABRIC_REPEATER,
-#endif
-        (unsigned)
-#ifdef RIVR_SIM_MODE
-        1u,
-#else
-        0u,
-#endif
+        (unsigned)RIVR_SIM_MODE,
         /* runtime totals */
         uptime_ms, rx_frames, tx_frames,
         /* routing summary */

@@ -193,7 +193,7 @@ uint32_t sources_rf_rx_drain(void)
         if (pkt_hdr.pkt_type == PKT_PROG_PUSH) {
             if (pkt_hdr.dst_id == g_my_node_id || pkt_hdr.dst_id == 0u) {
                 if (payload_ptr && pkt_hdr.payload_len > 0u) {
-#ifdef RIVR_SIGNED_PROG
+#if RIVR_SIGNED_PROG
                     if (rivr_ota_verify(payload_ptr, pkt_hdr.payload_len)) {
                         if (rivr_ota_activate(payload_ptr, pkt_hdr.payload_len)) {
                             g_program_reload_pending = true;
@@ -535,7 +535,7 @@ uint32_t sources_rf_rx_drain(void)
 #if RIVR_ROLE_CLIENT
             skip_enqueue_client:;
 #endif
-#if !defined(RIVR_ROLE_CLIENT) && !defined(RIVR_FABRIC_REPEATER)
+#if !RIVR_ROLE_CLIENT && !RIVR_FABRIC_REPEATER
             /* Used when neither RIVR_ROLE_CLIENT nor RIVR_FABRIC_REPEATER is
              * defined — pure repeater without fabric relay logic. */
             skip_relay_policy:;
@@ -666,7 +666,7 @@ uint32_t sources_timer_drain(void)
 
 void rivr_sources_init(void)
 {
-#ifdef RIVR_SIM_MODE
+#if RIVR_SIM_MODE
     /* UART0 CLI only needed in simulation mode.
      * On real hardware, UART0 is the ESP-IDF console; installing an extra
      * uart driver on top causes rx_mux conflicts that block the main loop. */

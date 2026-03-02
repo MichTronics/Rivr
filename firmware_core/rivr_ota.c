@@ -28,7 +28,7 @@ extern bool rivr_nvs_store_program(const char *src);
 #  define NVS_KEY_SEQ "ota_seq"
 #  define NVS_KEY_PND "ota_pending"
 
-static uint32_t load_last_seq(void)
+static uint32_t __attribute__((unused)) load_last_seq(void)
 {
     nvs_handle_t h;
     uint32_t val = 0;
@@ -39,7 +39,7 @@ static uint32_t load_last_seq(void)
     return val;
 }
 
-static bool save_last_seq(uint32_t seq)
+static bool __attribute__((unused)) save_last_seq(uint32_t seq)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return false;
@@ -75,8 +75,8 @@ extern uint32_t ota_stub_load_seq(void);
 extern bool     ota_stub_save_seq(uint32_t seq);
 extern uint32_t ota_stub_load_pending(void);
 extern bool     ota_stub_save_pending(uint32_t v);
-static uint32_t load_last_seq(void)            { return ota_stub_load_seq(); }
-static bool     save_last_seq(uint32_t s)      { return ota_stub_save_seq(s); }
+static uint32_t __attribute__((unused)) load_last_seq(void)       { return ota_stub_load_seq(); }
+static bool     __attribute__((unused)) save_last_seq(uint32_t s) { return ota_stub_save_seq(s); }
 static uint32_t load_ota_pending(void)         { return ota_stub_load_pending(); }
 static bool     save_ota_pending(uint32_t v)   { return ota_stub_save_pending(v); }
 #endif

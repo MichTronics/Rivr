@@ -46,7 +46,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_mac.h"
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
 #  include "esp_task_wdt.h"
 #endif
 
@@ -113,7 +113,7 @@
  *   Round 8: Pre-set route[NODE_A]=direct, fill TX queue, unicast CHAT to A
  *            → push fails → fallback flood PKT_FLAG_FALLBACK emitted
  * ════════════════════════════════════════════════════════════════════════ */
-#ifdef RIVR_SIM_MODE
+#if RIVR_SIM_MODE
 
 #define MY_NODE_ID  0xFEED0000ul
 #define NODE_A      0xAAAA0001ul
@@ -473,19 +473,19 @@ static void tx_drain_loop(void)
 void app_main(void)
 {
     /* ── Check for crash/WDT from previous boot — emits @CRASH JSON if needed ─ */
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
     rivr_panic_check_prev();
 #endif
 
     RIVR_LOGI(TAG, "═══ RIVR Embedded Node booting ═══");
     RIVR_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
 
-#ifdef RIVR_SIM_MODE
+#if RIVR_SIM_MODE
     RIVR_LOGI(TAG, "*** SIMULATION MODE: no real SX1262 hardware ***");
 #endif
 
     /* ── Hardware init ── */
-#ifdef RIVR_SIM_MODE
+#if RIVR_SIM_MODE
     /* In sim mode skip full platform_init (no SPI bus, no GPIO interrupts).
      * Only initialise the ring-buffers inside the radio module so that
      * sim_inject_packets() can push frames immediately.
@@ -518,7 +518,7 @@ void app_main(void)
     }
 #endif
 
-#ifdef RIVR_SIM_MODE
+#if RIVR_SIM_MODE
     /* Assign our simulated node identity before the RIVR engine starts so
      * routing_should_reply_route_req(), route_cache_learn_rx(), etc., can
      * distinguish this node from the injected remote nodes. */
@@ -564,12 +564,12 @@ void app_main(void)
         boot_stats.node_id = g_my_node_id;
         boot_stats.net_id  = g_net_id;
         strncpy(boot_stats.callsign, g_callsign, sizeof(boot_stats.callsign) - 1u);
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
         display_task_start(&boot_stats);
 #endif
     }
 
-#ifdef RIVR_SIM_MODE
+#if RIVR_SIM_MODE
     /* Push simulated frames AFTER engine is ready so clock state is fully
      * initialised, but BEFORE radio_start_rx (which is skipped in sim mode). */
     sim_inject_packets();
@@ -611,7 +611,7 @@ void app_main(void)
         /* ─ 0b. Check for radio recovery timeouts ─
          * Detects RX silence (chip hung in RX) and triggers a guarded reset
          * if the radio has been silent for >RADIO_RX_SILENCE_MS. */
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
         radio_check_timeouts();
 #endif
 
@@ -678,7 +678,7 @@ void app_main(void)
          * treat the previous reset streak as resolved.  Subsequent normal
          * reboots will not show a @CRASH line.
          * loop_count ≈ 6000 × 10 ms = 60 s.  Fires exactly once per boot. */
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
         if (loop_count == 6000u) {
             rivr_panic_clear_reset_count();
         }
@@ -704,7 +704,7 @@ void app_main(void)
         }
 
         /* ─ 4. Publish display stats snapshot (task picks it up at its own pace) ─ */
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
         {
             /* Fill the snapshot from live globals — cheap reads, no alloc */
             disp.node_id  = g_my_node_id;
@@ -796,7 +796,7 @@ void app_main(void)
         /* Feed the hardware watchdog — if we reach this point the main loop
          * is alive.  If the loop ever stalls (blocked SPI, infinite poll),
          * WDT times out → panic → reboot. */
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
         esp_task_wdt_reset();
 #endif
         loop_count++;

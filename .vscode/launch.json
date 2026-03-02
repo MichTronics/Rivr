@@ -12,21 +12,21 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug",
-            "executable": "/home/kali/source/Rivr/.pio/build/repeater_lilygo_lora32_v21/firmware.elf",
-            "projectEnvName": "repeater_lilygo_lora32_v21",
+            "executable": "/home/kali/source/Rivr/.pio/build/repeater_esp32devkit_e22_900/firmware.elf",
+            "projectEnvName": "repeater_esp32devkit_e22_900",
             "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "preLaunchTask": {
                 "type": "PlatformIO",
-                "task": "Pre-Debug (repeater_lilygo_lora32_v21)"
+                "task": "Pre-Debug (repeater_esp32devkit_e22_900)"
             }
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (skip Pre-Debug)",
-            "executable": "/home/kali/source/Rivr/.pio/build/repeater_lilygo_lora32_v21/firmware.elf",
-            "projectEnvName": "repeater_lilygo_lora32_v21",
+            "executable": "/home/kali/source/Rivr/.pio/build/repeater_esp32devkit_e22_900/firmware.elf",
+            "projectEnvName": "repeater_esp32devkit_e22_900",
             "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart"
         },
@@ -34,8 +34,8 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (without uploading)",
-            "executable": "/home/kali/source/Rivr/.pio/build/repeater_lilygo_lora32_v21/firmware.elf",
-            "projectEnvName": "repeater_lilygo_lora32_v21",
+            "executable": "/home/kali/source/Rivr/.pio/build/repeater_esp32devkit_e22_900/firmware.elf",
+            "projectEnvName": "repeater_esp32devkit_e22_900",
             "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "loadMode": "manual"

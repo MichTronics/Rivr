@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "hal/feature_flags.h"  /* RIVR_SIM_MODE, RIVR_ROLE_CLIENT, RIVR_FABRIC_REPEATER … */
 
 #ifdef __cplusplus
 extern "C" {
@@ -71,7 +72,7 @@ extern "C" {
 #  define _RIVR_RADIO_TAG "SX1262"
 #endif
 
-#ifdef RIVR_SIM_MODE
+#if RIVR_SIM_MODE
 #  define _RIVR_SIM_TAG "+sim"
 #else
 #  define _RIVR_SIM_TAG ""

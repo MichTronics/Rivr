@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-#ifdef RIVR_ROLE_CLIENT
+#if RIVR_ROLE_CLIENT
 
 /**
  * @brief Initialise the serial CLI.

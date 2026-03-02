@@ -310,7 +310,7 @@ void rivr_embed_init(void)
         for (;;) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
 
-#ifndef RIVR_SIM_MODE
+#if !RIVR_SIM_MODE
     /* Mark runtime-init boundary — no heap allocation expected after this. */
     rivr_runtime_freeze_alloc();
 #endif
@@ -319,7 +319,7 @@ void rivr_embed_init(void)
     rivr_foreach_timer_source(s_timer_reg_cb);
 
     RIVR_LOGI(TAG, "rivr_embed_init: engine ready");
-#ifdef RIVR_SIM_MODE
+#if RIVR_SIM_MODE
     RIVR_LOGI(TAG, "SIM program:\n%s", RIVR_SIM_PROGRAM);
 #else
     RIVR_LOGI(TAG, "program:\n%s", RIVR_DEFAULT_PROGRAM);
