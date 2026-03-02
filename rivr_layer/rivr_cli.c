@@ -67,6 +67,7 @@
 #include "../firmware_core/build_info.h"
 #include "../firmware_core/rivr_metrics.h"
 #include "../firmware_core/dutycycle.h"
+#include "../firmware_core/rivr_policy.h"
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 
@@ -229,6 +230,7 @@ static void cli_handle_line(void)
                "  id                    print node ID, callsign and net ID\r\n"
                "  info                  print build info (env, sha, radio profile)\r\n"
                "  metrics               print all counters/gauges as JSON (@MET line)\r\n"
+               "  policy                print current policy params + counters (@POLICY line)\r\n"
                "  supportpack           JSON dump: build info + metrics snapshot\r\n"
                "  neighbors             show live neighbour table with link scores\r\n"
                "  routes                show route cache with scores and ages\r\n"
@@ -385,6 +387,12 @@ static void cli_handle_line(void)
             printf("ERR: usage: log <debug|metrics|silent>\r\n");
         }
         fflush(stdout);
+        return;
+    }
+
+    /* ── "policy" ── */
+    if (strncmp(p, "policy", 6u) == 0 && (p[6] == '\0' || p[6] == ' ')) {
+        rivr_policy_print();
         return;
     }
 

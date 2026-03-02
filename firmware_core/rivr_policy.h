@@ -54,6 +54,22 @@ typedef enum {
 /** Global policy parameter state — read-only outside rivr_policy.c. */
 extern rivr_policy_params_t g_policy_params;
 
+/* ── Policy metrics struct ───────────────────────────────────────────────── */
+
+/**
+ * Counters that track how the policy layer has been exercised at runtime.
+ * All fields are monotonically increasing (wrap at UINT32_MAX).
+ * Read-only via rivr_policy_metrics_get(); never expose the global directly.
+ */
+typedef struct {
+    uint32_t params_update_count;       /**< Successful rivr_policy_set_param() calls      */
+    uint32_t last_params_update_uptime_ms; /**< tb_millis() at last successful param update */
+    uint32_t policy_rebuild_count;      /**< rivr_policy_build_program() successes          */
+    uint32_t policy_reload_count;       /**< Engine hot-reloads triggered by policy change  */
+    uint32_t duty_blocked_count;        /**< Reserved — set to 0 (use g_dc.blocked_count)  */
+    uint32_t origination_drop_count;    /**< Reserved for future USB-origination gate       */
+} rivr_policy_metrics_t;
+
 /* ── API ─────────────────────────────────────────────────────────────────── */
 
 /**
@@ -80,6 +96,44 @@ void rivr_policy_set_param(uint8_t param_id, uint32_t value);
  * Does not allocate heap memory.
  */
 void rivr_policy_build_program(char *buf, size_t bufsz);
+
+/**
+ * Return a const pointer to the current policy parameters.
+ * Safe to call anytime after rivr_policy_init().
+ */
+const rivr_policy_params_t *rivr_policy_params_get(void);
+
+/**
+ * Return a const pointer to the current policy metrics counters.
+ * Safe to call anytime after rivr_policy_init().
+ */
+const rivr_policy_metrics_t *rivr_policy_metrics_get(void);
+
+/**
+ * Increment policy_reload_count.
+ * Call from rivr_embed_reload() after a successful engine hot-reload.
+ * Main-loop only — not ISR safe.
+ */
+void rivr_policy_notify_reload(void);
+
+/**
+ * Print current policy params + metrics as a single @POLICY JSON line to.
+ * stdout (printf).  Use from CLI "policy" command or periodic diagnostics.
+ * Format:
+ *   @POLICY {"beacon":30000,"chat":2000,"data":2000,"duty":10,
+ *            "updates":0,"last_update_ms":0,"rebuilds":0,"reloads":0,
+ *            "duty_blocked":0,"orig_drops":0}\r\n
+ */
+void rivr_policy_print(void);
+
+/**
+ * @brief Self-test: validate counter behaviour with valid/invalid param sets.
+ * Compiled in only when RIVR_POLICY_SELFTEST is defined.
+ * Calls assert() on failure.
+ */
+#ifdef RIVR_POLICY_SELFTEST
+void rivr_policy_selftest(void);
+#endif
 
 #ifdef __cplusplus
 }

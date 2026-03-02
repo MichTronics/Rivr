@@ -43,6 +43,12 @@
  * Send "@PARAMS beacon=<ms> chat=<ms> data=<ms> duty=<1..10>" as a
  * PKT_PROG_PUSH payload to update runtime policy without reflashing.
  * Default values are the RIVR_PARAM_* macros below.
+ *
+ * Use the CLI command "policy" or watch for @POLICY JSON lines to
+ * observe the current parameter values and update counters:
+ *   @POLICY {"beacon":30000,"chat":2000,"data":2000,"duty":10,
+ *            "updates":N,"last_update_ms":N,"rebuilds":N,"reloads":N,
+ *            "duty_blocked":0,"orig_drops":0}
  */
 
 /* ── Time-on-Air constants for the default configuration ─────────────────── *

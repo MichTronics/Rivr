@@ -361,6 +361,7 @@ bool rivr_embed_reload(void)
     rivr_foreach_timer_source(s_timer_reg_cb);
 
     g_program_reload_pending = false;
+    rivr_policy_notify_reload();   /* increment policy_reload_count */
     RIVR_LOGI(TAG, "rivr_embed_reload: done");
     return true;
 }
