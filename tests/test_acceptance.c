@@ -1,6 +1,6 @@
 /**
  * @file  test_acceptance.c
- * @brief 3-run A→D acceptance test suite (host-native build, no ESP-IDF).
+ * @brief 6-run acceptance test suite (host-native build, no ESP-IDF).
  *
  * RUN 1 — Flood correctness
  *   50 unique CHAT packets → all forwarded, TTL/hop mutated, relay flag set.
@@ -682,6 +682,199 @@ static void run5_airtime_sched(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
+ * RUN 6 — ROUTE_REQ reply logic
+ *
+ * Covers:
+ *   6a  wrong pkt_type  → no reply
+ *   6b  NULL pkt        → no reply (robustness)
+ *   6c  we ARE target   → must reply
+ *   6d  empty cache     → no reply
+ *   6e  live cache hit  → must reply
+ *   6f  stale (expired) cache → must NOT reply
+ *   6g  ROUTE_RPL payload correct for target case
+ *   6h  ROUTE_RPL payload correct for cache case
+ *   6i  requester correctly learns route from a cache-sourced ROUTE_RPL
+ *   6j  requester drains pending queue after learning route via intermediate
+ * ══════════════════════════════════════════════════════════════════════════ */
+static void run6_route_req_reply_logic(void)
+{
+    printf("\n=== RUN 6: ROUTE_REQ reply logic ===\n");
+
+    uint32_t now = tb_millis();
+    route_cache_t rc;
+    route_cache_init(&rc);
+
+    /* Base ROUTE_REQ: NODE_A is looking for NODE_D.
+     * MY_NODE is an intermediate node that may or may not know a route. */
+    rivr_pkt_hdr_t req;
+    memset(&req, 0, sizeof(req));
+    req.magic    = RIVR_MAGIC;
+    req.version  = RIVR_PROTO_VER;
+    req.pkt_type = PKT_ROUTE_REQ;
+    req.ttl      = ROUTE_REQ_TTL;
+    req.src_id   = NODE_A;   /* requester */
+    req.dst_id   = NODE_D;   /* target being searched for */
+    req.seq      = 1u;
+
+    /* ── 6a: wrong pkt_type → no reply ───────────────────────────────────── */
+    rivr_pkt_hdr_t bad = req;
+    bad.pkt_type = PKT_CHAT;
+    CHECK(!routing_should_reply_route_req(&bad, MY_NODE, &rc, now),
+          "6a: wrong pkt_type (PKT_CHAT) → no reply");
+
+    /* ── 6b: NULL pkt → no reply ─────────────────────────────────────────── */
+    CHECK(!routing_should_reply_route_req(NULL, MY_NODE, &rc, now),
+          "6b: NULL pkt → no reply");
+
+    /* ── 6c: we ARE the target → must reply ──────────────────────────────── */
+    /* rc is empty; but dst_id matches our own ID */
+    rivr_pkt_hdr_t req_for_us = req;
+    req_for_us.dst_id = MY_NODE;
+    CHECK(routing_should_reply_route_req(&req_for_us, MY_NODE, &rc, now),
+          "6c: target node (dst_id == my_id) must reply, even with empty cache");
+
+    /* ── 6d: empty cache, not the target → no reply ──────────────────────── */
+    CHECK(!routing_should_reply_route_req(&req, MY_NODE, &rc, now),
+          "6d: empty cache, not the target → no reply");
+
+    /* ── 6e: live cache entry for target → must reply ────────────────────── */
+    route_cache_update(&rc, NODE_D, NODE_B, 1u, 160u, RCACHE_FLAG_VALID, now);
+    CHECK(routing_should_reply_route_req(&req, MY_NODE, &rc, now),
+          "6e: intermediate node with live cache entry for target must reply");
+
+    /* ── 6f: stale (expired) cache entry → must NOT reply ────────────────── */
+    /* Advance clock past RCACHE_EXPIRY_MS so the entry above expires. */
+    test_advance_ms(RCACHE_EXPIRY_MS + 1u);
+    uint32_t stale_now = tb_millis();
+    CHECK(!routing_should_reply_route_req(&req, MY_NODE, &rc, stale_now),
+          "6f: expired cache entry must NOT trigger ROUTE_RPL");
+
+    /* ── 6g: ROUTE_RPL payload is correct for the target case ────────────── */
+    /* Scenario: MY_NODE IS the target.
+     * Expected: dst=NODE_A, src=MY_NODE, ttl=ROUTE_REQ_TTL,
+     *           payload: { target=MY_NODE, next_hop=MY_NODE, hop_count=0 }   */
+    uint8_t rpl_buf[64];
+    int rpl_len = routing_build_route_rpl(
+        MY_NODE, NODE_A, MY_NODE, MY_NODE, 0u, 42u,
+        rpl_buf, sizeof(rpl_buf));
+    CHECK(rpl_len > 0, "6g: routing_build_route_rpl (target case) encodes OK");
+
+    rivr_pkt_hdr_t rpl_hdr;
+    const uint8_t *rpl_pl = NULL;
+    bool rpl_ok = protocol_decode(rpl_buf, (uint8_t)rpl_len, &rpl_hdr, &rpl_pl);
+    CHECK(rpl_ok,                            "6g: ROUTE_RPL decodes with valid CRC");
+    CHECK(rpl_hdr.pkt_type == PKT_ROUTE_RPL, "6g: pkt_type == PKT_ROUTE_RPL");
+    CHECK(rpl_hdr.dst_id   == NODE_A,        "6g: dst_id == requester (NODE_A)");
+    CHECK(rpl_hdr.src_id   == MY_NODE,       "6g: src_id == MY_NODE (replier)");
+    CHECK(rpl_hdr.ttl      == ROUTE_REQ_TTL, "6g: ttl == ROUTE_REQ_TTL (directed flood)");
+
+    uint32_t pg_target = (uint32_t)rpl_pl[0] | ((uint32_t)rpl_pl[1] << 8u)
+                       | ((uint32_t)rpl_pl[2] << 16u) | ((uint32_t)rpl_pl[3] << 24u);
+    uint8_t  pg_hops   = rpl_pl[8];
+    CHECK(pg_target == MY_NODE, "6g: payload.target_id == MY_NODE (we are the target)");
+    CHECK(pg_hops   == 0u,      "6g: payload.hop_count == 0 (zero hops — we are the target)");
+
+    /* ── 6h: ROUTE_RPL payload is correct for the cache case ─────────────── */
+    /* Scenario: MY_NODE has a live route to NODE_D via NODE_B, hop_count=2.
+     * Expected payload: { target=NODE_D, next_hop=NODE_B, hop_count=2 }     */
+    route_cache_t rc2;
+    route_cache_init(&rc2);
+    uint32_t now2 = tb_millis();
+    route_cache_update(&rc2, NODE_D, NODE_B, 2u, 150u, RCACHE_FLAG_VALID, now2);
+
+    const route_cache_entry_t *ce = route_cache_lookup(&rc2, NODE_D, now2);
+    CHECK(ce != NULL, "6h: fresh cache entry for NODE_D exists");
+
+    uint8_t rpl_buf2[64];
+    int rpl_len2 = routing_build_route_rpl(
+        MY_NODE, NODE_A, NODE_D, ce->next_hop, ce->hop_count, 43u,
+        rpl_buf2, sizeof(rpl_buf2));
+    CHECK(rpl_len2 > 0, "6h: routing_build_route_rpl (cache case) encodes OK");
+
+    rivr_pkt_hdr_t rpl_hdr2;
+    const uint8_t *rpl_pl2 = NULL;
+    bool rpl_ok2 = protocol_decode(rpl_buf2, (uint8_t)rpl_len2, &rpl_hdr2, &rpl_pl2);
+    CHECK(rpl_ok2, "6h: cache ROUTE_RPL decodes with valid CRC");
+
+    uint32_t p2_target = (uint32_t)rpl_pl2[0] | ((uint32_t)rpl_pl2[1] << 8u)
+                       | ((uint32_t)rpl_pl2[2] << 16u) | ((uint32_t)rpl_pl2[3] << 24u);
+    uint32_t p2_nhop   = (uint32_t)rpl_pl2[4] | ((uint32_t)rpl_pl2[5] << 8u)
+                       | ((uint32_t)rpl_pl2[6] << 16u) | ((uint32_t)rpl_pl2[7] << 24u);
+    uint8_t  p2_hops   = rpl_pl2[8];
+    CHECK(p2_target == NODE_D, "6h: payload.target_id == NODE_D");
+    CHECK(p2_nhop   == NODE_B, "6h: payload.next_hop == NODE_B (our cached next_hop)");
+    CHECK(p2_hops   == 2u,     "6h: payload.hop_count == 2 (our cached hops to D)");
+
+    /* ── 6i: requester correctly learns route from a cache-sourced ROUTE_RPL  *
+     * Simulate: intermediate MY_NODE replied with {target=NODE_D,            *
+     * next_hop=NODE_B, hops=2}.  ROUTE_RPL arrived directly at NODE_A       *
+     * (pkt_hdr.hop=0; ROUTE_RPL was not relayed).                            *
+     *                                                                        *
+     * Requester (NODE_A) processing:                                         *
+     *   effective_next_hop = from_id (direct sender) = MY_NODE               *
+     *   total_hops         = p2_hops(2) + pkt_hdr.hop(0) + 1 = 3            *
+     * ──────────────────────────────────────────────────────────────────────  */
+    route_cache_t req_cache;
+    route_cache_init(&req_cache);
+    uint32_t eff_nh   = MY_NODE;
+    uint8_t  tot_hops = (uint8_t)(p2_hops + 0u + 1u);   /* = 3 */
+    route_cache_update(&req_cache, NODE_D, eff_nh, tot_hops, 150u,
+                       RCACHE_FLAG_VALID, now2);
+
+    uint32_t nh_out = 0u;
+    rcache_tx_decision_t dec6i =
+        route_cache_tx_decide(&req_cache, NODE_D, now2, &nh_out);
+    CHECK(dec6i  == RCACHE_TX_UNICAST, "6i: requester learns route to NODE_D");
+    CHECK(nh_out == MY_NODE,           "6i: requester routes to NODE_D via MY_NODE");
+
+    /* ── 6j: requester drains its pending queue after learning route ───────── */
+    pending_queue_t pq6;
+    pending_queue_init(&pq6);
+
+    rivr_pkt_hdr_t ph6;
+    memset(&ph6, 0, sizeof(ph6));
+    ph6.magic    = RIVR_MAGIC;
+    ph6.version  = RIVR_PROTO_VER;
+    ph6.pkt_type = PKT_CHAT;
+    ph6.ttl      = RIVR_PKT_DEFAULT_TTL;
+    ph6.src_id   = NODE_A;
+    ph6.dst_id   = NODE_D;
+    ph6.seq      = 77u;
+
+    uint8_t wire6[64];
+    int wlen6 = protocol_encode(&ph6, (const uint8_t *)"hi", 2u,
+                                wire6, sizeof(wire6));
+    CHECK(wlen6 > 0, "6j: pending frame encodes OK");
+
+    bool enq6 = pending_queue_enqueue(&pq6, NODE_D, wire6, (uint8_t)wlen6,
+                                      RF_TOA_APPROX_US((uint8_t)wlen6), now2);
+    CHECK(enq6,                            "6j: frame enqueued in pending queue");
+    CHECK(pending_queue_count(&pq6) == 1u, "6j: pending count == 1 before drain");
+
+    static rf_tx_request_t s6_storage[8];
+    static rb_t s6_q;
+    rb_init(&s6_q, s6_storage, 8u, sizeof(rf_tx_request_t));
+
+    /* drain_for_dst via MY_NODE (the intermediate that replied from cache) */
+    uint8_t drained6 = pending_queue_drain_for_dst(
+        &pq6, NODE_D, MY_NODE, &s6_q, now2);
+    CHECK(drained6 == 1u,                  "6j: drain returns 1 frame");
+    CHECK(pending_queue_count(&pq6) == 0u, "6j: pending count == 0 after drain");
+
+    rf_tx_request_t greq6;
+    bool gpop6 = rb_pop(&s6_q, &greq6);
+    CHECK(gpop6, "6j: rb_pop from TX queue succeeds");
+
+    rivr_pkt_hdr_t gout6;
+    const uint8_t *gpl6 = NULL;
+    bool gdec6 = protocol_decode(greq6.data, greq6.len, &gout6, &gpl6);
+    CHECK(gdec6,                  "6j: drained frame decodes with valid CRC");
+    CHECK(gout6.dst_id == MY_NODE, "6j: drained dst_id == MY_NODE (intermediate)");
+    CHECK(gout6.ttl    == 1u,      "6j: drained ttl == 1 (single-hop unicast)");
+    CHECK(greq6.due_ms == 0u,      "6j: drained due_ms == 0 (send immediately)");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ *
  * main
  * ══════════════════════════════════════════════════════════════════════════ */
 int main(void)
@@ -693,6 +886,7 @@ int main(void)
     run3_congestion_and_due_ms();
     run4_link_scoring();
     run5_airtime_sched();
+    run6_route_req_reply_logic();
 
     printf("\n══════════════════════════════════════════\n");
     printf("  PASS: %lu   FAIL: %lu\n",

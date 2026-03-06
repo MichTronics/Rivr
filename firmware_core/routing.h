@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "protocol.h"
+#include "route_cache.h"   /* route_cache_t, route_cache_lookup() */
 
 #ifdef __cplusplus
 extern "C" {
@@ -424,16 +425,30 @@ int routing_build_route_req(uint32_t  my_id,
                              uint8_t   out_cap);
 
 /**
- * @brief Build a PKT_ROUTE_RPL wire frame (unicast back to requester).
+ * @brief Build a PKT_ROUTE_RPL wire frame.
  *
- * The payload carries { target_id, next_hop, hop_count } so the requester
- * can populate its route cache in one step.
+ * ROUTE_RPL uses **directed-flood** semantics — the same TTL as ROUTE_REQ
+ * so it floods back through the mesh toward the requester.  Only the node
+ * whose node_id matches dst_id (= requester_id) needs to act on it, but
+ * any node that overhears it may learn the route as a beneficial side-effect.
+ *
+ * The 9-byte payload carries { target_id, next_hop, hop_count }:
+ *   target_id  — the destination the requester was seeking
+ *   next_hop   — the replier's own next hop toward target_id
+ *                (= my_id when we ARE the target; = cache.next_hop otherwise)
+ *   hop_count  — hops from the replier to target_id
+ *                (= 0 when we ARE the target; = cache.hop_count otherwise)
+ *
+ * The requester reconstructs the total hop count as:
+ *   total_hops = hop_count + pkt_hdr.hop + 1
+ * where pkt_hdr.hop is the number of relay hops the ROUTE_RPL took to
+ * reach the requester.
  *
  * @param my_id        ID of the node sending the reply.
  * @param requester_id Node that sent the ROUTE_REQ (becomes dst_id).
  * @param target_id    The destination about which we are replying.
- * @param next_hop     Our known next hop toward target_id.
- * @param hop_count    Hops from us to target_id.
+ * @param next_hop     Our next hop toward target_id (my_id if we are target).
+ * @param hop_count    Hops from us to target_id (0 if we are target).
  * @param seq          Sequence number (caller-managed).
  * @param out_buf / out_cap  Output buffer.
  * @return Number of bytes written, or -1 on buffer overflow.
@@ -448,17 +463,33 @@ int routing_build_route_rpl(uint32_t  my_id,
                              uint8_t   out_cap);
 
 /**
- * @brief Check if an inbound ROUTE_REQ is asking about a target we know.
+ * @brief Decide whether this node should send a ROUTE_RPL for an inbound
+ *        ROUTE_REQ.
  *
- * @p pkt must have pkt_type == PKT_ROUTE_REQ.
- * pkt->dst_id is the requested target.
+ * Returns true in exactly two cases:
  *
- * @param pkt  Decoded ROUTE_REQ header.
- * @return true if this node should send a ROUTE_RPL (i.e. we ARE the target
- *         or we have a cached route to pkt->dst_id).
+ *  1. **We are the requested destination** — pkt->dst_id == my_id.
+ *     Reply payload: { target=my_id, next_hop=my_id, hop_count=0 }.
+ *
+ *  2. **We have a live (non-expired) route cache entry** for pkt->dst_id.
+ *     Reply payload: { target=pkt->dst_id,
+ *                      next_hop=cache_entry.next_hop,
+ *                      hop_count=cache_entry.hop_count }.
+ *     Stale / expired entries do NOT qualify — only a live lookup via
+ *     route_cache_lookup() (which applies lazy expiry) counts.
+ *
+ * @param pkt      Decoded ROUTE_REQ header (pkt_type must be PKT_ROUTE_REQ).
+ * @param my_id    This node's own identifier.
+ * @param cache    Route cache to consult for case 2 (may be NULL → only
+ *                 case 1 is checked, as before).
+ * @param now_ms   Monotonic millisecond timestamp (for expiry test).
+ * @return true  → caller should build and send a ROUTE_RPL.
+ * @return false → do not reply (we don't know a route, or pkt is invalid).
  */
 bool routing_should_reply_route_req(const rivr_pkt_hdr_t *pkt,
-                                     uint32_t              my_id);
+                                     uint32_t              my_id,
+                                     route_cache_t        *cache,
+                                     uint32_t              now_ms);
 
 #ifdef __cplusplus
 }

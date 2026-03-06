@@ -295,17 +295,55 @@ uint32_t sources_rf_rx_drain(void)
             continue;  /* never relay program pushes */
         }
 
-        /* ── 4c. Phase-D: Handle ROUTE_REQ ── */
+        /* ── 4c. Phase-D: Handle ROUTE_REQ ── *
+         *                                                                    *
+         * Reply conditions (checked by routing_should_reply_route_req):      *
+         *  1. We ARE the requested destination (pkt_hdr.dst_id == my_id).   *
+         *     Reply: { target=my_id, next_hop=my_id, hop_count=0 }           *
+         *  2. We have a LIVE (non-expired) route cache entry for dst_id.    *
+         *     Reply: { target=dst_id, next_hop=ce->next_hop,                *
+         *              hop_count=ce->hop_count }                             *
+         *                                                                    *
+         * Stale / expired cache entries do NOT qualify (route_cache_lookup   *
+         * applies lazy expiry, returning NULL for any stale entry).          *
+         *                                                                    *
+         * ROUTE_RPL uses directed-flood semantics: dst_id = requester_id,   *
+         * TTL = ROUTE_REQ_TTL.  Any overhearer may learn the route.         *
+         * Only the requester (dst_id match) drains its pending queue.        *
+         * ─────────────────────────────────────────────────────────────────── */
         if (pkt_hdr.pkt_type == PKT_ROUTE_REQ) {
-            /* Are we the requested destination? */
-            if (routing_should_reply_route_req(&pkt_hdr, g_my_node_id)) {
+            if (routing_should_reply_route_req(&pkt_hdr, g_my_node_id,
+                                               &g_route_cache, now_ms)) {
+                uint32_t rpl_target;
+                uint32_t rpl_next_hop;
+                uint8_t  rpl_hops;
+
+                if (pkt_hdr.dst_id == g_my_node_id) {
+                    /* Case 1: We ARE the destination.
+                     * Requester's next step toward us is us; 0 additional hops. */
+                    rpl_target   = g_my_node_id;
+                    rpl_next_hop = g_my_node_id;
+                    rpl_hops     = 0u;
+                } else {
+                    /* Case 2: We have a cached route to the requested target.
+                     * Use route_cache_lookup() (not a raw pointer) to guard
+                     * against a TOCTOU race between the should_reply check
+                     * and building the reply payload.                        */
+                    const route_cache_entry_t *ce =
+                        route_cache_lookup(&g_route_cache, pkt_hdr.dst_id, now_ms);
+                    if (!ce) goto maybe_relay;   /* expired between check & here */
+                    rpl_target   = pkt_hdr.dst_id;
+                    rpl_next_hop = ce->next_hop;
+                    rpl_hops     = ce->hop_count;
+                }
+
                 uint8_t rpl_buf[64];
                 int rpl_len = routing_build_route_rpl(
                     g_my_node_id,
-                    pkt_hdr.src_id,       /* reply to requester */
-                    g_my_node_id,         /* target = us */
-                    g_my_node_id,         /* next_hop from requester's pov = us */
-                    0u,                   /* hop_count = 0 (we ARE target) */
+                    pkt_hdr.src_id,   /* dst of RPL = requester */
+                    rpl_target,       /* target_id in payload   */
+                    rpl_next_hop,     /* next_hop in payload    */
+                    rpl_hops,         /* hop_count in payload   */
                     ++g_ctrl_seq,
                     rpl_buf, sizeof(rpl_buf));
 
@@ -318,14 +356,18 @@ uint32_t sources_rf_rx_drain(void)
                     if (rb_try_push(&rf_tx_queue, &rpl_req)) {
                         uint32_t _occ = rb_available(&rf_tx_queue);
                         if (_occ > g_rivr_metrics.tx_queue_peak) { g_rivr_metrics.tx_queue_peak = _occ; }
-                        RIVR_LOGI(TAG, "rf_rx: sent ROUTE_RPL to 0x%08lx for target=0x%08lx",
-                                 (unsigned long)pkt_hdr.src_id,
-                                 (unsigned long)g_my_node_id);
+                        RIVR_LOGI(TAG,
+                            "rf_rx: ROUTE_RPL to 0x%08lx target=0x%08lx "
+                            "via 0x%08lx hops=%u",
+                            (unsigned long)pkt_hdr.src_id,
+                            (unsigned long)rpl_target,
+                            (unsigned long)rpl_next_hop,
+                            (unsigned)rpl_hops);
                     }
                 }
             }
-            /* ROUTE_REQ: handle in C layer, also forward via C relay below,
-             * but do NOT inject into RIVR (policy traffic, not application data). */
+            /* ROUTE_REQ: handled in C layer, also forwarded via relay below,
+             * but do NOT inject into RIVR (control traffic, not app data).   */
             goto maybe_relay;
         }
 

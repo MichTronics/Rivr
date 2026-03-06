@@ -5,6 +5,7 @@
  */
 
 #include "routing.h"
+#include "route_cache.h"
 #include "protocol.h"
 #include <string.h>
 #include <stdio.h>
@@ -435,10 +436,19 @@ int routing_build_route_rpl(uint32_t  my_id,
                              uint8_t   out_cap)
 {
     /*
-     * Payload (9 bytes, all little-endian):
-     *   [0–3]  target_id  u32 LE
-     *   [4–7]  next_hop   u32 LE
-     *   [8]    hop_count  u8
+     * ROUTE_RPL uses directed-flood semantics (like AODV RREP):
+     *   • dst_id  = requester_id  — so the requester recognises it
+     *   • ttl    = ROUTE_REQ_TTL  — floods through the mesh just like ROUTE_REQ
+     *   • Any overhearer may learn the route as a side-effect; only the
+     *     requester (dst_id match) must drain its pending queue.
+     *
+     * Payload layout (ROUTE_RPL_PAYLOAD_LEN = 9 bytes, all little-endian):
+     *   [0–3]  target_id  u32 LE — the destination the ROUTE_REQ was seeking
+     *   [4–7]  next_hop   u32 LE — replier's next hop toward target_id
+     *   [8]    hop_count  u8     — hops from replier to target_id
+     *
+     * Requester reconstructs total hops as:
+     *   total = hop_count + pkt_hdr.hop + 1
      */
     uint8_t pl[ROUTE_RPL_PAYLOAD_LEN];
     pl[0] = (uint8_t)(target_id      & 0xFFu);
@@ -467,9 +477,19 @@ int routing_build_route_rpl(uint32_t  my_id,
     return protocol_encode(&hdr, pl, ROUTE_RPL_PAYLOAD_LEN, out_buf, out_cap);
 }
 
-bool routing_should_reply_route_req(const rivr_pkt_hdr_t *pkt, uint32_t my_id)
+bool routing_should_reply_route_req(const rivr_pkt_hdr_t *pkt,
+                                     uint32_t              my_id,
+                                     route_cache_t        *cache,
+                                     uint32_t              now_ms)
 {
     if (!pkt || pkt->pkt_type != PKT_ROUTE_REQ) return false;
-    /* Reply if WE are the requested destination */
-    return (pkt->dst_id == my_id);
+
+    /* Case 1: We ARE the requested destination. */
+    if (pkt->dst_id == my_id) return true;
+
+    /* Case 2: We have a live (non-expired) route cache entry for the target.
+     * route_cache_lookup() applies lazy expiry — it returns NULL for any
+     * entry older than RCACHE_EXPIRY_MS, so stale entries never qualify. */
+    if (!cache) return false;
+    return (route_cache_lookup(cache, pkt->dst_id, now_ms) != NULL);
 }
