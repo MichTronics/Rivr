@@ -94,6 +94,9 @@ Packet type constants for `filter.pkt_type`:
 | `PKT_ACK` | 5 | Acknowledgement |
 | `PKT_DATA` | 6 | Generic sensor data |
 | `PKT_PROG_PUSH` | 7 | OTA program update (never relayed) |
+| `PKT_TELEMETRY` | 8 | Structured sensor reading (11-byte fixed payload) |
+| `PKT_MAILBOX` | 9 | Store-and-forward message (7-byte header + text body) |
+| `PKT_ALERT` | 10 | Priority event notification (7-byte fixed payload) |
 
 ### Aggregation
 

@@ -94,6 +94,9 @@ Pakket-type constanten voor `filter.pkt_type`:
 | `PKT_ACK` | 5 | Bevestiging |
 | `PKT_DATA` | 6 | Generieke sensordata |
 | `PKT_PROG_PUSH` | 7 | OTA-programma-update (nooit doorgestuurd) |
+| `PKT_TELEMETRY` | 8 | Gestructureerde sensorlezing (11-byte vaste payload) |
+| `PKT_MAILBOX` | 9 | Store-and-forward bericht (7-byte header + tekstinhoud) |
+| `PKT_ALERT` | 10 | Prioriteitsmeldingsgebeurtenis (7-byte vaste payload) |
 
 ### Aggregatie
 

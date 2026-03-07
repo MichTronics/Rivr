@@ -202,7 +202,7 @@ Byte offset  Field          Type    Notes
 ───────────  ─────────────  ──────  ───────────────────────────────────────
 0–1          magic          u16 LE  0x5256 = "RV"
 2            version        u8      1
-3            pkt_type       u8      PKT_CHAT=1, BEACON=2, … PROG_PUSH=7
+3            pkt_type       u8      PKT_CHAT=1, BEACON=2, … PROG_PUSH=7, TELEMETRY=8, MAILBOX=9, ALERT=10
 4            flags          u8      PKT_FLAG_RELAY=0x02, FALLBACK=0x04
 5            ttl            u8      Default 7; decremented each hop
 6            hop            u8      0 at origin; incremented each hop

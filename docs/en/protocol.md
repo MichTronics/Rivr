@@ -112,13 +112,16 @@ received frame length causes the packet to be discarded.
 |----------------|-------|-------------------------------------------|----------------|
 | `PKT_CHAT`     | 1     | Plain-text chat message                   | UTF-8 text (no NUL required) |
 | `PKT_BEACON`   | 2     | Periodic node-presence advertisement      | See §5.1 |
-| `PKT_ROUTE_REQ`| 3     | Route-request (reserved, Phase D)         | TBD |
-| `PKT_ROUTE_RPL`| 4     | Route-reply (reserved, Phase D)           | TBD |
-| `PKT_ACK`      | 5     | Acknowledgement (reserved)                | TBD |
+| `PKT_ROUTE_REQ`| 3     | Route-request                             | See §5.3 |
+| `PKT_ROUTE_RPL`| 4     | Route-reply                               | See §5.3 |
+| `PKT_ACK`      | 5     | Acknowledgement                           | See §5.4 |
 | `PKT_DATA`     | 6     | Generic sensor data (application-defined) | Application-specific |
 | `PKT_PROG_PUSH`| 7     | OTA RIVR program push                     | See §5.2 |
+| `PKT_TELEMETRY`| 8     | Structured sensor reading                 | 11 bytes fixed — see [services.md](services.md#4-telemetry-pkt_telemetry--8) |
+| `PKT_MAILBOX`  | 9     | Store-and-forward message                 | 7-byte header + UTF-8 body — see [services.md](services.md#5-mailbox-pkt_mailbox--9) |
+| `PKT_ALERT`    | 10    | Priority event notification               | 7 bytes fixed — see [services.md](services.md#6-alert-pkt_alert--10) |
 
-Packet types 0 and 8–255 are reserved. Unrecognised types are forwarded
+Packet type 0 and values 11–255 are reserved. Unrecognised types are forwarded
 unchanged (relay nodes do not inspect payload beyond the common header).
 
 ---

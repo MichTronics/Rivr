@@ -51,8 +51,11 @@ Rivr/
 │   └── crypto/               # zelfstandige SHA-256 + HMAC-SHA-256 (geen heap)
 ├── rivr_layer/               # C — lijmlaag RIVR↔firmware
 │   ├── rivr_embed.c/h        # engine_init, tick, NVS opslaan/laden, hot-reload
-│   ├── rivr_sources.c/h      # bronregistratie (rf, usb, timer…)
-│   ├── rivr_sinks.c/h        # sink-callbacks (rf_tx, usb_print, beacon)│   ├── rivr_cli.c/h          # seriële CLI-chatinterface (alleen cliënt-builds)│   └── default_program.h     # selecteerbare RIVR-programma's via #define
+│   ├── rivr_sources.c/h      # bronregistratie (rf, usb, timer…); stap-5d service-dispatch
+│   ├── rivr_sinks.c/h        # sink-callbacks (rf_tx, usb_print, beacon)
+│   ├── rivr_svc.c/h          # applicatieservice-handlers (CHAT, TELEMETRY, MAILBOX, ALERT)
+│   ├── rivr_cli.c/h          # seriële CLI-chatinterface (alleen cliënt-builds)
+│   └── default_program.h     # selecteerbare RIVR-programma's via #define
 └── tools/
     └── vscode-rivr/          # VS Code-extensie (syntaxis + snippets)
 ```
@@ -116,6 +119,7 @@ emit {
 | `rivr_host` | Rust (std) | Desktop-demo's, Replay 2.0, `rivrc` CLI |
 | `firmware_core` | C | ESP32 drivers, protocol, routing, OLED-display |
 | `rivr_layer` | C | Lijmlaag: bronnen, sinks, embedAPI, NVS |
+| `rivr_svc` | C | Applicatiediensten — CHAT, TELEMETRY, MAILBOX, ALERT handlers |
 | `tools/vscode-rivr` | JSON/TS | VS Code syntaxisaccentuering + snippets |
 
 ---

@@ -72,7 +72,8 @@ rivr/
 └── rivr_layer/         RIVR ↔ firmware glue (C)
     ├── rivr_embed.c/.h     Engine init, rivr_tick(), rivr_register_sink()
     ├── rivr_sinks.c/.h     rf_tx, usb_print, log sinks
-    ├── rivr_sources.c/.h   rf_rx, CLI, timer sources
+    ├── rivr_sources.c/.h   rf_rx, CLI, timer sources; step-5d service dispatch
+    ├── rivr_svc.c/.h       Application service handlers (CHAT, TELEMETRY, MAILBOX, ALERT)
     ├── rivr_cli.c/.h       Serial CLI chat interface (client builds only)
     └── rivr_programs/
         └── default_program.h  Built-in RIVR program string
@@ -145,6 +146,7 @@ Sinks call back into C via `rivr_emit_dispatch()`.
 | `rivr_host` | Rust (`std`) | Desktop demos, Replay 2.0, `rivrc` CLI |
 | `firmware_core` | C | Hardware drivers, simulation mode, OLED display |
 | `rivr_layer` | C | Glue between RIVR runtime and C firmware |
+| `rivr_svc` | C | Application services — CHAT, TELEMETRY, MAILBOX, ALERT handlers |
 | Protocol / Routing | C | Binary packet format, mesh flooding |
 | `tools/vscode-rivr` | JSON/TS | VS Code syntax highlighting + snippets |
 

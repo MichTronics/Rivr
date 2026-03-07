@@ -7,3 +7,6 @@
 | Language reference | [en/language-reference.md](en/language-reference.md) | [nl/taalreferentie.md](nl/taalreferentie.md) |
 | Build guide | [en/build-guide.md](en/build-guide.md) | [nl/bouwhandleiding.md](nl/bouwhandleiding.md) |
 | Firmware integration | [en/firmware-integration.md](en/firmware-integration.md) | [nl/firmware-integratie.md](nl/firmware-integratie.md) |
+| Wire protocol | [en/protocol.md](en/protocol.md) | — |
+| Application services | [en/services.md](en/services.md) | — |
+| Node roles | [en/roles.md](en/roles.md) | — |

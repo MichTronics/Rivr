@@ -16,11 +16,16 @@ and runs that pipeline inside an ESP32 firmware — no operating system, no garb
 source rf_rx @lmp = rf;
 
 let chat = rf_rx
-  |> filter.kind("CHAT")
-  |> budget.airtime(3600, 0.10, 280000)   -- EU868 g3 duty-cycle guard
-  |> throttle.ticks(1);                   -- max once per Lamport tick
+  |> filter.pkt_type(1)             -- PKT_CHAT only
+  |> budget.toa_us(300000, 0.10, 280000)  -- EU868 g3 duty-cycle guard
+  |> throttle.ticks(1);            -- max once per Lamport tick
 
-emit { io.lora.tx(chat); }               -- rebroadcast over LoRa
+let alerts = rf_rx
+  |> filter.pkt_type(10)            -- PKT_ALERT: priority, 20 % budget
+  |> budget.toa_us(300000, 0.20, 280000);
+
+emit { io.lora.tx(chat);   }      -- rebroadcast chat over LoRa
+emit { io.lora.tx(alerts); }      -- forward alerts immediately
 ```
 
 Write the pipeline once.  RIVR parses and compiles it on-device at boot; the engine
@@ -113,8 +118,8 @@ emit {
 }
 ```
 
-**Built-in pipe operators:** `filter.kind` · `filter.nonempty` · `map.upper` · `map.lower` ·
-`map.trim` · `window.ticks` · `throttle.ticks` · `delay.ticks` · `budget.airtime` ·
+**Built-in pipe operators:** `filter.pkt_type` · `filter.kind` · `filter.nonempty` · `map.upper` · `map.lower` ·
+`map.trim` · `window.ticks` · `window.ms` · `throttle.ticks` · `delay.ticks` · `budget.toa_us` ·
 `fold.count` · `fold.sum` · `fold.last` · `merge`
 
 Full grammar: [docs/en/language-reference.md](docs/en/language-reference.md)
@@ -141,6 +146,7 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 | **EU868 duty-cycle limiter** | 1-hour sliding window, 512-slot ring buffer with LRU eviction; 10 % default (g3) |
 | **Mesh routing** | Flood (TTL/hop/dedupe) + unicast (reverse-path cache) + 16-slot pending queue |
 | **Rivr Fabric** | Congestion-aware relay suppression for repeater nodes |
+| **Application services** | CHAT · TELEMETRY · MAILBOX · ALERT — structured service dispatch with `@CHT`/`@TEL`/`@MAIL`/`@ALERT` JSON log records; 8-entry LRU mailbox store in BSS |
 | **OTA program push** | `PKT_PROG_PUSH` delivers a new RIVR program over the mesh; Ed25519-signed, hot-reloaded from NVS |
 | **Policy engine** | `@PARAMS` over the mesh updates beacon interval, TX power, relay throttle, and node role at runtime; `@POLICY` JSON response reports current state and metrics |
 | **Signed `@PARAMS`** | Optional HMAC-SHA-256 PSK authentication of `@PARAMS` updates; `sig=<64hex>` wire field; rejected frames emit `@PARAMS REJECTED sig` |
@@ -159,6 +165,7 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 - ✅ **Policy engine** — `@PARAMS` runtime parameter updates; role-based relay throttle; USB origination gate; `@POLICY` JSON metrics; `policy` CLI command
 - ✅ **Signed `@PARAMS`** — optional HMAC-SHA-256 PSK authentication; `sig=<64hex>` wire field; metrics: `sig_ok` / `sig_fail`
 - ✅ **OLED display** — SSD1306 128×64 seven-page rotating UI; FreeRTOS task on CPU1
+- ✅ **Application services** — `PKT_TELEMETRY` (8), `PKT_MAILBOX` (9), `PKT_ALERT` (10) with dedicated C-layer handlers (`rivr_svc.c`); structured `@TEL`/`@MAIL`/`@ALERT` JSON log records; 8-entry LRU static mailbox store
 
 ## Roadmap
 
@@ -177,6 +184,7 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 | Build guide | [en/build-guide.md](docs/en/build-guide.md) | [nl/bouwhandleiding.md](docs/nl/bouwhandleiding.md) |
 | Firmware integration | [en/firmware-integration.md](docs/en/firmware-integration.md) | [nl/firmware-integratie.md](docs/nl/firmware-integratie.md) |
 | Wire protocol | [en/protocol.md](docs/en/protocol.md) | — |
+| Application services | [en/services.md](docs/en/services.md) | — |
 | Release process | [releasing.md](docs/releasing.md) | — |
 
 ---
@@ -187,9 +195,9 @@ Ready-to-use `.rivr` programs in [`examples/`](examples/):
 
 | File | Description |
 |---|---|
-| [chat_relay.rivr](examples/chat_relay.rivr) | Full mesh relay with EU868 duty-cycle guard and beacon |
-| [telemetry_periodic.rivr](examples/telemetry_periodic.rivr) | Periodic heartbeat / uptime counter transmitted over LoRa |
-| [store_forward_mailbox.rivr](examples/store_forward_mailbox.rivr) | Buffered store-and-forward with capped window and delayed re-flood |
+| [chat_relay.rivr](examples/chat_relay.rivr) | Full mesh relay — CHAT, DATA, TELEMETRY, ALERT, MAILBOX with per-service EU868 duty-cycle budgets |
+| [telemetry_periodic.rivr](examples/telemetry_periodic.rivr) | Telemetry aggregation gateway — relay, 30 s reception window, frame count, heartbeat |
+| [store_forward_mailbox.rivr](examples/store_forward_mailbox.rivr) | PKT_MAILBOX store-and-forward with windowed buffer and delayed re-flood; backward-compatible PKT_CHAT track |
 
 Load a program over the mesh with the OTA push mechanism:
 
@@ -234,6 +242,8 @@ Rivr/
 │
 ├── rivr_host/src/              — Host tooling (rivrc compiler CLI, replay)
 ├── rivr_layer/                 — RIVR ↔ C firmware glue (init, sinks, sources)
+│   ├── rivr_svc.c/.h           — Application service handlers (CHAT/TELEMETRY/MAILBOX/ALERT)
+│   └── rivr_programs/          — Built-in RIVR program strings
 ├── variants/                   — Board-specific config headers
 ├── examples/                   — Ready-to-use .rivr programs
 ├── tools/                      — Host utilities (rivr_decode wire decoder)
