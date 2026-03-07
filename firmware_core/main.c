@@ -156,7 +156,7 @@ static void sim_inject_packets(void)
     if (done) return;
     done = true;
 
-    uint32_t seq = 0;
+    uint16_t seq = 0;
 
     RIVR_LOGI(TAG, "══════════════════════════════════════════════════════");
     RIVR_LOGI(TAG, "[SIM] Phase A+D: 3-node mesh demo");
@@ -172,19 +172,19 @@ static void sim_inject_packets(void)
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
             .pkt_type = PKT_CHAT, .ttl = RIVR_PKT_DEFAULT_TTL,
-            .src_id = NODE_A, .dst_id = 0, .seq = seq,
+            .src_id = NODE_A, .dst_id = 0, .seq = seq, .pkt_id = seq,
         };
         sim_push_frame(&h, s_sim_chat_a[i], -70, NODE_A);
     }
 
-    /* Round 2 ── PKT_CHAT from NODE_C via NODE_B (hop=1) ──────────────── */
+    /* Round 2 ── PKT_CHAT from NODE_C via NODE_B (hop=1) ──────────────────── */
     RIVR_LOGI(TAG, "[SIM] R2: 2 × PKT_CHAT NODE_C via NODE_B hop=1 (expect learn C→B)");
     for (int i = 0; i < 2; i++, seq++) {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
             .pkt_type = PKT_CHAT, .flags = PKT_FLAG_RELAY,
             .ttl = RIVR_PKT_DEFAULT_TTL - 1u, .hop = 1,
-            .src_id = NODE_C, .dst_id = 0, .seq = seq,
+            .src_id = NODE_C, .dst_id = 0, .seq = seq, .pkt_id = seq,
         };
         sim_push_frame(&h, s_sim_chat_c[i], -85, NODE_B);
     }
@@ -195,48 +195,50 @@ static void sim_inject_packets(void)
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
             .pkt_type = PKT_DATA, .ttl = RIVR_PKT_DEFAULT_TTL,
-            .src_id = NODE_A, .dst_id = 0, .seq = seq++,
+            .src_id = NODE_A, .dst_id = 0, .seq = seq, .pkt_id = seq,
         };
         sim_push_frame(&h, "temp=23.1", -72, NODE_A);
+        seq++;
     }
 
-    /* Round 4 ── PKT_ROUTE_REQ from NODE_B asking for MY_NODE ─────────── */
+    /* Round 4 ── PKT_ROUTE_REQ from NODE_B asking for MY_NODE ───────────── */
     RIVR_LOGI(TAG, "[SIM] R4: ROUTE_REQ from NODE_B dst=MY_NODE (expect ROUTE_RPL)");
     {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
             .pkt_type = PKT_ROUTE_REQ, .ttl = ROUTE_REQ_TTL,
-            .src_id = NODE_B, .dst_id = MY_NODE_ID, .seq = seq++,
+            .src_id = NODE_B, .dst_id = MY_NODE_ID, .seq = seq, .pkt_id = seq,
         };
         sim_push_frame(&h, NULL, -80, NODE_B);
+        seq++;
     }
 
     /* Round 5 ── Duplicate of Round-1 frame 0 via same relay ───────────── *
-     * GATE2 probe 1: same (src_id=NODE_A, seq=0), same from_id=NODE_A.      *
+     * GATE2 probe 1: same (src_id=NODE_A, pkt_id=0), same from_id=NODE_A.   *
      * Proves basic dedupe drop.                                               */
     RIVR_LOGI(TAG, "[SIM] R5: R1[0] exact duplicate same relay  (expect DEDUPE-DROP)");
     {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
             .pkt_type = PKT_CHAT, .ttl = RIVR_PKT_DEFAULT_TTL,
-            .src_id = NODE_A, .dst_id = 0, .seq = 0, /* same (src,seq) as R1[0] */
+            .src_id = NODE_A, .dst_id = 0, .seq = 0, .pkt_id = 0, /* same (src,pkt_id) as R1[0] */
         };
         sim_push_frame(&h, "hello-from-A-0", -68, NODE_A);
     }
 
-    /* Round 6 ── GATE2: same (src,seq) via DIFFERENT relay ────────────────── *
-     * NODE_A's original frame (seq=0) is now re-forwarded by NODE_B.         *
-     * key insight: dedupe is on (src_id, seq) — from_id is irrelevant.       *
-     * Expected: DEDUPE-DROP even though from_id changed.                      */
-    RIVR_LOGI(TAG, "[SIM] R6: R1[0] same (src,seq) different relay NODE_B (expect DEDUPE-DROP)");
+    /* Round 6 ── GATE2: same (src,pkt_id) via DIFFERENT relay ──────────────── *
+     * NODE_A's original frame (pkt_id=0) is now re-forwarded by NODE_B.       *
+     * key insight: dedupe is on (src_id, pkt_id) — from_id is irrelevant.     *
+     * Expected: DEDUPE-DROP even though from_id changed.                       */
+    RIVR_LOGI(TAG, "[SIM] R6: R1[0] same (src,pkt_id) different relay NODE_B (expect DEDUPE-DROP)");
     {
         rivr_pkt_hdr_t h = {
             .magic = RIVR_MAGIC, .version = RIVR_PROTO_VER,
             .pkt_type = PKT_CHAT, .flags = PKT_FLAG_RELAY,
             .ttl = RIVR_PKT_DEFAULT_TTL - 1u, .hop = 1,
-            .src_id = NODE_A, .dst_id = 0, .seq = 0, /* same (src,seq) as R1[0] */
+            .src_id = NODE_A, .dst_id = 0, .seq = 0, .pkt_id = 0, /* same (src,pkt_id) as R1[0] */
         };
-        /* from_id = NODE_B — different relay, but (src_id=NODE_A, seq=0)
+        /* from_id = NODE_B — different relay, but (src_id=NODE_A, pkt_id=0)
          * is already in the dedupe ring. Must be dropped. */
         sim_push_frame(&h, "hello-from-A-0", -75, NODE_B);
     }
@@ -264,7 +266,7 @@ static void sim_inject_packets(void)
         rivr_pkt_hdr_t ph = {
             .magic    = RIVR_MAGIC, .version  = RIVR_PROTO_VER,
             .pkt_type = PKT_CHAT,   .ttl      = RIVR_PKT_DEFAULT_TTL,
-            .src_id   = MY_NODE_ID, .dst_id   = NODE_D, .seq = seq++,
+            .src_id   = MY_NODE_ID, .dst_id   = NODE_D, .seq = seq, .pkt_id = seq,
         };
         uint8_t pd[64] = {0};
         int pl = protocol_encode(&ph, (const uint8_t *)"waiting-for-route", 17, pd, sizeof(pd));
@@ -275,6 +277,7 @@ static void sim_inject_packets(void)
             RIVR_LOGI(TAG, "  pre-loaded pending[NODE_D]: %s",
                      pq_ok ? "ok" : "FAILED-queue-full");
         }
+        seq++;
 
         /* Inject ROUTE_RPL: NODE_B replies saying target=NODE_D via itself, 1 hop */
         uint8_t rpl_buf[64] = {0};
@@ -284,8 +287,9 @@ static void sim_inject_packets(void)
             NODE_D,       /* the target we wanted */
             NODE_B,       /* next_hop from B's perspective = B itself (it IS a neighbour of D) */
             1u,           /* hop_count: B is 1 hop from D */
-            seq++,
+            seq, seq,
             rpl_buf, sizeof(rpl_buf));
+        seq++;
         if (rpl_len > 0) {
             rivr_pkt_hdr_t rpl_h;
             const uint8_t *rpl_pl = NULL;
@@ -329,10 +333,11 @@ static void sim_inject_packets(void)
         rivr_pkt_hdr_t uh = {
             .magic    = RIVR_MAGIC,  .version  = RIVR_PROTO_VER,
             .pkt_type = PKT_CHAT,    .ttl      = RIVR_PKT_DEFAULT_TTL,
-            .src_id   = MY_NODE_ID,  .dst_id   = NODE_A,  .seq = seq++,
+            .src_id   = MY_NODE_ID,  .dst_id   = NODE_A,  .seq = seq, .pkt_id = seq,
         };
         uint8_t ud[64] = {0};
         int ul = protocol_encode(&uh, (const uint8_t *)"hi-A-retry", 10, ud, sizeof(ud));
+        seq++;
         if (ul > 0) {
             rivr_value_t rv;
             memset(&rv, 0, sizeof(rv));

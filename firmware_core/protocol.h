@@ -13,7 +13,11 @@
  *   [7–8]   net_id      u16 LE  network / channel discriminator
  *   [9–12]  src_id      u32 LE  sender node ID (device unique)
  *   [13–16] dst_id      u32 LE  destination node ID (0 = broadcast)
- *   [17–20] seq         u32 LE  per-source monotonic counter
+ *   [17–18] seq         u16 LE  per-source application sequence (message ordering;
+ *                               preserved through relay; control-plane correlation)
+ *   [19–20] pkt_id      u16 LE  per-injection forwarding identity (unique per wire
+ *                               injection, including retransmits and fallback floods;
+ *                               dedupe keys on (src_id, pkt_id))
  *   [21]    payload_len u8      bytes of application payload following header
  *   [22]    loop_guard  u8      OR-accumulating relay fingerprint (loop defence)
  *   [23 .. 23+payload_len-1]    payload
@@ -80,6 +84,9 @@ extern "C" {
 /** Byte offset of the pkt_type field in the serialised wire frame. */
 #define PKT_TYPE_BYTE_OFFSET   3u
 
+/** Byte offset of the pkt_id field in the serialised wire frame. */
+#define PKT_ID_BYTE_OFFSET     19u
+
 /** Byte offset of the loop_guard field in the serialised wire frame. */
 #define LOOP_GUARD_BYTE_OFFSET 22u
 
@@ -129,7 +136,16 @@ typedef struct {
     uint16_t net_id;       /**< Network / channel discriminator              */
     uint32_t src_id;       /**< Sender node unique ID                        */
     uint32_t dst_id;       /**< Destination node ID (0 = broadcast)          */
-    uint32_t seq;          /**< Per-source monotonic counter                 */
+    uint16_t seq;          /**< Application/source sequence: per-source      *
+                            *   message counter, preserved through relay.    *
+                            *   Used for: application ordering, control-plane*
+                            *   correlation (ROUTE_REQ/RPL, future ACK).     */
+    uint16_t pkt_id;       /**< Per-injection forwarding identity: unique per *
+                            *   wire injection (new for each retransmit,     *
+                            *   fallback flood, or control-plane frame).     *
+                            *   Dedupe keys on (src_id, pkt_id); jitter      *
+                            *   seeds from pkt_id.  Originator increments a *
+                            *   monotonic counter (g_ctrl_seq) per injection.*/
     uint8_t  payload_len;  /**< Length of accompanying payload               */
     uint8_t  loop_guard;   /**< OR-accumulating relay fingerprint (loop def) */
 } rivr_pkt_hdr_t;

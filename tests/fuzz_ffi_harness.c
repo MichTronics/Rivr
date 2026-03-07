@@ -141,7 +141,7 @@ int main(void)
         uint16_t max_j  = (len >= 10) ? (uint16_t)((buf[8] << 8) | buf[9]) : 200u;
         if (max_j == 0) max_j = 1;   /* avoid degenerate case */
 
-        uint16_t jitter = routing_jitter_ticks(src_seed, seq_seed, max_j);
+        uint16_t jitter = routing_jitter_ticks(src_seed, (uint16_t)seq_seed, max_j);
         assert(jitter <= max_j);
     }
 

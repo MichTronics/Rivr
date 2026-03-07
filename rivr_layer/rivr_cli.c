@@ -457,7 +457,8 @@ static void cli_enqueue_chat(const char *msg, size_t len)
     hdr.net_id      = g_net_id;
     hdr.src_id      = g_my_node_id;
     hdr.dst_id      = 0u;               /* broadcast */
-    hdr.seq         = ++g_ctrl_seq;
+    hdr.seq         = (uint16_t)++g_ctrl_seq;
+    hdr.pkt_id      = (uint16_t)g_ctrl_seq;
     hdr.payload_len = (uint8_t)len;
 
     rf_tx_request_t req;

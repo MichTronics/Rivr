@@ -252,6 +252,7 @@ static void handle_rx_frame(replay_ctx_t *ctx, const char *line)
     uint32_t src      = 0u;
     uint32_t dst      = 0u;
     uint32_t seq      = 0u;
+    uint32_t pkt_id    = 0u;
     uint32_t type_u   = (uint32_t)PKT_CHAT;
     uint32_t ttl_u    = 7u;
     uint32_t hop_u    = 0u;
@@ -264,6 +265,7 @@ static void handle_rx_frame(replay_ctx_t *ctx, const char *line)
     json_hex(line, "src",       &src);
     json_hex(line, "dst",       &dst);
     json_u32(line, "seq",       &seq);
+    json_u32(line, "pkt_id",    &pkt_id);
     json_u32(line, "type",      &type_u);
     json_u32(line, "ttl",       &ttl_u);
     json_u32(line, "hop",       &hop_u);
@@ -290,7 +292,8 @@ static void handle_rx_frame(replay_ctx_t *ctx, const char *line)
     hdr.net_id      = 0u;
     hdr.src_id      = src;
     hdr.dst_id      = dst;
-    hdr.seq         = seq;
+    hdr.seq         = (uint16_t)seq;
+    hdr.pkt_id      = (uint16_t)(pkt_id ? pkt_id : seq);  /* backward-compat: old traces lack pkt_id */
     hdr.payload_len = (uint8_t)strlen(payload);
 
     uint8_t wire[RIVR_PKT_HDR_LEN + RIVR_PKT_MAX_PAYLOAD + RIVR_PKT_CRC_LEN];

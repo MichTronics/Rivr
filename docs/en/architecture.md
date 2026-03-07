@@ -530,14 +530,14 @@ originator will retransmit on its normal schedule.
 - **`loop_detect_drop`** field added to `rivr_metrics_t`; emitted in `@MET`
   JSON as `"loop_drop"`.
 - `RIVR_LOGW` in `rivr_sources.c` on every loop drop:
-  `rf_rx: LOOP-DROP src=0x%08lx seq=%lu guard=0x%02x`.
+  `rf_rx: LOOP-DROP src=0x%08lx seq=%u pkt_id=%u guard=0x%02x`.
 
 #### Check order
 
 `routing_flood_forward()` evaluates conditions in this order, ensuring existing
 safety properties are not weakened:
 
-1. **Dedupe** — `(src_id, seq)` already seen → `RIVR_FWD_DROP_DEDUPE`
+1. **Dedupe** — `(src_id, pkt_id)` already seen → `RIVR_FWD_DROP_DEDUPE`
 2. **TTL** — `ttl == 0` → `RIVR_FWD_DROP_TTL`
 3. **Loop guard** — fingerprint match → `RIVR_FWD_DROP_LOOP` *(new)*
 4. **Budget** — airtime budget exhausted → `RIVR_FWD_DROP_BUDGET`
@@ -553,3 +553,93 @@ safety properties are not weakened:
 | `routing_loop_guard_hash()` (inline) | 0 | 0 |
 | Mutate step in `routing_flood_forward()` | 0 | ~80 bytes |
 | **Total** | **+4 bytes** | **~+120 bytes** |
+
+---
+
+### Phase 11 — Packet identity split (`seq` u16 + `pkt_id` u16)
+
+#### Problem
+
+The original `seq` field was a single u32 serving three unrelated roles:
+
+1. **Application sequence** — message ordering, Lamport clock hint.
+2. **Forwarding identity** — dedupe key for `(src_id, seq)`.
+3. **Control-plane correlation** — ROUTE_REQ / ROUTE_RPL token.
+
+Overloading one field caused a critical correctness issue: a **fallback flood**
+(re-injected after unicast route failure) must carry the same `seq` so
+application-level ordering is preserved, yet requires a *different* forwarding
+identity so nodes that already deduped the original unicast will forward it.
+There was no way to satisfy both constraints with a single field.
+
+#### Wire-format change (zero overhead)
+
+The existing u32 `seq` at bytes **[17–20]** is split into two u16 fields that
+occupy exactly the same four bytes — no header length change.
+
+```
+Before (Phase ≤ 10):                After (Phase 11):
+  [17–20]  seq  u32 LE               [17–18]  seq     u16 LE
+                                     [19–20]  pkt_id  u16 LE
+```
+
+Complete current header map:
+
+| Bytes | Field         | Type    | Notes |
+|-------|---------------|---------|-------|
+| 0–1   | `magic`       | u16 LE  | `0x5256` ("RV") |
+| 2     | `version`     | u8      | `RIVR_PROTO_VER = 1` |
+| 3     | `pkt_type`    | u8      | `PKT_*` constants |
+| 4     | `flags`       | u8      | `PKT_FLAG_*` bitmask |
+| 5     | `ttl`         | u8      | Decremented per hop |
+| 6     | `hop`         | u8      | Incremented per hop |
+| 7–8   | `net_id`      | u16 LE  | Network / channel discriminator |
+| 9–12  | `src_id`      | u32 LE  | Sender node ID |
+| 13–16 | `dst_id`      | u32 LE  | Destination (0 = broadcast) |
+| 17–18 | `seq`         | u16 LE  | **App sequence** — ordering, Lamport hint, control-plane correlation |
+| 19–20 | `pkt_id`      | u16 LE  | **Forwarding identity** — unique per wire injection; dedupe keys on `(src_id, pkt_id)` |
+| 21    | `payload_len` | u8      | Payload byte count |
+| 22    | `loop_guard`  | u8      | OR-accumulating relay fingerprint (Phase 10) |
+| 23+   | payload       | bytes   | Application payload |
+| end   | CRC           | u16 LE  | CRC-16/CCITT |
+
+#### Field responsibilities
+
+| Field    | Relayed unchanged | Changed on | Purpose |
+|----------|--------------------|------------|---------|
+| `seq`    | Yes | New origination only | Message ordering, control-plane correlation, Lamport hint |
+| `pkt_id` | Yes | Each wire injection (incl. retransmits, fallback floods) | Dedupe key `(src_id, pkt_id)`; jitter seed |
+
+#### Behavioral improvements
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| Fallback flood | Must change `seq` (breaks ordering) or keep it (dedupe-dropped) | Keep `seq`, bump `pkt_id` — ordering preserved AND not deduped |
+| Retransmit | Same `seq` — correctly deduped | Same `pkt_id` — correctly deduped |
+| Jitter independence | Fallback flood shares jitter seed with original | Fresh `pkt_id` → different jitter → independent spreading |
+| Control-plane match | `seq` is correlation token | `seq` is token; `pkt_id = ++g_ctrl_seq` → each injection unique |
+
+#### API changes
+
+| Function | Old signature | New signature |
+|----------|---------------|---------------|
+| `routing_build_route_req()` | `uint32_t seq, ...` | `uint16_t seq, uint16_t pkt_id, ...` |
+| `routing_build_route_rpl()` | `uint32_t seq, ...` | `uint16_t seq, uint16_t pkt_id, ...` |
+| `routing_jitter_ticks()` | `uint32_t seq` | `uint16_t pkt_id` |
+| `routing_forward_delay_ms()` | `uint32_t seq` | `uint16_t pkt_id` |
+| `routing_dedupe_check()` | `uint32_t seq` | `uint16_t pkt_id` |
+
+All callers updated: `rivr_sources.c`, `rivr_sinks.c`, `rivr_cli.c`,
+`firmware_core/main.c`, `tests/test_acceptance.c`, `tests/replay.c`
+(backward-compat: traces without `pkt_id` default to `pkt_id = seq`),
+`tests/fuzz_ffi_harness.c`.
+
+#### Properties
+
+| Property | Value |
+|----------|-------|
+| Wire overhead | **zero** (same 23-byte header, same positions) |
+| Heap delta | 0 |
+| RAM delta | 0 (`dedupe_entry_t` field rename only, same struct size) |
+| Flash delta | ~+60 bytes (encode/decode split) |
+| Wire backward compatibility | Old receivers read `seq` as the 32-bit union of both fields; new `seq` = low 16 bits, `pkt_id` = high 16 bits — no crash, just `pkt_id` silently lost on old firmware |

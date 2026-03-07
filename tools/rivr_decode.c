@@ -23,7 +23,7 @@
  * Output (one JSON object per frame, newline-delimited):
  *   {"ok":true,"magic":"5256","version":1,"pkt_type":1,"type":"CHAT",
  *    "flags":0,"ttl":7,"hop":0,"net_id":0,"src_id":1,"dst_id":0,
- *    "seq":1,"payload_len":5,"payload_hex":"48656c6c6f","crc_ok":true}
+ *    "seq":1,"pkt_id":1,"payload_len":5,"payload_hex":"48656c6c6f","crc_ok":true}
  *
  *   {"ok":false,"error":"short frame","raw_hex":"5256010102"}
  *
@@ -144,6 +144,7 @@ static void emit_frame(const uint8_t           *buf,
            ",\"net_id\":%u"
            ",\"src_id\":%u,\"dst_id\":%u"
            ",\"seq\":%u"
+           ",\"pkt_id\":%u"
            ",\"payload_len\":%u,\"payload_hex\":\"%s\""
            ",\"crc_ok\":%s"
            "%s"
@@ -156,6 +157,7 @@ static void emit_frame(const uint8_t           *buf,
            (unsigned)hdr->net_id,
            (unsigned)hdr->src_id, (unsigned)hdr->dst_id,
            (unsigned)hdr->seq,
+           (unsigned)hdr->pkt_id,
            (unsigned)hdr->payload_len, payload_hex,
            crc_ok ? "true" : "false",
            extra);

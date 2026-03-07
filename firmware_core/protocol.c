@@ -100,11 +100,12 @@ int protocol_encode(const rivr_pkt_hdr_t *hdr,
     p[14] = (uint8_t)((hdr->dst_id >>  8) & 0xFFu);
     p[15] = (uint8_t)((hdr->dst_id >> 16) & 0xFFu);
     p[16] = (uint8_t)((hdr->dst_id >> 24) & 0xFFu);
-    /* [17–20] seq LE */
+    /* [17–18] seq LE (u16) */
     p[17] = (uint8_t)(hdr->seq        & 0xFFu);
     p[18] = (uint8_t)((hdr->seq >>  8) & 0xFFu);
-    p[19] = (uint8_t)((hdr->seq >> 16) & 0xFFu);
-    p[20] = (uint8_t)((hdr->seq >> 24) & 0xFFu);
+    /* [19–20] pkt_id LE (u16) */
+    p[19] = (uint8_t)(hdr->pkt_id        & 0xFFu);
+    p[20] = (uint8_t)((hdr->pkt_id >>  8) & 0xFFu);
     /* [21] payload_len */
     p[21] = payload_len;
     /* [22] loop_guard */
@@ -167,9 +168,8 @@ bool protocol_decode(const uint8_t    *buf,
     hdr->dst_id      = (uint32_t)(buf[13] | ((uint32_t)buf[14] << 8)
                                            | ((uint32_t)buf[15] << 16)
                                            | ((uint32_t)buf[16] << 24));
-    hdr->seq         = (uint32_t)(buf[17] | ((uint32_t)buf[18] << 8)
-                                           | ((uint32_t)buf[19] << 16)
-                                           | ((uint32_t)buf[20] << 24));
+    hdr->seq         = (uint16_t)(buf[17] | ((uint16_t)buf[18] << 8));
+    hdr->pkt_id       = (uint16_t)(buf[19] | ((uint16_t)buf[20] << 8));
     hdr->payload_len = payload_len;
     hdr->loop_guard  = buf[LOOP_GUARD_BYTE_OFFSET];   /* byte [22] */
 

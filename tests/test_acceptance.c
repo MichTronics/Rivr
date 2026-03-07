@@ -1,6 +1,6 @@
 /**
  * @file  test_acceptance.c
- * @brief 7-run acceptance test suite (host-native build, no ESP-IDF).
+ * @brief 8-run acceptance test suite (host-native build, no ESP-IDF).
  *
  * RUN 1 — Flood correctness
  *   50 unique CHAT packets → all forwarded, TTL/hop mutated, relay flag set.
@@ -18,6 +18,13 @@
  *   Fill queue to SPSC capacity  → next push fails, drops counted.
  *   Fallback frame structure     → PKT_FLAG_FALLBACK, hop==0, no RELAY flag.
  *   due_ms gate (continue, not break) → immediate frames drain past deferred.
+ *
+ * RUN 8 — Packet identity (seq vs pkt_id split)
+ *   Same src + different pkt_id    → both forwarded (different dedupe keys).
+ *   Same src + same pkt_id         → second dropped (DEDUPE).
+ *   Fallback flood (fresh pkt_id)  → bypasses dedupe of original unicast.
+ *   Same seq, different pkt_id     → different jitter delays.
+ *   seq field survives relay independently of pkt_id.
  *
  * Exit code: 0 = all checks passed, 1 = at least one check failed.
  *
@@ -97,7 +104,8 @@ static void run1_flood_correctness(void)
             .hop      = 0u,
             .src_id   = NODE_A,
             .dst_id   = 0u,
-            .seq      = i,
+            .seq      = (uint16_t)i,
+            .pkt_id   = (uint16_t)i,
         };
         uint8_t init_ttl = pkt.ttl;
         uint8_t init_hop = pkt.hop;
@@ -127,11 +135,12 @@ static void run1_flood_correctness(void)
             .ttl      = RIVR_PKT_DEFAULT_TTL,
             .src_id   = NODE_A,
             .dst_id   = 0u,
-            .seq      = i,
+            .seq      = (uint16_t)i,
+            .pkt_id   = (uint16_t)i,
         };
         uint32_t toa = routing_toa_estimate_us(20u);
         rivr_fwd_result_t r = routing_flood_forward(dc, fb, &pkt, MY_NODE, toa, now);
-        if (r == RIVR_FWD_DROP_DEDUPE) deduped++;
+        if (r == RIVR_FWD_DROP_DEDUPE) deduped++;;
     }
     CHECK(deduped == FLOOD_BATCH, "FLOOD_BATCH replayed packets deduped (DEDUPE-DROP)");
 
@@ -146,11 +155,12 @@ static void run1_flood_correctness(void)
         .src_id   = NODE_A,
         .dst_id   = 0u,
         .seq      = 0u,    /* same as first packet in the burst */
+        .pkt_id   = 0u,    /* same pkt_id -- dedupe key matches */
     };
     rivr_fwd_result_t ra = routing_flood_forward(
         dc, fb, &alias, MY_NODE, routing_toa_estimate_us(20u), now);
     CHECK(ra == RIVR_FWD_DROP_DEDUPE,
-        "same (src,seq) via different relay still deduped (GATE2)");
+        "same (src,pkt_id) via different relay still deduped (GATE2)");
 
     /* ── 1d: jitter spreads over full [0 .. FORWARD_JITTER_MAX_MS] range ─ */
     uint32_t jmin = UINT32_MAX;
@@ -204,7 +214,7 @@ static void run2_hybrid_route(void)
     rivr_pkt_hdr_t ph = {
         .magic    = RIVR_MAGIC,    .version  = RIVR_PROTO_VER,
         .pkt_type = PKT_CHAT,      .ttl      = RIVR_PKT_DEFAULT_TTL,
-        .src_id   = MY_NODE,       .dst_id   = NODE_D,       .seq = 42u,
+        .src_id   = MY_NODE,       .dst_id   = NODE_D,       .seq = 42u, .pkt_id = 42u,
     };
     uint8_t wire[64];
     int wlen = protocol_encode(&ph, (const uint8_t *)"test-payload", 12u,
@@ -326,7 +336,7 @@ static void run3_congestion_and_due_ms(void)
         .pkt_type = PKT_CHAT,              .ttl     = RIVR_FALLBACK_TTL,
         .hop      = 0u,                    /* originated, not relay hop     */
         .flags    = PKT_FLAG_FALLBACK,     /* RELAY flag must NOT be set    */
-        .src_id   = MY_NODE,               .dst_id  = 0u,       .seq = 99u,
+        .src_id   = MY_NODE,               .dst_id  = 0u,       .seq = 99u, .pkt_id = 99u,
     };
     uint8_t fb_wire[64];
     int fb_len = protocol_encode(&fb_hdr, (const uint8_t *)"fb", 2u,
@@ -406,6 +416,7 @@ static void run4_link_scoring(void)
     ph.src_id   = NODE_A;
     ph.hop      = 0u;
     ph.seq      = 0u;
+    ph.pkt_id   = 0u;
     ph.pkt_type = PKT_CHAT;
 
     /* Excellent link: rssi=-60 dBm, snr=+10 dB → rssi_part=80, snr_part=20 → 100 */
@@ -484,7 +495,7 @@ static void run4_link_scoring(void)
     routing_neighbor_init(&nb2);
     uint32_t t1 = tb_millis();
     rivr_pkt_hdr_t p2;
-    p2.src_id = NODE_B; p2.hop = 0u; p2.seq = 0u; p2.pkt_type = PKT_CHAT;
+    p2.src_id = NODE_B; p2.hop = 0u; p2.seq = 0u; p2.pkt_id = 0u; p2.pkt_type = PKT_CHAT;
 
     routing_neighbor_update(&nb2, &p2, -80, 5, t1);
     routing_neighbor_update(&nb2, &p2, -80, 5, t1 + 100u);
@@ -715,6 +726,7 @@ static void run6_route_req_reply_logic(void)
     req.src_id   = NODE_A;   /* requester */
     req.dst_id   = NODE_D;   /* target being searched for */
     req.seq      = 1u;
+    req.pkt_id   = 1u;
 
     /* ── 6a: wrong pkt_type → no reply ───────────────────────────────────── */
     rivr_pkt_hdr_t bad = req;
@@ -755,7 +767,7 @@ static void run6_route_req_reply_logic(void)
      *           payload: { target=MY_NODE, next_hop=MY_NODE, hop_count=0 }   */
     uint8_t rpl_buf[64];
     int rpl_len = routing_build_route_rpl(
-        MY_NODE, NODE_A, MY_NODE, MY_NODE, 0u, 42u,
+        MY_NODE, NODE_A, MY_NODE, MY_NODE, 0u, 42u, 42u,
         rpl_buf, sizeof(rpl_buf));
     CHECK(rpl_len > 0, "6g: routing_build_route_rpl (target case) encodes OK");
 
@@ -787,7 +799,7 @@ static void run6_route_req_reply_logic(void)
 
     uint8_t rpl_buf2[64];
     int rpl_len2 = routing_build_route_rpl(
-        MY_NODE, NODE_A, NODE_D, ce->next_hop, ce->hop_count, 43u,
+        MY_NODE, NODE_A, NODE_D, ce->next_hop, ce->hop_count, 43u, 43u,
         rpl_buf2, sizeof(rpl_buf2));
     CHECK(rpl_len2 > 0, "6h: routing_build_route_rpl (cache case) encodes OK");
 
@@ -840,6 +852,7 @@ static void run6_route_req_reply_logic(void)
     ph6.src_id   = NODE_A;
     ph6.dst_id   = NODE_D;
     ph6.seq      = 77u;
+    ph6.pkt_id   = 77u;
 
     uint8_t wire6[64];
     int wlen6 = protocol_encode(&ph6, (const uint8_t *)"hi", 2u,
@@ -931,7 +944,7 @@ static void run7_loop_guard(void)
         .magic      = RIVR_MAGIC, .version = RIVR_PROTO_VER,
         .pkt_type   = PKT_CHAT,   .ttl     = RIVR_PKT_DEFAULT_TTL,
         .src_id     = NODE_A,     .dst_id  = 0u,
-        .seq        = 100u,       .loop_guard = 0u,
+        .seq        = 100u,       .pkt_id  = 100u,  .loop_guard = 0u,
     };
     rivr_fwd_result_t r7c = routing_flood_forward(dc, fb, &pkt7c, MY_NODE,
                                                    routing_toa_estimate_us(20u), now);
@@ -980,7 +993,7 @@ static void run7_loop_guard(void)
         .magic      = RIVR_MAGIC, .version = RIVR_PROTO_VER,
         .pkt_type   = PKT_CHAT,   .ttl     = RIVR_PKT_DEFAULT_TTL,
         .src_id     = NODE_A,     .dst_id  = 0u,
-        .seq        = 200u,       .loop_guard = 0u,
+        .seq        = 200u,       .pkt_id  = 200u,  .loop_guard = 0u,
     };
     rivr_fwd_result_t r7e1 = routing_flood_forward(dc, fb, &pkt7e, MY_NODE,
                                                     routing_toa_estimate_us(20u), now);
@@ -1013,18 +1026,18 @@ static void run7_loop_guard(void)
         .magic      = RIVR_MAGIC, .version = RIVR_PROTO_VER,
         .pkt_type   = PKT_CHAT,   .ttl     = RIVR_PKT_DEFAULT_TTL,
         .src_id     = NODE_A,     .dst_id  = 0u,
-        .seq        = 300u,       .loop_guard = 0u,
+        .seq        = 300u,       .pkt_id  = 300u,  .loop_guard = 0u,
     };
     routing_flood_forward(dc, fb, &pkt7f, MY_NODE,
                           routing_toa_estimate_us(20u), now);   /* first pass */
-    /* Second attempt: same seq AND loop_guard set */
+    /* Second attempt: same pkt_id AND loop_guard set */
     pkt7f.ttl        = RIVR_PKT_DEFAULT_TTL;
     pkt7f.hop        = 0u;
     pkt7f.loop_guard = h_my;
     rivr_fwd_result_t r7f = routing_flood_forward(dc, fb, &pkt7f, MY_NODE,
                                                    routing_toa_estimate_us(20u), now);
     CHECK(r7f == RIVR_FWD_DROP_DEDUPE,
-          "7f: DEDUPE fires before loop-guard when (src,seq) already seen");
+          "7f: DEDUPE fires before loop-guard when (src,pkt_id) already seen");
 
     /* ── 7g: TTL=0 fires before loop-guard check ────────────────────────── */
     routing_init();
@@ -1035,7 +1048,7 @@ static void run7_loop_guard(void)
         .magic      = RIVR_MAGIC, .version = RIVR_PROTO_VER,
         .pkt_type   = PKT_CHAT,   .ttl     = 0u,   /* TTL already 0 */
         .src_id     = NODE_A,     .dst_id  = 0u,
-        .seq        = 400u,       .loop_guard = h_my,   /* loop guard set too */
+        .seq        = 400u,       .pkt_id  = 400u,  .loop_guard = h_my,   /* loop guard set too */
     };
     rivr_fwd_result_t r7g = routing_flood_forward(dc, fb, &pkt7g, MY_NODE,
                                                    routing_toa_estimate_us(20u), now);
@@ -1050,14 +1063,15 @@ static void run7_loop_guard(void)
         .magic      = RIVR_MAGIC, .version = RIVR_PROTO_VER,
         .pkt_type   = PKT_CHAT,   .ttl     = RIVR_PKT_DEFAULT_TTL,
         .src_id     = NODE_B,     .dst_id  = 0u,
-        .seq        = 500u,       .loop_guard = h_my,
+        .seq        = 500u,       .pkt_id  = 500u,  .loop_guard = h_my,
     };
     routing_flood_forward(dc, fb, &pkt7h, MY_NODE,
                           routing_toa_estimate_us(20u), now);
     CHECK(g_rivr_metrics.loop_detect_drop == 1u,
           "7h: loop_detect_drop == 1 after first loop drop");
     /* Second packet with loop guard also set */
-    pkt7h.seq = 501u;
+    pkt7h.seq    = 501u;
+    pkt7h.pkt_id = 501u;
     routing_flood_forward(dc, fb, &pkt7h, MY_NODE,
                           routing_toa_estimate_us(20u), now);
     CHECK(g_rivr_metrics.loop_detect_drop == 2u,
@@ -1068,7 +1082,8 @@ static void run7_loop_guard(void)
         .magic      = RIVR_MAGIC, .version  = RIVR_PROTO_VER,
         .pkt_type   = PKT_CHAT,   .ttl      = RIVR_PKT_DEFAULT_TTL,
         .src_id     = NODE_A,     .dst_id   = 0u,
-        .seq        = 600u,       .loop_guard = (uint8_t)(h_my | h_a | h_b),
+        .seq        = 600u,       .pkt_id   = 600u,
+        .loop_guard = (uint8_t)(h_my | h_a | h_b),
     };
     uint8_t wire7i[64];
     int wlen7i = protocol_encode(&hdr7i, (const uint8_t *)"rt", 2u,
@@ -1082,11 +1097,12 @@ static void run7_loop_guard(void)
     CHECK(out7i.loop_guard == (uint8_t)(h_my | h_a | h_b),
           "7i: loop_guard survives encode→decode unchanged");
     CHECK(out7i.pkt_type == PKT_CHAT, "7i: pkt_type unchanged after round-trip");
-    CHECK(out7i.seq == 600u,          "7i: seq unchanged after round-trip");
+    CHECK(out7i.seq    == 600u, "7i: seq unchanged after round-trip");
+    CHECK(out7i.pkt_id == 600u, "7i: pkt_id unchanged after round-trip");
 
     /* ── 7j: routing_build_route_req always produces loop_guard=0 ───────── */
     uint8_t rreq_buf[64];
-    int rreq_len = routing_build_route_req(MY_NODE, NODE_D, 42u,
+    int rreq_len = routing_build_route_req(MY_NODE, NODE_D, 42u, 42u,
                                             rreq_buf, sizeof(rreq_buf));
     CHECK(rreq_len > 0, "7j: routing_build_route_req encodes OK");
     rivr_pkt_hdr_t rreq_hdr;
@@ -1099,6 +1115,111 @@ static void run7_loop_guard(void)
     /* Also verify the metric incremented correctly in 7d (after resetting) */
     CHECK(loop_drop_before + 1u == loop_drop_before + 1u /* tautology: value checked via r7d */,
           "7d: loop_detect_drop was incremented (verified via return value above)");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ *
+ * RUN 8 — Packet identity: seq vs pkt_id split
+ *
+ * Verifies that:
+ *   8a  different pkt_id → two unique forwarding identities (not deduped)
+ *   8b  same pkt_id (retransmit) → second occurrence dropped as DEDUPE
+ *   8c  fallback flood: orig pkt_id=N cached → fresh pkt_id=N+1 forwarded
+ *   8d  jitter: same seq, different pkt_id → different delay values
+ *   8e  seq field preserved through relay independently of pkt_id
+ * ══════════════════════════════════════════════════════════════════════════ */
+static void run8_pkt_identity(void)
+{
+    printf("\n=== RUN 8: Packet identity (seq vs pkt_id) ===\n");
+
+    routing_init();
+    dedupe_cache_t   *dc = routing_get_dedupe();
+    forward_budget_t *fb = routing_get_fwdbudget();
+    uint32_t now = tb_millis();
+
+    /* ── 8a: different pkt_id → both forwarded (distinct identities) ──── */
+    rivr_pkt_hdr_t p8a1 = {
+        .magic    = RIVR_MAGIC, .version  = RIVR_PROTO_VER,
+        .pkt_type = PKT_CHAT,   .ttl      = RIVR_PKT_DEFAULT_TTL,
+        .src_id   = NODE_A,     .dst_id   = 0u,
+        .seq      = 10u,        .pkt_id   = 10u,
+    };
+    rivr_pkt_hdr_t p8a2 = p8a1;
+    p8a2.pkt_id = 11u;   /* fresh injection, same seq */
+
+    rivr_fwd_result_t r8a1 = routing_flood_forward(
+        dc, fb, &p8a1, MY_NODE, routing_toa_estimate_us(20u), now);
+    rivr_fwd_result_t r8a2 = routing_flood_forward(
+        dc, fb, &p8a2, MY_NODE, routing_toa_estimate_us(20u), now);
+
+    CHECK(r8a1 == RIVR_FWD_FORWARD,
+          "8a: first injection (pkt_id=10) forwarded");
+    CHECK(r8a2 == RIVR_FWD_FORWARD,
+          "8a: second injection (pkt_id=11, same seq) also forwarded");
+
+    /* ── 8b: same pkt_id (retransmit) → DEDUPE on second occurrence ──── */
+    rivr_pkt_hdr_t p8b = {
+        .magic    = RIVR_MAGIC, .version  = RIVR_PROTO_VER,
+        .pkt_type = PKT_CHAT,   .ttl      = RIVR_PKT_DEFAULT_TTL,
+        .src_id   = NODE_B,     .dst_id   = 0u,
+        .seq      = 20u,        .pkt_id   = 20u,
+    };
+    rivr_fwd_result_t r8b1 = routing_flood_forward(
+        dc, fb, &p8b, MY_NODE, routing_toa_estimate_us(20u), now);
+    p8b.ttl = RIVR_PKT_DEFAULT_TTL;   /* restore TTL for retransmit attempt */
+    p8b.hop = 0u;
+    rivr_fwd_result_t r8b2 = routing_flood_forward(
+        dc, fb, &p8b, MY_NODE, routing_toa_estimate_us(20u), now);
+    CHECK(r8b1 == RIVR_FWD_FORWARD,
+          "8b: original transmission forwarded");
+    CHECK(r8b2 == RIVR_FWD_DROP_DEDUPE,
+          "8b: retransmit (same pkt_id) dropped as DEDUPE");
+
+    /* ── 8c: fallback flood with fresh pkt_id bypasses prior dedupe ─── */
+    /* Simulate: original unicast was pkt_id=30, got cached in dedupe ring.
+     * Fallback re-originates with pkt_id=31 → must not match dedupe.    */
+    rivr_pkt_hdr_t p8c_orig = {
+        .magic    = RIVR_MAGIC, .version  = RIVR_PROTO_VER,
+        .pkt_type = PKT_CHAT,   .ttl      = RIVR_PKT_DEFAULT_TTL,
+        .src_id   = MY_NODE,    .dst_id   = 0u,
+        .seq      = 30u,        .pkt_id   = 30u,
+    };
+    routing_flood_forward(dc, fb, &p8c_orig, MY_NODE,
+                          routing_toa_estimate_us(20u), now);   /* caches (MY_NODE, 30) */
+
+    rivr_pkt_hdr_t p8c_fb = {
+        .magic    = RIVR_MAGIC, .version  = RIVR_PROTO_VER,
+        .pkt_type = PKT_CHAT,   .ttl      = RIVR_PKT_DEFAULT_TTL,
+        .src_id   = MY_NODE,    .dst_id   = 0u,
+        .seq      = 30u,        .pkt_id   = 31u,   /* fresh pkt_id */
+    };
+    rivr_fwd_result_t r8c = routing_flood_forward(
+        dc, fb, &p8c_fb, MY_NODE, routing_toa_estimate_us(20u), now);
+    CHECK(r8c == RIVR_FWD_FORWARD,
+          "8c: fallback flood (fresh pkt_id=31) forwarded despite orig pkt_id=30 cached");
+
+    /* ── 8d: same seq, different pkt_id → different jitter delays ──── */
+    uint32_t d8d1 = routing_forward_delay_ms(NODE_A, (uint16_t)40u, PKT_CHAT);
+    uint32_t d8d2 = routing_forward_delay_ms(NODE_A, (uint16_t)41u, PKT_CHAT);
+    CHECK(d8d1 != d8d2,
+          "8d: different pkt_id produces different jitter (same src+type)");
+
+    /* ── 8e: seq field preserved through encode/decode round-trip ─── */
+    rivr_pkt_hdr_t h8e = {
+        .magic    = RIVR_MAGIC, .version  = RIVR_PROTO_VER,
+        .pkt_type = PKT_CHAT,   .ttl      = RIVR_PKT_DEFAULT_TTL,
+        .src_id   = NODE_A,     .dst_id   = 0u,
+        .seq      = 0x1234u,    .pkt_id   = 0x5678u,
+    };
+    uint8_t wire8e[64];
+    int wlen8e = protocol_encode(&h8e, (const uint8_t *)"id", 2u,
+                                  wire8e, sizeof(wire8e));
+    CHECK(wlen8e > 0, "8e: encode succeeds");
+    rivr_pkt_hdr_t out8e;
+    const uint8_t *pl8e = NULL;
+    bool dec8e = protocol_decode(wire8e, (uint8_t)wlen8e, &out8e, &pl8e);
+    CHECK(dec8e,                      "8e: decode succeeds (CRC valid)");
+    CHECK(out8e.seq    == 0x1234u,    "8e: seq == 0x1234 after round-trip");
+    CHECK(out8e.pkt_id == 0x5678u,    "8e: pkt_id == 0x5678 after round-trip");
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
@@ -1115,6 +1236,7 @@ int main(void)
     run5_airtime_sched();
     run6_route_req_reply_logic();
     run7_loop_guard();
+    run8_pkt_identity();
 
     printf("\n══════════════════════════════════════════\n");
     printf("  PASS: %lu   FAIL: %lu\n",

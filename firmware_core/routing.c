@@ -25,7 +25,7 @@ void routing_dedupe_init(dedupe_cache_t *cache)
 
 bool routing_dedupe_check(dedupe_cache_t *cache,
                           uint32_t        src_id,
-                          uint32_t        seq,
+                          uint16_t        pkt_id,
                           uint32_t        now_ms)
 {
     if (!cache) return true;   /* safe default: accept */
@@ -43,7 +43,7 @@ bool routing_dedupe_check(dedupe_cache_t *cache,
             continue;
         }
 
-        if (e->src_id == src_id && e->seq == seq) {
+        if (e->src_id == src_id && e->pkt_id == pkt_id) {
             return false;   /* duplicate — suppress */
         }
     }
@@ -51,7 +51,7 @@ bool routing_dedupe_check(dedupe_cache_t *cache,
     /* Not seen before — insert at head (evicts oldest slot) */
     dedupe_entry_t *slot = &cache->entries[cache->head];
     slot->src_id     = src_id;
-    slot->seq        = seq;
+    slot->pkt_id     = pkt_id;
     slot->seen_at_ms = now_ms;
     cache->head      = (uint8_t)((cache->head + 1u) & (DEDUPE_CACHE_SIZE - 1u));
 
@@ -65,7 +65,7 @@ bool routing_should_forward(dedupe_cache_t *cache,
     if (!cache || !pkt) return false;
 
     /* Step 1: duplicate check */
-    if (!routing_dedupe_check(cache, pkt->src_id, pkt->seq, now_ms)) {
+    if (!routing_dedupe_check(cache, pkt->src_id, pkt->pkt_id, now_ms)) {
         return false;   /* duplicate */
     }
 
@@ -333,8 +333,8 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
                                          uint32_t          toa_us,
                                          uint32_t          now_ms)
 {
-    /* Step 1 — Deduplicate */
-    if (!routing_dedupe_check(cache, pkt->src_id, pkt->seq, now_ms)) {
+    /* Step 1 — Deduplicate (keyed on src_id + pkt_id, NOT application seq) */
+    if (!routing_dedupe_check(cache, pkt->src_id, pkt->pkt_id, now_ms)) {
         g_rivr_metrics.rx_dedupe_drop++;
         return RIVR_FWD_DROP_DEDUPE;
     }
@@ -385,12 +385,12 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
 
 /* ── Jitter helper ───────────────────────────────────────────────────────── */
 
-uint16_t routing_jitter_ticks(uint32_t src_id, uint32_t seq, uint16_t max_j)
+uint16_t routing_jitter_ticks(uint32_t src_id, uint16_t pkt_id, uint16_t max_j)
 {
     if (max_j == 0u) return 0u;
 
     /* Knuth multiplicative hash then xorshift32 */
-    uint32_t x = src_id ^ (seq * 2654435761u);
+    uint32_t x = src_id ^ ((uint32_t)pkt_id * 2654435761u);
     x ^= x << 13u;
     x ^= x >> 17u;
     x ^= x <<  5u;
@@ -398,18 +398,17 @@ uint16_t routing_jitter_ticks(uint32_t src_id, uint32_t seq, uint16_t max_j)
     return (uint16_t)(x % (uint32_t)(max_j + 1u));
 }
 
-uint32_t routing_forward_delay_ms(uint32_t src_id, uint32_t seq, uint8_t pkt_type)
+uint32_t routing_forward_delay_ms(uint32_t src_id, uint16_t pkt_id, uint8_t pkt_type)
 {
 #if FORWARD_JITTER_MAX_MS == 0
-    (void)src_id; (void)seq; (void)pkt_type;
+    (void)src_id; (void)pkt_id; (void)pkt_type;
     return 0u;
 #else
-    /* Seed uses only (src_id, seq, pkt_type) — intentionally excludes from_id
-     * and rx_rssi so that jitter is fully deterministic: the same packet
-     * injected twice (e.g. via JSONL replay) always produces the same delay,
-     * and different relays forwarding the same frame schedule the same offset,
-     * avoiding coordinated collisions without PRNG state synchronisation. */
-    uint32_t x = src_id ^ seq ^ ((uint32_t)pkt_type << 24u);
+    /* Seed uses (src_id, pkt_id, pkt_type): different injections (retransmits,
+     * fallback floods) of the same logical message get independent jitter
+     * because they carry distinct pkt_ids.  pkt_type adds type-aware spread
+     * so different frame types from the same source don't collide. */
+    uint32_t x = src_id ^ (uint32_t)pkt_id ^ ((uint32_t)pkt_type << 24u);
     x ^= x << 13u;
     x ^= x >> 17u;
     x ^= x <<  5u;
@@ -423,7 +422,8 @@ uint32_t routing_forward_delay_ms(uint32_t src_id, uint32_t seq, uint8_t pkt_typ
 
 int routing_build_route_req(uint32_t  my_id,
                              uint32_t  target_id,
-                             uint32_t  seq,
+                             uint16_t  seq,
+                             uint16_t  pkt_id,
                              uint8_t  *out_buf,
                              uint8_t   out_cap)
 {
@@ -439,6 +439,7 @@ int routing_build_route_req(uint32_t  my_id,
     hdr.src_id      = my_id;
     hdr.dst_id      = target_id;   /* dst = target we seek; broadcast by TTL */
     hdr.seq         = seq;
+    hdr.pkt_id      = pkt_id;
     hdr.payload_len = 0u;
     return protocol_encode(&hdr, NULL, 0u, out_buf, out_cap);
 }
@@ -448,7 +449,8 @@ int routing_build_route_rpl(uint32_t  my_id,
                              uint32_t  target_id,
                              uint32_t  next_hop,
                              uint8_t   hop_count,
-                             uint32_t  seq,
+                             uint16_t  seq,
+                             uint16_t  pkt_id,
                              uint8_t  *out_buf,
                              uint8_t   out_cap)
 {
@@ -490,6 +492,7 @@ int routing_build_route_rpl(uint32_t  my_id,
     hdr.src_id      = my_id;
     hdr.dst_id      = requester_id;
     hdr.seq         = seq;
+    hdr.pkt_id      = pkt_id;
     hdr.payload_len = ROUTE_RPL_PAYLOAD_LEN;
     return protocol_encode(&hdr, pl, ROUTE_RPL_PAYLOAD_LEN, out_buf, out_cap);
 }

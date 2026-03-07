@@ -3,6 +3,23 @@
  * @brief RIVR mesh routing layer — duplicate suppression, TTL management,
  *        flood-forward hardening (Phase A), and hybrid unicast support (Phase D).
  *
+ * PACKET IDENTITY MODEL
+ *  Two orthogonal u16 fields replace the old single u32 seq:
+ *
+ *  │ seq    (u16) │ Application/source sequence. Per-source message counter,
+ *  │              │ preserved through relay. Used for message ordering and
+ *  │              │ control-plane correlation (ROUTE_REQ/RPL, future ACK).
+ *  │              │
+ *  │ pkt_id (u16) │ Per-injection forwarding identity. Unique per wire
+ *  │              │ injection (new for retransmits, fallback floods, and
+ *  │              │ every new control-plane frame). Dedupe cache keys on
+ *  │              │ (src_id, pkt_id). Jitter seeds from pkt_id.
+ *
+ *  Result: fallback floods (same seq, new pkt_id) bypass dedupe at nodes that
+ *  already saw the original unicast.  Retransmits with the same pkt_id are
+ *  correctly deduped.  Control-plane frames use a monotonic pkt_id counter
+ *  (g_ctrl_seq) that also serves as the seq correlation token.
+ *
  * PHASE A — Flood hardening:
  *  1. `routing_flood_forward()` — strict flood decision with explicit
  *     DEDUPE / TTL / LOOP / BUDGET drop reasons.
@@ -54,7 +71,8 @@ extern "C" {
 /** Single deduplicate-cache entry. */
 typedef struct {
     uint32_t src_id;       /**< Source node ID (0 = empty slot)             */
-    uint32_t seq;          /**< Sequence number                             */
+    uint16_t pkt_id;       /**< Per-injection forwarding identity (dedupe key) */
+    uint16_t _pad;         /**< Alignment padding                           */
     uint32_t seen_at_ms;   /**< Monotonic ms timestamp of first arrival     */
 } dedupe_entry_t;
 
@@ -96,7 +114,7 @@ typedef struct {
 void routing_dedupe_init(dedupe_cache_t *cache);
 
 /**
- * @brief Check whether (src_id, seq) is genuinely new.
+ * @brief Check whether (src_id, pkt_id) is genuinely new.
  *
  * If new: inserts the entry into the ring (evicting the oldest if full) and
  * returns true.
@@ -104,7 +122,7 @@ void routing_dedupe_init(dedupe_cache_t *cache);
  *
  * @param cache      Dedupe cache state.
  * @param src_id     Sender node ID.
- * @param seq        Packet sequence number.
+ * @param pkt_id     Per-injection forwarding identity (NOT application seq).
  * @param now_ms     Current monotonic millisecond timestamp.
  *
  * @return true  → packet is new, inject / forward it.
@@ -112,7 +130,7 @@ void routing_dedupe_init(dedupe_cache_t *cache);
  */
 bool routing_dedupe_check(dedupe_cache_t *cache,
                           uint32_t        src_id,
-                          uint32_t        seq,
+                          uint16_t        pkt_id,
                           uint32_t        now_ms);
 
 /**
@@ -389,23 +407,25 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
  * @param max_j   Maximum jitter window (inclusive upper bound).
  * @return        Jitter value in [0 .. max_j] ticks.
  */
-uint16_t routing_jitter_ticks(uint32_t src_id, uint32_t seq, uint16_t max_j);
+uint16_t routing_jitter_ticks(uint32_t src_id, uint16_t pkt_id, uint16_t max_j);
 
 /**
  * @brief Compute a deterministic forward-jitter delay in milliseconds.
  *
- * Seed: src_id XOR seq XOR (pkt_type << 24) — includes pkt_type so
- * different frame types spread independently even at the same (src, seq).
+ * Seed: src_id XOR pkt_id XOR (pkt_type << 24) — includes pkt_type so
+ * different frame types spread independently even at the same (src, pkt_id).
+ * Using pkt_id rather than seq means fallback floods (same seq, new pkt_id)
+ * get their own independent jitter slot.
  *
  * Returns a value in [0 .. FORWARD_JITTER_MAX_MS] ms.
  * Always 0 if FORWARD_JITTER_MAX_MS == 0 (allows compile-time disable).
  *
  * @param src_id    Source node ID.
- * @param seq       Sequence number.
+ * @param pkt_id    Per-injection forwarding identity.
  * @param pkt_type  Packet type byte (adds type-aware spread).
  * @return          Delay in milliseconds.
  */
-uint32_t routing_forward_delay_ms(uint32_t src_id, uint32_t seq, uint8_t pkt_type);
+uint32_t routing_forward_delay_ms(uint32_t src_id, uint16_t pkt_id, uint8_t pkt_type);
 
 /**
  * @brief Rough Time-on-Air estimate in microseconds (no radio_sx1262.h dependency).
@@ -442,13 +462,19 @@ static inline uint32_t routing_toa_estimate_us(uint8_t payload_len)
  *
  * Encodes a ROUTE_REQ to find a path to @p target_id.
  * Sets dst_id = @p target_id so intermediate nodes can recognise it.
- * TTL = ROUTE_REQ_TTL; flags = 0; seq must be supplied by caller.
+ * TTL = ROUTE_REQ_TTL; flags = 0.
+ *
+ * @param seq     Application sequence / correlation token (u16).
+ * @param pkt_id  Per-injection forwarding identity (u16); a fresh value from
+ *                g_ctrl_seq ensures this frame is not deduped against any
+ *                previous ROUTE_REQ for the same target.
  *
  * @return Number of bytes written, or -1 on buffer overflow.
  */
 int routing_build_route_req(uint32_t  my_id,
                              uint32_t  target_id,
-                             uint32_t  seq,
+                             uint16_t  seq,
+                             uint16_t  pkt_id,
                              uint8_t  *out_buf,
                              uint8_t   out_cap);
 
@@ -477,7 +503,8 @@ int routing_build_route_req(uint32_t  my_id,
  * @param target_id    The destination about which we are replying.
  * @param next_hop     Our next hop toward target_id (my_id if we are target).
  * @param hop_count    Hops from us to target_id (0 if we are target).
- * @param seq          Sequence number (caller-managed).
+ * @param seq          Sequence number / correlation token (u16).
+ * @param pkt_id        Per-injection forwarding identity (u16).
  * @param out_buf / out_cap  Output buffer.
  * @return Number of bytes written, or -1 on buffer overflow.
  */
@@ -486,7 +513,8 @@ int routing_build_route_rpl(uint32_t  my_id,
                              uint32_t  target_id,
                              uint32_t  next_hop,
                              uint8_t   hop_count,
-                             uint32_t  seq,
+                             uint16_t  seq,
+                             uint16_t  pkt_id,
                              uint8_t  *out_buf,
                              uint8_t   out_cap);
 

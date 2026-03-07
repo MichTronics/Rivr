@@ -130,7 +130,8 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                 /* Build + enqueue ROUTE_REQ broadcast */
                 uint8_t rreq_buf[RIVR_PKT_HDR_LEN + RIVR_PKT_CRC_LEN];
                 int rreq_enc = routing_build_route_req(
-                    g_my_node_id, pkt.dst_id, ++g_ctrl_seq,
+                    g_my_node_id, pkt.dst_id,
+                    (uint16_t)++g_ctrl_seq, (uint16_t)g_ctrl_seq,
                     rreq_buf, sizeof(rreq_buf));
                 bool rreq_ok = false;
                 if (rreq_enc > 0) {
@@ -184,7 +185,9 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
             fb.dst_id  = 0u;                        /* broadcast */
             fb.ttl     = RIVR_FALLBACK_TTL;          /* limited range */
             fb.hop     = 0u;                         /* originated, not relayed */
-            fb.seq     = ++g_ctrl_seq;               /* fresh seq → no dedupe hit */
+            fb.seq     = pkt.seq;                    /* preserve app seq (same logical message) */
+            fb.pkt_id  = (uint16_t)++g_ctrl_seq;    /* fresh pkt_id → bypasses dedupe at nodes
+                                                      * that already saw the unicast attempt */
             fb.flags   = (uint8_t)((pkt.flags & ~PKT_FLAG_RELAY) | PKT_FLAG_FALLBACK);
             int fb_enc = protocol_encode(&fb, pl_copy, pl_len,
                                          req.data, sizeof(req.data));
@@ -195,9 +198,9 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                 if (pushed) {
                     ESP_LOGW(TAG,
                         "rf_tx: unicast queue full → FALLBACK flood "
-                        "dst=0x%08lx ttl=%u seq=%lu flags=FALLBACK",
+                        "dst=0x%08lx ttl=%u seq=%u pkt_id=%u flags=FALLBACK",
                         (unsigned long)pkt.dst_id, RIVR_FALLBACK_TTL,
-                        (unsigned long)fb.seq);
+                        (unsigned)fb.seq, (unsigned)fb.pkt_id);
                 }
             }
         }
@@ -328,7 +331,8 @@ void beacon_sink_cb(const rivr_value_t *v, void *user_ctx)
     hdr.net_id      = g_net_id;
     hdr.src_id      = g_my_node_id;
     hdr.dst_id      = 0;   /* broadcast */
-    hdr.seq         = ++g_ctrl_seq;
+    hdr.seq         = (uint16_t)++g_ctrl_seq;
+    hdr.pkt_id      = (uint16_t)g_ctrl_seq;
     hdr.payload_len = BEACON_PAYLOAD_LEN;
 
     rf_tx_request_t req;

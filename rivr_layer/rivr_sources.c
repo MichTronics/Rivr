@@ -97,15 +97,17 @@ uint32_t sources_rf_rx_drain(void)
 
         if (fwd == RIVR_FWD_DROP_DEDUPE) {
             /* Seen before — discard completely (no RIVR injection, no learning) */
-            RIVR_LOGI(TAG, "rf_rx: DEDUPE-DROP src=0x%08lx seq=%lu  [GATE2: (src,seq) keyed, not from_id]",
-                     (unsigned long)pkt_hdr.src_id, (unsigned long)pkt_hdr.seq);
+            RIVR_LOGI(TAG, "rf_rx: DEDUPE-DROP src=0x%08lx seq=%u pkt_id=%u",
+                     (unsigned long)pkt_hdr.src_id,
+                     (unsigned)pkt_hdr.seq, (unsigned)pkt_hdr.pkt_id);
             continue;
         }
 
         if (fwd == RIVR_FWD_DROP_LOOP) {
             /* Relay fingerprint in loop_guard matched — packet has looped back. */
-            RIVR_LOGW(TAG, "rf_rx: LOOP-DROP src=0x%08lx seq=%lu guard=0x%02x",
-                      (unsigned long)pkt_hdr.src_id, (unsigned long)pkt_hdr.seq,
+            RIVR_LOGW(TAG, "rf_rx: LOOP-DROP src=0x%08lx seq=%u pkt_id=%u guard=0x%02x",
+                      (unsigned long)pkt_hdr.src_id,
+                      (unsigned)pkt_hdr.seq, (unsigned)pkt_hdr.pkt_id,
                       (unsigned)pkt_hdr.loop_guard);
             continue;
         }
@@ -115,15 +117,17 @@ uint32_t sources_rf_rx_drain(void)
             uint8_t want_hop = (uint8_t)(pkt_hdr.hop  + 1u);
             if (fwd_hdr.ttl != want_ttl || fwd_hdr.hop != want_hop) {
                 ESP_LOGE(TAG,
-                    "GATE1 FAIL src=0x%08lx seq=%lu: "
+                    "GATE1 FAIL src=0x%08lx seq=%u pkt_id=%u: "
                     "ttl %u->%u (want %u)  hop %u->%u (want %u)",
-                    (unsigned long)pkt_hdr.src_id, (unsigned long)pkt_hdr.seq,
+                    (unsigned long)pkt_hdr.src_id,
+                    (unsigned)pkt_hdr.seq, (unsigned)pkt_hdr.pkt_id,
                     pkt_hdr.ttl, fwd_hdr.ttl, want_ttl,
                     pkt_hdr.hop, fwd_hdr.hop, want_hop);
             } else {
                 RIVR_LOGI(TAG,
-                    "GATE1 OK  src=0x%08lx seq=%lu: ttl %u->%u  hop %u->%u",
-                    (unsigned long)pkt_hdr.src_id, (unsigned long)pkt_hdr.seq,
+                    "GATE1 OK  src=0x%08lx seq=%u pkt_id=%u: ttl %u->%u  hop %u->%u",
+                    (unsigned long)pkt_hdr.src_id,
+                    (unsigned)pkt_hdr.seq, (unsigned)pkt_hdr.pkt_id,
                     pkt_hdr.ttl, fwd_hdr.ttl,
                     pkt_hdr.hop, fwd_hdr.hop);
             }
@@ -347,7 +351,7 @@ uint32_t sources_rf_rx_drain(void)
                     rpl_target,       /* target_id in payload   */
                     rpl_next_hop,     /* next_hop in payload    */
                     rpl_hops,         /* hop_count in payload   */
-                    ++g_ctrl_seq,
+                    (uint16_t)++g_ctrl_seq, (uint16_t)g_ctrl_seq,
                     rpl_buf, sizeof(rpl_buf));
 
                 if (rpl_len > 0) {
@@ -428,7 +432,7 @@ uint32_t sources_rf_rx_drain(void)
         /* ── 6. Inject non-control frames into RIVR ── */
         {
             /* Advance Lamport clock using sender's seq as hint */
-            uint32_t assigned_tick = tb_lmp_advance((uint16_t)(pkt_hdr.seq & 0xFFFFu));
+            uint32_t assigned_tick = tb_lmp_advance(pkt_hdr.seq);
 
             rivr_event_t ev;
             memset(&ev, 0, sizeof(ev));
@@ -444,10 +448,10 @@ uint32_t sources_rf_rx_drain(void)
             rivr_result_t rc = rivr_inject_event("rf_rx", &ev);
             if (rc.code == RIVR_OK) {
                 ESP_LOGD(TAG,
-                    "rf_rx: injected %u bytes pkt_type=%u src=0x%08lx seq=%lu fwd=%d",
+                    "rf_rx: injected %u bytes pkt_type=%u src=0x%08lx seq=%u pkt_id=%u fwd=%d",
                     copy_len, pkt_hdr.pkt_type,
                     (unsigned long)pkt_hdr.src_id,
-                    (unsigned long)pkt_hdr.seq, (int)fwd);
+                    (unsigned)pkt_hdr.seq, (unsigned)pkt_hdr.pkt_id, (int)fwd);
                 injected++;
             } else {
                 ESP_LOGW(TAG, "rf_rx: inject failed code=%" PRIu32, rc.code);
@@ -505,12 +509,14 @@ uint32_t sources_rf_rx_drain(void)
             }
 #endif /* RIVR_ROLE_CLIENT */
             /* routing_forward_delay_ms() gives a deterministic delay in
-             * [0..FORWARD_JITTER_MAX_MS] seeded from (src_id, seq, pkt_type).
+             * [0..FORWARD_JITTER_MAX_MS] seeded from (src_id, pkt_id, pkt_type).
+             * Using pkt_id (not seq) ensures fallback floods of the same logical
+             * message spread independently from the original unicast attempt.
              * Storing due_ms in the request lets tx_drain_loop() hold the
              * frame until the jitter window expires, avoiding transmit
              * collisions when multiple relays hear the same original packet. */
             uint32_t delay_ms = routing_forward_delay_ms(
-                pkt_hdr.src_id, pkt_hdr.seq, pkt_hdr.pkt_type);
+                pkt_hdr.src_id, pkt_hdr.pkt_id, pkt_hdr.pkt_type);
 
             /* ── Fabric relay gate (repeater-only, CHAT/DATA only) ─────────────
              * rivr_fabric_decide_relay() is a no-op (SEND_NOW) unless
