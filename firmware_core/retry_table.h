@@ -36,6 +36,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hal/feature_flags.h"    /* RIVR_RETRY_TABLE_SIZE role-specific default */
 #include "radio_sx1262.h"   /* RF_MAX_PAYLOAD_LEN, rf_tx_request_t, rb_t     */
 #include "protocol.h"       /* RIVR_PKT_HDR_LEN, RIVR_PKT_CRC_LEN, PKT_*    */
 
@@ -45,7 +46,11 @@ extern "C" {
 
 /* ── Configuration ───────────────────────────────────────────────────────── */
 
-#define RETRY_TABLE_SIZE    16u    /**< Max simultaneously tracked frames       */
+/** ACK-wait / retry table capacity.
+ *  Sized by RIVR_RETRY_TABLE_SIZE from hal/feature_flags.h:
+ *    CLIENT=8, REPEATER/GATEWAY=32, generic=16.
+ *  Override per-board via -DRIVR_RETRY_TABLE_SIZE=N. */
+#define RETRY_TABLE_SIZE    RIVR_RETRY_TABLE_SIZE
 #define RETRY_MAX            3u    /**< Re-TX attempts after first TX (total 4) */
 #define RETRY_TIMEOUT_MS  4000u    /**< Initial ACK wait interval (ms)          */
 

@@ -178,6 +178,43 @@
 #  define RIVR_SIM_MODE             0
 #endif
 
+/* ── Role-specific capacity defaults ────────────────────────────────────── *
+ *                                                                            *
+ * These constants size fixed BSS structures.  Smaller CLIENT values save     *
+ * ~2 kB of DRAM; larger REPEATER/GATEWAY values increase throughput.        *
+ * Override per-board in variants/<board>/config.h or via -D flags.          *
+ *                                                                            *
+ * RIVR_ROUTE_CACHE_SIZE  — capacity of the hybrid unicast route cache.      *
+ *   CLIENT   : 32  (end-device, few concurrent peers)                       *
+ *   REPEATER : 64  (infrastructure hub, many routes to track)               *
+ *   GATEWAY  : 64  (same as repeater — bridges all mesh routes to IP)       *
+ *   generic  : 64  (sim/test: full size)                                    *
+ *                                                                            *
+ * RIVR_RETRY_TABLE_SIZE  — concurrent in-flight unicast ACK-wait slots.     *
+ *   CLIENT   :  8  (sends its own traffic only)                              *
+ *   REPEATER : 32  (relays many directed frames simultaneously)              *
+ *   GATEWAY  : 32  (same as repeater)                                       *
+ *   generic  : 16  (sim/test: mid-range)                                    *
+ * ─────────────────────────────────────────────────────────────────────── */
+
+#ifndef RIVR_ROUTE_CACHE_SIZE
+#  if RIVR_ROLE_CLIENT
+#    define RIVR_ROUTE_CACHE_SIZE   32u
+#  else
+#    define RIVR_ROUTE_CACHE_SIZE   64u  /**< repeater / gateway / generic */
+#  endif
+#endif
+
+#ifndef RIVR_RETRY_TABLE_SIZE
+#  if RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
+#    define RIVR_RETRY_TABLE_SIZE   32u
+#  elif RIVR_ROLE_CLIENT
+#    define RIVR_RETRY_TABLE_SIZE    8u
+#  else
+#    define RIVR_RETRY_TABLE_SIZE   16u  /**< sim/test: mid-range */
+#  endif
+#endif
+
 /* ── Compile-time guards ─────────────────────────────────────────────────── */
 
 #if RIVR_RADIO_SX1262 && RIVR_RADIO_SX1276

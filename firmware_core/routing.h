@@ -269,9 +269,11 @@ typedef enum {
  *   generic  : 30 fwd/type/min — base constant (sim/test default).
  */
 #if RIVR_ROLE_REPEATER
-#  define FWDBUDGET_MAX_FWD_ROLE  60u
+#  define FWDBUDGET_MAX_FWD_ROLE  60u  /**< relay hub — high throughput        */
+#elif RIVR_ROLE_GATEWAY
+#  define FWDBUDGET_MAX_FWD_ROLE  60u  /**< bridge — relay everything to IP    */
 #elif RIVR_ROLE_CLIENT
-#  define FWDBUDGET_MAX_FWD_ROLE  20u
+#  define FWDBUDGET_MAX_FWD_ROLE  20u  /**< end-device — conservative relay    */
 #else
 #  define FWDBUDGET_MAX_FWD_ROLE  FWDBUDGET_MAX_FWD  /**< sim/test: use base 30 */
 #endif

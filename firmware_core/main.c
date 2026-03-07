@@ -472,7 +472,60 @@ static void tx_drain_loop(void)
 #endif  /* RIVR_SIM_TX_PRINT */
     }
 }
+/* ── Role-specific initialisation stubs ─────────────────────────────────────── *
+ * Called from app_main() after the shared subsystem init sequence.         *
+ * Each function logs its role banner and performs any role-specific setup.  *
+ * Functions are #if-gated so only the selected role compiles in.            *
+ * ─────────────────────────────────────────────────────────────────────── */
 
+#if RIVR_ROLE_CLIENT
+/** Client init: log banner, emit compile-time capacity, start serial CLI. */
+static void rivr_init_client(void)
+{
+    RIVR_LOGI(TAG, "role: CLIENT"
+              " | relay_budget=%u fwd/type/min"
+              " | rc_cap=%u | retry_cap=%u"
+              " | CLI enabled",
+              (unsigned)FWDBUDGET_MAX_FWD_ROLE,
+              (unsigned)RCACHE_SIZE,
+              (unsigned)RETRY_TABLE_SIZE);
+    rivr_cli_init();    /* install UART driver + print boot banner */
+}
+#endif  /* RIVR_ROLE_CLIENT */
+
+#if RIVR_ROLE_REPEATER
+/** Repeater init: log banner with fabric state and capacity limits. */
+static void rivr_init_repeater(void)
+{
+    RIVR_LOGI(TAG, "role: REPEATER"
+              " | relay_budget=%u fwd/type/min"
+              " | rc_cap=%u | retry_cap=%u"
+              " | fabric=%s",
+              (unsigned)FWDBUDGET_MAX_FWD_ROLE,
+              (unsigned)RCACHE_SIZE,
+              (unsigned)RETRY_TABLE_SIZE,
+              RIVR_FABRIC_REPEATER ? "on" : "off");
+}
+#endif  /* RIVR_ROLE_REPEATER */
+
+#if RIVR_ROLE_GATEWAY
+/** Gateway init: log banner; service dispatch enabled; IP bridge placeholder. */
+static void rivr_init_gateway(void)
+{
+    RIVR_LOGI(TAG, "role: GATEWAY"
+              " | relay_budget=%u fwd/type/min"
+              " | rc_cap=%u | retry_cap=%u"
+              " | IP bridge: stub (implement rivr_gateway_bridge_loop)",
+              (unsigned)FWDBUDGET_MAX_FWD_ROLE,
+              (unsigned)RCACHE_SIZE,
+              (unsigned)RETRY_TABLE_SIZE);
+    /* TODO(gateway): initialise IP transport here.
+     * Example:
+     *   rivr_gateway_bridge_init();  // connect MQTT / HTTP / raw TCP
+     * Application service dispatch (rivr_svc.c) is always active; the
+     * gateway just adds an extra forwarding path: RF → IP. */
+}
+#endif  /* RIVR_ROLE_GATEWAY */
 /* ── Entry point ─────────────────────────────────────────────────────────── */
 
 void app_main(void)
@@ -548,18 +601,14 @@ void app_main(void)
     build_info_print_banner();
 
     /* ── Role-specific startup ─────────────────────────────────────────────
-     * Log the active role and any role-governed capacity limits.
-     * Each role implies a set of compile-time knobs — this block makes them
-     * visible in the boot log so operators can confirm configuration.       */
+     * Delegates to rivr_init_{client,repeater,gateway}() defined above.     *
+     * Each logs its role banner and performs role-specific setup.            */
 #if RIVR_ROLE_CLIENT
-    RIVR_LOGI(TAG, "role: CLIENT   | CLI enabled | relay budget=%u fwd/type/min",
-              (unsigned)FWDBUDGET_MAX_FWD_ROLE);
+    rivr_init_client();
 #elif RIVR_ROLE_REPEATER
-    RIVR_LOGI(TAG, "role: REPEATER | relay budget=%u fwd/type/min | fabric=%s",
-              (unsigned)FWDBUDGET_MAX_FWD_ROLE,
-              RIVR_FABRIC_REPEATER ? "on" : "off");
+    rivr_init_repeater();
 #elif RIVR_ROLE_GATEWAY
-    RIVR_LOGI(TAG, "role: GATEWAY  | stub — no active relay");
+    rivr_init_gateway();
 #else
     RIVR_LOGI(TAG, "role: GENERIC  | sim/test build");
 #endif
@@ -575,8 +624,9 @@ void app_main(void)
     }
 
 #if RIVR_ROLE_CLIENT
-    /* Start serial CLI — installs UART driver, prints boot banner.           */
-    rivr_cli_init();
+    /* Start serial CLI — installs UART driver, prints boot banner.
+     * NOTE: CLI init is now done inside rivr_init_client(); this block is *
+     * intentionally empty — kept for symmetry with the other role blocks.  */
 #endif
 
     /* ── Display task (spawns low-priority FreeRTOS task; never blocks main) ── */

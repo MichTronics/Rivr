@@ -433,8 +433,10 @@ static void cli_handle_line(void)
                "  rx_frames     : %lu\r\n"
                "  tx_frames     : %lu\r\n"
                "  neighbors     : %u\r\n"
-               "  routes        : %u\r\n"
+               "  routes        : %u / %u  (active / capacity)\r\n"
                "  pending       : %u\r\n"
+               "  retry_cap     : %u\r\n"
+               "  relay_budget  : %u fwd/type/min\r\n"
                "  loop_drops    : %lu\r\n"
                "  rc_hit        : %lu\r\n"
                "  rc_miss       : %lu\r\n"
@@ -455,8 +457,10 @@ static void cli_handle_line(void)
                (unsigned long)g_rx_frame_count,
                (unsigned long)g_tx_frame_count,
                (unsigned)nbrs,
-               (unsigned)routes,
+               (unsigned)routes,   (unsigned)RCACHE_SIZE,
                (unsigned)pending,
+               (unsigned)RETRY_TABLE_SIZE,
+               (unsigned)FWDBUDGET_MAX_FWD_ROLE,
                (unsigned long)g_rivr_metrics.loop_detect_drop_total,
                (unsigned long)g_rivr_metrics.route_cache_hit_total,
                (unsigned long)g_rivr_metrics.route_cache_miss_total,

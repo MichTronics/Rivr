@@ -33,6 +33,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hal/feature_flags.h"    /* RIVR_ROUTE_CACHE_SIZE role-specific default */
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,7 +41,11 @@ extern "C" {
 
 /* ── Configuration ───────────────────────────────────────────────────────── */
 
-#define RCACHE_SIZE          64u         /**< Table capacity (fixed)           */
+/** Route cache table capacity.
+ *  Sized by RIVR_ROUTE_CACHE_SIZE from hal/feature_flags.h:
+ *    CLIENT=32, REPEATER/GATEWAY/generic=64.
+ *  Override per-board via -DRIVR_ROUTE_CACHE_SIZE=N. */
+#define RCACHE_SIZE          RIVR_ROUTE_CACHE_SIZE
 #define RCACHE_EXPIRY_MS     120000u     /**< Route expiry: 2 minutes          */
 #define RCACHE_METRIC_INF    0xFFu       /**< "unreachable" sentinel           */
 #define RCACHE_METRIC_HYSTERESIS 10u    /**< Min score gain needed to swap routes */

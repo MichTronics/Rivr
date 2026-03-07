@@ -1,39 +1,125 @@
 # RIVR Node Roles
 
-RIVR firmware supports four distinct node roles. Each role is selected at **compile-time** via
-build flags and PlatformIO environments. A node can only hold one role per flash.
+RIVR firmware supports three compile-time roles. Each role is selected via a build flag
+(`-DRIVR_ROLE_xxx=1`) and its corresponding PlatformIO environment. A node can hold only one
+role per flash; the mutual-exclusion guard in `feature_flags.h` emits a `#error` if more than
+one is enabled.
+
+If no role flag is set (simulation / unit-test builds) the firmware compiles in **generic / sim**
+mode with mid-range defaults; no role-specific init function runs.
 
 ---
 
 ## Role Overview
 
-| Role | Build flag | PlatformIO env | Relay chat/data? | Fabric | CLI | Display |
-|---|---|---|---|---|---|---|
-| **Repeater** | `RIVR_BUILD_REPEATER=1` | `repeater_esp32devkit_e22_900` | ✅ flood + fabric | ✅ On | ❌ | ✅ (OLED page 7) |
-| **Client** | `RIVR_ROLE_CLIENT=1` | `client_esp32devkit_e22_900` | ❌ | ❌ | ✅ UART0 chat | ✅ |
-| **Gateway** | *(manual, see below)* | custom | ✅ all types | optional | USB bridge | optional |
-| **Monitor** | *(manual, see below)* | custom | ❌ — RX only | ❌ | USB dump | optional |
+| Role | Build flag | PlatformIO env | Relay CHAT/DATA? | Fabric | CLI |
+|---|---|---|---|---|---|
+| **Client** | `RIVR_ROLE_CLIENT=1` | `client_esp32devkit_e22_900` / `client_lilygo_lora32_v21` | ❌ | ❌ | ✅ UART0 |
+| **Repeater** | `RIVR_ROLE_REPEATER=1` | `repeater_esp32devkit_e22_900` / `repeater_lilygo_lora32_v21` | ✅ flood + fabric | ✅ | ❌ |
+| **Gateway** | `RIVR_ROLE_GATEWAY=1` | custom (see below) | ✅ all types | optional | USB bridge |
 
 ---
 
-## 1. Repeater
+## Compile-Time Capacity Defaults
 
-A **Repeater** is a mains-powered (or large-battery) node responsible for extending mesh coverage.
-It receives all packet types and re-transmits eligible ones after passing them through:
+All sizes are set in `firmware_core/hal/feature_flags.h` and guarded by `#ifndef` so they can
+be overridden per-variant via a variant `config.h` or a `-D` build flag.
 
-1. **RIVR Fabric congestion gate** — 60-second sliding-window score per network segment;
-   `PKT_CHAT` and `PKT_DATA` can be `DELAY`-ed or `DROP`-ped when the network is congested.
-2. **Airtime token-bucket** — global 10 % duty budget + per-neighbour 2 % sub-budget.
-3. **EU868 duty-cycle hard cap** — 1 % / hour; enforced by `dutycycle.c`.
+| Constant | CLIENT | REPEATER / GATEWAY | Generic (sim/test) |
+|---|---|---|---|
+| `RIVR_ROUTE_CACHE_SIZE` → `RCACHE_SIZE` | 32 | 64 | 64 |
+| `RIVR_RETRY_TABLE_SIZE` → `RETRY_TABLE_SIZE` | 8 | 32 | 16 |
+| `FWDBUDGET_MAX_FWD_ROLE` | 20 fwd/type/min | 60 fwd/type/min | 30 (base budget) |
 
-Control frames (`PKT_BEACON`, `PKT_ROUTE_REQ/RPL`, `PKT_ACK`, `PKT_PROG_PUSH`) always bypass
-all suppression and are relayed immediately.
+To override for a specific variant, add to its `config.h`:
+
+```c
+#define RIVR_ROUTE_CACHE_SIZE  128u   // larger cache for dense deployment
+#define RIVR_RETRY_TABLE_SIZE   48u   // more in-flight ACK slots
+```
+
+---
+
+## 1. Client
+
+A **Client** node is an end-user device. It sends and receives `PKT_CHAT` / `PKT_DATA` locally
+but **does not relay** user traffic. This prevents channel saturation by devices that have no
+infrastructure role.
+
+Control frames (`PKT_BEACON`, `PKT_ROUTE_REQ/RPL`, `PKT_ACK`, `PKT_PROG_PUSH`) are still
+forwarded so the mesh routing layer remains intact.
+
+### Boot log (example)
+
+```
+I [rivr] role: CLIENT | relay_budget=20 fwd/type/min | rc_cap=32 | retry_cap=8 | CLI enabled
+```
+
+### Serial CLI (UART0, 115 200 baud)
+
+```
+> status                         — full node status (see below)
+> chat hello from node B        — broadcast PKT_CHAT
+> id                             — print node ID, callsign and net ID
+> info                           — build info (env, sha, radio profile)
+> metrics                        — print @MET JSON (all counters)
+> policy                         — print @POLICY JSON (params + counters)
+> supportpack                    — @SUPPORTPACK JSON snapshot
+> neighbors                      — live neighbour table (RSSI/SNR/score)
+> routes                         — route cache (score, age)
+> set callsign CALL              — set and persist callsign
+> set netid 0x0001               — set and persist network ID
+> log debug                      — set log verbosity (debug|metrics|silent)
+> help                           — show this list
+```
+
+#### `rivr status` output
+
+```
+=== RIVR node status ===
+  node_id       : 0xdeadbeef
+  callsign      : NODE1
+  net_id        : 0x0001
+  uptime_ms     : 123456789
+  role          : CLIENT
+  rx_frames     : 1024
+  tx_frames     : 512
+  neighbors     : 3
+  routes        : 7 / 32  (active / capacity)
+  pending       : 2
+  retry_cap     : 8
+  relay_budget  : 20 fwd/type/min
+  loop_drops    : 0
+  rc_hit        : 612
+  rc_miss       : 89
+========================
+```
 
 ### Build & flash
 
 ```bash
-~/.platformio/penv/bin/pio run -e repeater_esp32devkit_e22_900 -t upload
-~/.platformio/penv/bin/pio device monitor -e repeater_esp32devkit_e22_900
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900
+```
+
+---
+
+## 2. Repeater
+
+A **Repeater** is a mains-powered (or large-battery) infrastructure node. It receives all
+packet types and re-transmits eligible ones after:
+
+1. **RIVR Fabric congestion gate** — 60-second sliding-window score per network segment;
+   `PKT_CHAT` and `PKT_DATA` can be `DELAY`-ed or `DROP`-ped when congested.
+2. **Airtime token-bucket** — global 10 % duty budget + per-neighbour 2 % sub-budget.
+3. **EU868 duty-cycle hard cap** — 1 % / hour; enforced by `dutycycle.c`.
+
+Control frames always bypass suppression and are relayed immediately.
+
+### Boot log (example)
+
+```
+I [rivr] role: REPEATER | relay_budget=60 | rc_cap=64 | retry_cap=32 | fabric=on
 ```
 
 ### OLED display pages
@@ -50,7 +136,7 @@ all suppression and are relayed immediately.
 
 Pages auto-rotate every 5 seconds.
 
-### Key metrics to watch
+### Key metrics
 
 | `@MET` key | Meaning |
 |---|---|
@@ -59,124 +145,60 @@ Pages auto-rotate every 5 seconds.
 | `cls_chat` | Frames dropped by airtime token gate (chat class) |
 | `dc_blk` | Frames blocked by EU868 duty-cycle hard cap |
 
----
-
-## 2. Client
-
-A **Client** node is an end-user device. It sends and receives `PKT_CHAT` / `PKT_DATA` locally
-but **does not relay** them. This prevents channel saturation by devices that have no
-infrastructure role.
-
-Control frames are still forwarded (BEACON, ROUTE_REQ/RPL, ACK, PROG_PUSH) so the mesh
-routing layer stays intact.
-
-### Serial CLI (UART0, 115200 baud)
-
-```
-> chat hello from node B        — broadcast PKT_CHAT
-> id                             — print node ID, callsign and net ID
-> info                           — build info (env, sha, radio profile)
-> metrics                        — print @MET JSON (all counters)
-> policy                         — print @POLICY JSON (params + counters)
-> supportpack                    — @SUPPORTPACK JSON snapshot
-> neighbors                      — live neighbour table (RSSI/SNR/score)
-> routes                         — route cache (score, age)
-> set callsign CALL              — set and persist callsign
-> set netid 0x0001               — set and persist network ID
-> log debug                      — set log verbosity (debug|metrics|silent)
-> help                           — show this list
-```
-
-Received `PKT_CHAT` frames are printed automatically:
-
-```
-[CHAT][deadbeef]: hello from node B
->
-```
-
-The `> ` prompt is reprinted after each incoming message so mid-type input is not lost.
-
 ### Build & flash
 
 ```bash
-~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900 -t upload
-~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900
+~/.platformio/penv/bin/pio run -e repeater_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio device monitor -e repeater_esp32devkit_e22_900
 ```
 
 ---
 
-## 3. Gateway
+## 3. Gateway *(stub — IP bridge not yet implemented)*
 
 A **Gateway** bridges the RIVR mesh to an IP network (MQTT broker, database, REST API, etc.).
-It relays all packet types like a Repeater, but in addition pipes every received frame over a
-USB/serial transport to a host process (e.g. `rivr_host` Rust tooling or a custom Python bridge).
+It relays all packet types like a Repeater and additionally pipes every received frame over a
+USB/serial transport to a host process.
 
-### Recommended configuration
+The `RIVR_ROLE_GATEWAY` flag is wired into the role-capacity system (`feature_flags.h`) and
+the `rivr_init_gateway()` boot function, but the IP bridge itself is a stub — see the
+`TODO(gateway): rivr_gateway_bridge_init()` comment in `firmware_core/main.c`.
+
+### Boot log (example)
+
+```
+I [rivr] role: GATEWAY | relay_budget=60 | rc_cap=64 | retry_cap=32 | IP bridge: stub
+```
+
+### Planned platformio.ini environment
 
 ```ini
-# platformio.ini custom env
 [env:gateway_esp32devkit_e22_900]
 extends = env:repeater_esp32devkit_e22_900
 build_flags =
     ${env:repeater_esp32devkit_e22_900.build_flags}
-    -DRIVR_GATEWAY_MODE=1
+    -URIVR_ROLE_REPEATER
+    -DRIVR_ROLE_GATEWAY=1
 ```
 
-With `RIVR_GATEWAY_MODE=1` the `rivr_sinks.c` `usb_print` sink is enabled for every
-received frame. Pipe the serial output into `rivr_host`:
+When the bridge is implemented, pipe the serial output into `rivr_host`:
 
 ```bash
 rivr_host --port /dev/ttyUSB0 --baud 115200 --mqtt mqtt://broker.local
 ```
 
-> **Note:** Gateway mode is not implemented in the default firmware build; it requires
-> wiring `rivr_sources.c` and `rivr_sinks.c` for your target transport. See
-> [docs/firmware-integration.md](en/firmware-integration.md) for the sink/source API.
-
----
-
-## 4. Monitor / Sniffer
-
-A **Monitor** node receives every packet on the air and prints decoded frames to USB serial
-without retransmitting anything. Useful for debugging, site surveys, and traffic analysis.
-
-### Recommended configuration
-
-```ini
-[env:monitor_esp32devkit_e22_900]
-extends = env:repeater_esp32devkit_e22_900
-build_flags =
-    ...
-    -DRIVR_MONITOR_ONLY=1   ; disable all TX paths
-    -DRIVR_FABRIC_REPEATER=0
-```
-
-With `RIVR_MONITOR_ONLY=1` the `tx_drain_loop()` is compiled as a no-op and `rivr_sinks.c`
-directs all received frames to the `usb_print` sink with full header dump.
-
-Pair with the `rivr_host` replay tool to replay a live capture:
-
-```bash
-# Capture to JSONL
-rivr_host --port /dev/ttyUSB0 --capture trace.jsonl
-
-# Replay later
-rivr_host --replay trace.jsonl
-```
+See [docs/en/firmware-integration.md](en/firmware-integration.md) for the sink/source API used
+to wire the bridge.
 
 ---
 
 ## Role Selection Quick Reference
 
 ```
-Do nodes need to relay traffic?
-    ├─ Yes, with congestion awareness  →  Repeater
-    ├─ Yes, bridge to IP               →  Gateway
-    └─ No
-
-        Send/receive user messages?
-            ├─ Yes                     →  Client
-            └─ No, pure analysis       →  Monitor
+Does the node need to relay traffic?
+    ├─ Yes, RF only — infrastructure node  →  Repeater
+    ├─ Yes, bridge to IP network           →  Gateway   (stub)
+    └─ No — end-user device               →  Client
 ```
 
 ---
@@ -185,11 +207,12 @@ Do nodes need to relay traffic?
 
 | Flag | Default | Effect |
 |---|---|---|
-| `RIVR_BUILD_REPEATER` | 0 | Enable Fabric + headless repeater path |
-| `RIVR_FABRIC_REPEATER` | 0 | Enable congestion-aware relay suppression |
-| `RIVR_ROLE_CLIENT` | 0 | Disable relay of CHAT/DATA; enable CLI |
-| `RIVR_GATEWAY_MODE` | 0 | Enable USB bridge for every received frame |
-| `RIVR_MONITOR_ONLY` | 0 | Disable all TX; USB-print all RX |
+| `RIVR_ROLE_CLIENT` | 0 | End-device mode: relay suppressed, CLI enabled, small buffers |
+| `RIVR_ROLE_REPEATER` | 0 | Infrastructure relay: Fabric + congestion gate, large buffers |
+| `RIVR_ROLE_GATEWAY` | 0 | Like Repeater + IP bridge stub; large buffers |
+| `RIVR_ROUTE_CACHE_SIZE` | role-derived | `RCACHE_SIZE` override; see capacity table above |
+| `RIVR_RETRY_TABLE_SIZE` | role-derived | `RETRY_TABLE_SIZE` override; see capacity table above |
+| `RIVR_FABRIC_REPEATER` | 0 | Enable congestion-aware relay suppression (auto on for Repeater/Gateway) |
 | `RIVR_SIM_MODE` | 0 | Software simulation — no SX1262 hardware |
 | `RIVR_RF_FREQ_HZ` | 869480000 | RF centre frequency in Hz |
 | `FEATURE_DISPLAY` | 1 | Enable SSD1306 I²C display task |
