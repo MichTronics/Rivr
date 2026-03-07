@@ -434,10 +434,20 @@ static void cli_handle_line(void)
                "  tx_frames     : %lu\r\n"
                "  neighbors     : %u\r\n"
                "  routes        : %u\r\n"
-               "  pending_queue : %u\r\n"
+               "  pending       : %u\r\n"
                "  loop_drops    : %lu\r\n"
                "  rc_hit        : %lu\r\n"
-               "  rc_miss       : %lu\r\n",
+               "  rc_miss       : %lu\r\n"
+               "Routing metrics:\r\n"
+               "  rreq_rx       : %lu\r\n"
+               "  rreq_target   : %lu\r\n"
+               "  rreq_cache    : %lu\r\n"
+               "  rreq_suppress : %lu\r\n"
+               "  rrpl_rx       : %lu\r\n"
+               "  rrpl_learn    : %lu\r\n"
+               "  fwd_ttl_drop  : %lu\r\n"
+               "  pq_drained    : %lu\r\n"
+               "  pq_expired    : %lu\r\n",
                (unsigned long)g_my_node_id,
                g_callsign,
                (unsigned)g_net_id,
@@ -449,7 +459,16 @@ static void cli_handle_line(void)
                (unsigned)pending,
                (unsigned long)g_rivr_metrics.loop_detect_drop_total,
                (unsigned long)g_rivr_metrics.route_cache_hit_total,
-               (unsigned long)g_rivr_metrics.route_cache_miss_total);
+               (unsigned long)g_rivr_metrics.route_cache_miss_total,
+               (unsigned long)g_rivr_metrics.route_req_rx_total,
+               (unsigned long)g_rivr_metrics.route_req_reply_target_total,
+               (unsigned long)g_rivr_metrics.route_req_reply_cache_total,
+               (unsigned long)g_rivr_metrics.route_req_reply_suppressed_total,
+               (unsigned long)g_rivr_metrics.route_rpl_rx_total,
+               (unsigned long)g_rivr_metrics.route_rpl_learn_total,
+               (unsigned long)g_rivr_metrics.forward_drop_ttl_total,
+               (unsigned long)g_rivr_metrics.pending_queue_drained_total,
+               (unsigned long)g_rivr_metrics.pending_queue_expired_total);
         fflush(stdout);
         return;
     }

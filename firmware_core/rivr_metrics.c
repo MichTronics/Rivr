@@ -67,7 +67,8 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"pq_exp_total\":%" PRIu32 ","
            "\"loop_drop_total\":%" PRIu32 ","
            "\"rc_miss\":%" PRIu32 ","
-           "\"rc_hit\":%" PRIu32
+           "\"rc_hit\":%" PRIu32 ","
+           "\"fwd_ttl_drop\":%" PRIu32
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -121,5 +122,6 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.pending_queue_expired_total,
         g_rivr_metrics.loop_detect_drop_total,
         g_rivr_metrics.route_cache_miss_total,
-        g_rivr_metrics.route_cache_hit_total);
+        g_rivr_metrics.route_cache_hit_total,
+        g_rivr_metrics.forward_drop_ttl_total);
 }

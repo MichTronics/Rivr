@@ -143,10 +143,10 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                     rreq_ok = rb_try_push(&rf_tx_queue, &rreq);
                 }
                 RIVR_LOGI(TAG,
-                    "rf_tx: dst=0x%08lx no route → pending=%s ROUTE_REQ=%s",
+                    "[ROUTE_REQ] dst=0x%08lx pend=%s sent=%s",
                     (unsigned long)pkt.dst_id,
-                    pend_ok ? "ok" : "FULL",
-                    rreq_ok ? "queued" : "FAIL");
+                    pend_ok ? "ok" : "full",
+                    rreq_ok ? "ok" : "fail");
                 if (!pend_ok) {
                     /* Frame can never be delivered — pending queue was full */
                     g_rivr_metrics.drop_no_route++;

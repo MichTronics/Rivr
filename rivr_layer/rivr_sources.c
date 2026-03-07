@@ -105,10 +105,9 @@ uint32_t sources_rf_rx_drain(void)
 
         if (fwd == RIVR_FWD_DROP_LOOP) {
             /* Relay fingerprint in loop_guard matched — packet has looped back. */
-            RIVR_LOGW(TAG, "rf_rx: LOOP-DROP src=0x%08lx seq=%u pkt_id=%u guard=0x%02x",
-                      (unsigned long)pkt_hdr.src_id,
-                      (unsigned)pkt_hdr.seq, (unsigned)pkt_hdr.pkt_id,
-                      (unsigned)pkt_hdr.loop_guard);
+            RIVR_LOGW(TAG, "[LOOP] drop pkt_id=0x%04x src=0x%08lx reason=bloom",
+                      (unsigned)pkt_hdr.pkt_id,
+                      (unsigned long)pkt_hdr.src_id);
             continue;
         }
 
@@ -328,6 +327,9 @@ uint32_t sources_rf_rx_drain(void)
                     /* Case 1: We ARE the destination.
                      * Requester's next step toward us is us; 0 additional hops. */
                     g_rivr_metrics.route_req_reply_target_total++;
+                    RIVR_LOGI(TAG, "[ROUTE_REQ] dst=0x%08lx from=0x%08lx reply=target",
+                              (unsigned long)pkt_hdr.dst_id,
+                              (unsigned long)pkt_hdr.src_id);
                     rpl_target   = g_my_node_id;
                     rpl_next_hop = g_my_node_id;
                     rpl_hops     = 0u;
@@ -340,6 +342,9 @@ uint32_t sources_rf_rx_drain(void)
                         route_cache_lookup(&g_route_cache, pkt_hdr.dst_id, now_ms);
                     if (!ce) goto maybe_relay;   /* expired between check & here */
                     g_rivr_metrics.route_req_reply_cache_total++;
+                    RIVR_LOGI(TAG, "[ROUTE_REQ] dst=0x%08lx from=0x%08lx reply=cache",
+                              (unsigned long)pkt_hdr.dst_id,
+                              (unsigned long)pkt_hdr.src_id);
                     rpl_target   = pkt_hdr.dst_id;
                     rpl_next_hop = ce->next_hop;
                     rpl_hops     = ce->hop_count;
@@ -377,9 +382,9 @@ uint32_t sources_rf_rx_drain(void)
             } else {
                 /* No eligible route and not the destination — stay silent. */
                 g_rivr_metrics.route_req_reply_suppressed_total++;
-                RIVR_LOGD(TAG, "rf_rx: ROUTE_REQ src=0x%08lx dst=0x%08lx suppressed",
-                          (unsigned long)pkt_hdr.src_id,
-                          (unsigned long)pkt_hdr.dst_id);
+                RIVR_LOGD(TAG, "[ROUTE_REQ] dst=0x%08lx from=0x%08lx reply=suppress",
+                          (unsigned long)pkt_hdr.dst_id,
+                          (unsigned long)pkt_hdr.src_id);
             }
             /* ROUTE_REQ: handled in C layer, also forwarded via relay below,
              * but do NOT inject into RIVR (control traffic, not app data).   */
@@ -414,10 +419,10 @@ uint32_t sources_rf_rx_drain(void)
                                    RCACHE_FLAG_VALID,
                                    now_ms);
                 g_rivr_metrics.route_rpl_learn_total++;
-                RIVR_LOGI(TAG, "rf_rx: ROUTE_RPL target=0x%08lx via 0x%08lx hops=%u",
+                RIVR_LOGI(TAG, "[ROUTE_RPL] learned dst=0x%08lx via=0x%08lx hops=%u",
                          (unsigned long)target_id,
                          (unsigned long)next_hop,
-                         hops);
+                         (unsigned)hops);
 
                 /* ── Phase-D: Drain pending messages for this newly resolved dst ── *
                  * Any frames that were queued in g_pending_queue while we were  *
@@ -604,6 +609,7 @@ uint32_t sources_rf_rx_drain(void)
 #endif
         } else if (fwd == RIVR_FWD_DROP_TTL) {
             g_rivr_metrics.drop_ttl_relay++;
+            g_rivr_metrics.forward_drop_ttl_total++;
             ESP_LOGD(TAG, "rf_rx: TTL=0 src=0x%08lx – not relayed",
                      (unsigned long)pkt_hdr.src_id);
         } else if (fwd == RIVR_FWD_DROP_BUDGET) {

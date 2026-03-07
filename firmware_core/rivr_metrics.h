@@ -68,6 +68,7 @@ typedef struct {
     uint32_t pending_queue_drained_total;     /**< frames drained from pending queue          */
     uint32_t pending_queue_expired_total;     /**< pending entries evicted on expiry          */
     uint32_t loop_detect_drop_total;          /**< RIVR_FWD_DROP_LOOP relay drops (alias)     */
+    uint32_t forward_drop_ttl_total;          /**< RIVR_FWD_DROP_TTL: relay dropped TTL=0     */
     uint32_t route_cache_miss_total;          /**< route_cache_lookup returned NULL           */
     uint32_t route_cache_hit_total;           /**< route_cache_lookup returned valid entry    */
 } rivr_metrics_t;
