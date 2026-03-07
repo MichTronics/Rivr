@@ -1,13 +1,21 @@
 /*
- * rivr_ota.c — Signed OTA RIVR program update gate.
+ * rivr_ota.c — LEGACY FILE: no longer compiled.
  *
- * See rivr_ota.h for the full wire-format and API description.
+ * The OTA implementation has been split into two translation units:
+ *
+ *   firmware_core/rivr_ota_core.c      — pure logic, host-safe, no ESP-IDF
+ *   firmware_core/rivr_ota_platform.c  — ESP-IDF NVS backend
+ *
+ * Update firmware_core/CMakeLists.txt references both new files.
+ * Host unit tests (tests/test_ota.c) link only rivr_ota_core.c and provide
+ * platform-interface stubs directly.
+ *
+ * See firmware_core/rivr_ota_platform.h for the platform interface design.
+ *
+ * This file is intentionally left as a comment-only marker so that any
+ * out-of-tree branch that still references it gets a clear error message
+ * rather than a silent ODR violation.
  */
-
-#include "rivr_ota.h"
-#include "rivr_pubkey.h"
-#include "ed25519_verify.h"
-#include "hal/feature_flags.h"   /* RIVR_SIM_MODE, RIVR_SIGNED_PROG */
 
 /* rivr_nvs_store_program() is declared in rivr_embed.h (ESP-IDF layer).
  * We reach it through a forward declaration here so this translation unit

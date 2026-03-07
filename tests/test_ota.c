@@ -21,14 +21,17 @@
  * Build (from project root, signed path):
  *   gcc -O2 -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG \
  *       firmware_core/ed25519_verify.c \
- *       firmware_core/rivr_ota.c \
+ *       firmware_core/rivr_ota_core.c \
  *       tests/test_ota.c \
  *       -o /tmp/test_ota && /tmp/test_ota
+ *
+ * Note: rivr_ota_platform.c is NOT linked here.  This file provides direct
+ * implementations of the ota_platform_* and ota_storage_* interface below.
  *
  * Build (unsigned path — test 8 only):
  *   gcc -O2 -Ifirmware_core -DIRAM_ATTR="" \
  *       firmware_core/ed25519_verify.c \
- *       firmware_core/rivr_ota.c \
+ *       firmware_core/rivr_ota_core.c \
  *       tests/test_ota.c \
  *       -o /tmp/test_ota_unsigned && /tmp/test_ota_unsigned
  */
@@ -44,29 +47,48 @@
 
 #include "rivr_ota.h"    /* RIVR_OTA_HDR_LEN etc. — firmware_core/ on path */
 
-/* ── Stub implementations required by rivr_ota.c ───────────────────────── */
+/* ── Platform-interface stubs (implements rivr_ota_platform.h) ─────────── *
+ *                                                                           *
+ * rivr_ota_core.c calls these functions instead of the NVS backend.        *
+ * rivr_ota_platform.c is never linked in this build.                       *
+ * ─────────────────────────────────────────────────────────────────────────*/
 
-/* NVS anti-replay stubs */
+/* Anti-replay sequence number */
 static uint32_t s_stub_seq = 0u;
 
-uint32_t ota_stub_load_seq(void)       { return s_stub_seq; }
-bool     ota_stub_save_seq(uint32_t s) { s_stub_seq = s; return true; }
+uint32_t ota_platform_load_seq(void)        { return s_stub_seq; }
+bool     ota_platform_save_seq(uint32_t s)  { s_stub_seq = s; return true; }
 
-/* NVS ota_pending stubs (P3.3 boot-confirm) */
+/* Boot-confirm pending flag */
 static uint32_t s_stub_pending = 0u;
 
-uint32_t ota_stub_load_pending(void)         { return s_stub_pending; }
-bool     ota_stub_save_pending(uint32_t v)   { s_stub_pending = v; return true; }
+uint32_t ota_platform_load_pending(void)       { return s_stub_pending; }
+bool     ota_platform_save_pending(uint32_t v) { s_stub_pending = v; return true; }
 
-/* NVS program storage stub */
+/* Program-text storage (three-phase: begin → write → commit) */
 static char  s_nvs_program[256];
 static bool  s_nvs_store_called = false;
+static char  s_write_buf[256];
 
-bool rivr_nvs_store_program(const char *src)
+bool ota_storage_begin(void)
+{
+    s_write_buf[0] = '\0';
+    return true;
+}
+
+bool ota_storage_write(const char *text, size_t len)
+{
+    size_t n = (len < sizeof(s_write_buf) - 1u) ? len : sizeof(s_write_buf) - 1u;
+    memcpy(s_write_buf, text, n);
+    s_write_buf[n] = '\0';
+    return true;
+}
+
+bool ota_storage_commit(void)
 {
     s_nvs_store_called = true;
-    strncpy(s_nvs_program, src, sizeof(s_nvs_program) - 1);
-    s_nvs_program[sizeof(s_nvs_program) - 1] = '\0';
+    strncpy(s_nvs_program, s_write_buf, sizeof(s_nvs_program) - 1u);
+    s_nvs_program[sizeof(s_nvs_program) - 1u] = '\0';
     return true;
 }
 

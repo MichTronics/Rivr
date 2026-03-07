@@ -178,6 +178,40 @@ the RIVR engine, FFI bridge, filter, and sink dispatch are all working.
 
 ---
 
+## Host Unit Tests (CI / no hardware required)
+
+All C-layer test suites compile and run on Linux/macOS with plain `gcc` — no
+ESP-IDF toolchain, no Rust cross-compiler, and no hardware.
+
+### Run all host suites
+
+```bash
+make -C tests          # build + run all: acceptance, recovery, replay, dutycycle, policy, ota
+make -C tests ota      # OTA gate tests only  (10 tests, signed build)
+make -C tests asan     # rebuild with AddressSanitizer + UBSan across all suites
+```
+
+### OTA isolation guarantee
+
+`firmware_core/rivr_ota_core.c` is ESP-IDF-free and is the only OTA file
+linked in host tests.  `firmware_core/rivr_ota_platform.c` (NVS backend) is
+never referenced by the `tests/` Makefile.  Tests provide the
+`ota_platform_*` and `ota_storage_*` stubs inline in `tests/test_ota.c`.
+
+### CI pipeline hint (GitHub Actions / GitLab CI)
+
+```yaml
+- name: Host unit tests (no hardware)
+  run: |
+    make -C tests acceptance
+    make -C tests ota
+    make -C tests dutycycle
+    make -C tests replay
+    make -C tests policy
+```
+
+---
+
 ## Troubleshooting
 
 | Symptom                                   | Cause / Fix                                              |

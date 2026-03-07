@@ -34,7 +34,8 @@ idf_component_register(
         "build_info.c"
         # P2: signed OTA + policy engine
         "ed25519_verify.c"
-        "rivr_ota.c"
+        "rivr_ota_core.c"      # platform-agnostic logic
+        "rivr_ota_platform.c" # ESP-IDF NVS backend (never linked in host tests)
         "policy.c"
         # HAL abstraction layer (additive — does not change existing driver code)
         "hal/radio_if.c"

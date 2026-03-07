@@ -106,8 +106,10 @@ POL_FLAGS := $(COMMON_FLAGS)
 # ─────────────────────────────────────────────────────────────────────────────
 OTA_SRCS := \
     $(FW)/ed25519_verify.c \
-    $(FW)/rivr_ota.c \
+    $(FW)/rivr_ota_core.c \
     test_ota.c
+# Note: rivr_ota_platform.c is NOT linked here.
+# test_ota.c provides host stubs for the ota_platform_* and ota_storage_* interface.
 
 OTA_BIN   := ota_test
 OTA_FLAGS := $(COMMON_FLAGS) -DRIVR_SIGNED_PROG
