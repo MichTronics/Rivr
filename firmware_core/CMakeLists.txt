@@ -31,6 +31,7 @@ idf_component_register(
         "rivr_fabric.c"
         "rivr_metrics.c"
         "rivr_log.c"
+        "retry_table.c"
         "build_info.c"
         # P2: signed OTA + policy engine
         "ed25519_verify.c"

@@ -164,6 +164,26 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                 if (reenc > 0) {
                     req.len    = (uint8_t)reenc;
                     req.toa_us = RF_TOA_APPROX_US(req.len);
+                    /* For data-plane unicast frames: set ACK_REQ flag in the
+                     * wire byte, recompute CRC, then store in the retry table
+                     * so we can re-send if no ACK arrives within the timeout.
+                     * Control and beacon types never need ACK protection. */
+                    if (pkt.pkt_type != PKT_ACK       &&
+                        pkt.pkt_type != PKT_ROUTE_REQ &&
+                        pkt.pkt_type != PKT_ROUTE_RPL &&
+                        pkt.pkt_type != PKT_BEACON) {
+                        req.data[4] |= PKT_FLAG_ACK_REQ;
+                        uint8_t  _plen = req.data[21];
+                        uint8_t  _coff = (uint8_t)(RIVR_PKT_HDR_LEN + _plen);
+                        uint16_t _crc  = protocol_crc16(req.data, _coff);
+                        req.data[_coff]      = (uint8_t)(_crc & 0xFFu);
+                        req.data[_coff + 1u] = (uint8_t)(_crc >> 8u);
+                        retry_table_enqueue(&g_retry_table, g_my_node_id,
+                                            pkt.pkt_id,
+                                            pkt.dst_id, next_hop,
+                                            req.data, req.len,
+                                            req.toa_us, now_ms);
+                    }
                     RIVR_LOGI(TAG,
                         "rf_tx: unicast dst=0x%08lx via next_hop=0x%08lx",
                         (unsigned long)pkt.dst_id, (unsigned long)next_hop);

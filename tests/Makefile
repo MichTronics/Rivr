@@ -115,6 +115,24 @@ OTA_BIN   := ota_test
 OTA_FLAGS := $(COMMON_FLAGS) -DRIVR_SIGNED_PROG
 
 # ─────────────────────────────────────────────────────────────────────────────
+# RETRY / ACK RELIABILITY TEST
+#   Tests retry_table: enqueue, timeout-driven retransmit, ACK clearing,
+#   exhaustion / fallback flood, table-full rejection, routing_build_ack.
+# ─────────────────────────────────────────────────────────────────────────────
+RETRY_SRCS := \
+    $(FW)/protocol.c      \
+    $(FW)/routing.c       \
+    $(FW)/route_cache.c   \
+    $(FW)/rivr_metrics.c  \
+    $(FW)/rivr_log.c      \
+    $(FW)/retry_table.c   \
+    test_stubs.c           \
+    test_retry.c
+
+RETRY_BIN   := retry_test
+RETRY_FLAGS := $(COMMON_FLAGS)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ASAN / UBSAN (P3.2)
 #   Rebuilds the four main suites + P2 suites with AddressSanitizer and
 #   UndefinedBehaviourSanitizer.  Binaries are suffixed _asan so they do
@@ -124,9 +142,9 @@ ASAN_FLAGS := $(COMMON_FLAGS) -O1 -g -fsanitize=address,undefined \
               -fno-omit-frame-pointer
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all test acceptance recovery replay dutycycle policy ota asan fuzz_harness clean
+.PHONY: all test acceptance recovery replay dutycycle policy ota retry asan fuzz_harness clean
 
-all: acceptance recovery replay dutycycle policy ota
+all: acceptance recovery replay dutycycle policy ota retry
 
 # `make test` is the CI-friendly single-command alias.
 test: all
@@ -173,7 +191,10 @@ ota: $(OTA_BIN)
 	@echo "── Running OTA gate tests (P2, signed) ──────────────────────────"
 	./$(OTA_BIN)
 	@echo
-
+retry: $(RETRY_BIN)
+	@echo "── Running ACK/retry reliability tests ─────────────────────"
+	./$(RETRY_BIN)
+	@echo
 asan:
 	@echo "── ASan/UBSan: acceptance ────────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) $(ACC_SRCS) -o acceptance_asan && ./acceptance_asan
@@ -193,12 +214,17 @@ asan:
 	@echo "── ASan/UBSan: OTA (signed) ──────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) -DRIVR_SIGNED_PROG $(OTA_SRCS) -o ota_asan && timeout 60 ./ota_asan
 	@echo
-
+	@echo "── ASan/UBSan: retry ─────────────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) $(RETRY_SRCS) -o retry_asan && ./retry_asan
+	@echo
 $(POL_BIN): $(POL_SRCS)
 	$(CC) $(POL_FLAGS) $^ -o $@
 
 $(OTA_BIN): $(OTA_SRCS)
 	$(CC) $(OTA_FLAGS) $^ -o $@
+
+$(RETRY_BIN): $(RETRY_SRCS)
+	$(CC) $(RETRY_FLAGS) $^ -o $@
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FUZZ HARNESS (P3.2)
@@ -225,4 +251,4 @@ $(FUZZ_BIN): $(FUZZ_SRCS)
 	$(CC) $(FUZZ_FLAGS) $^ -o $@
 
 clean:
-	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan
+	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan

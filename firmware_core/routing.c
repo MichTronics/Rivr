@@ -515,3 +515,42 @@ bool routing_should_reply_route_req(const rivr_pkt_hdr_t *pkt,
     if (!cache) return false;
     return route_cache_can_reply_for_dst(cache, pkt->dst_id, now_ms);
 }
+
+int routing_build_ack(uint32_t my_id,
+                       uint32_t dst_id,
+                       uint32_t ack_src_id,
+                       uint16_t ack_pkt_id,
+                       uint16_t seq,
+                       uint16_t pkt_id,
+                       uint8_t *out_buf,
+                       uint8_t  out_cap)
+{
+    /*
+     * ACK payload (ACK_PAYLOAD_LEN = 6 bytes, little-endian):
+     *   [0–3]  ack_src_id  u32 LE — src_id of the original frame
+     *   [4–5]  ack_pkt_id  u16 LE — pkt_id currently active in the retry entry
+     */
+    uint8_t pl[ACK_PAYLOAD_LEN];
+    pl[0] = (uint8_t)( ack_src_id        & 0xFFu);
+    pl[1] = (uint8_t)((ack_src_id >>  8u) & 0xFFu);
+    pl[2] = (uint8_t)((ack_src_id >> 16u) & 0xFFu);
+    pl[3] = (uint8_t)((ack_src_id >> 24u) & 0xFFu);
+    pl[4] = (uint8_t)( ack_pkt_id        & 0xFFu);
+    pl[5] = (uint8_t)((ack_pkt_id >>  8u) & 0xFFu);
+
+    rivr_pkt_hdr_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.magic       = RIVR_MAGIC;
+    hdr.version     = RIVR_PROTO_VER;
+    hdr.pkt_type    = PKT_ACK;
+    hdr.flags       = 0u;
+    hdr.ttl         = ROUTE_REQ_TTL;   /* flood with same TTL so ACK can traverse mesh */
+    hdr.hop         = 0u;
+    hdr.net_id      = 0u;
+    hdr.src_id      = my_id;
+    hdr.dst_id      = dst_id;
+    hdr.seq         = seq;
+    hdr.pkt_id      = pkt_id;
+    hdr.payload_len = ACK_PAYLOAD_LEN;
+    return protocol_encode(&hdr, pl, ACK_PAYLOAD_LEN, out_buf, out_cap);
+}

@@ -24,6 +24,7 @@
 #include "../firmware_core/rivr_ota.h"
 #include "../firmware_core/policy.h"
 #include "../firmware_core/rivr_policy.h"
+#include "../firmware_core/retry_table.h"
 
 #define TAG "RIVR_SRC"
 
@@ -33,6 +34,9 @@
 /* ── Policy engine state ─────────────────────────────────────────────────── */
 static policy_state_t g_policy;
 static bool g_policy_init_done = false;
+
+/* ── ACK / retry state (owned here; exposed via rivr_embed.h extern) ──────── */
+retry_table_t g_retry_table;   /* zero-initialised in BSS */
 
 /* ── rf_rx source ────────────────────────────────────────────────────────── */
 
@@ -45,6 +49,7 @@ uint32_t sources_rf_rx_drain(void)
 
     uint32_t injected = 0;
     uint32_t now_ms   = tb_millis();
+    retry_table_tick(&g_retry_table, &rf_tx_queue, &g_ctrl_seq, now_ms);
 
     dedupe_cache_t   *dedupe = routing_get_dedupe();
     forward_budget_t *fb     = routing_get_fwdbudget();
@@ -178,7 +183,52 @@ uint32_t sources_rf_rx_drain(void)
                 re ? re->metric    : 0u,
                 re ? (unsigned long)re->last_seen_ms : 0ul);
         }
+        /* ── 4a-0. Handle PKT_ACK: clear matching retry entry ───────────────── */
+        if (pkt_hdr.pkt_type == PKT_ACK) {
+            g_rivr_metrics.ack_rx_total++;
+            if (payload_ptr && pkt_hdr.payload_len >= ACK_PAYLOAD_LEN) {
+                uint32_t ack_src = (uint32_t)payload_ptr[0]
+                                 | ((uint32_t)payload_ptr[1] <<  8u)
+                                 | ((uint32_t)payload_ptr[2] << 16u)
+                                 | ((uint32_t)payload_ptr[3] << 24u);
+                uint16_t ack_pid = (uint16_t)payload_ptr[4]
+                                 | ((uint16_t)payload_ptr[5] << 8u);
+                if (retry_table_ack(&g_retry_table, ack_src, ack_pid)) {
+                    g_rivr_metrics.retry_success_total++;
+                    RIVR_LOGI(TAG, "[ACK] rx cleared src=0x%08lx pkt_id=0x%04x",
+                             (unsigned long)ack_src, (unsigned)ack_pid);
+                }
+            }
+            goto maybe_relay;
+        }
 
+        /* ── 4a-1. Send ACK when this node is the directed destination ────── *
+         * Fires for any pkt_type that carries PKT_FLAG_ACK_REQ and that     *
+         * is addressed directly to us.  Skip after a DEDUPE-drop (already   *
+         * ACK'd on first receipt).                                           */
+        if ((pkt_hdr.flags & PKT_FLAG_ACK_REQ) != 0u
+                && pkt_hdr.dst_id == g_my_node_id) {
+            uint8_t ack_buf[RIVR_PKT_HDR_LEN + ACK_PAYLOAD_LEN + RIVR_PKT_CRC_LEN];
+            int ack_len = routing_build_ack(
+                g_my_node_id, pkt_hdr.src_id,
+                pkt_hdr.src_id, pkt_hdr.pkt_id,
+                (uint16_t)++g_ctrl_seq, (uint16_t)g_ctrl_seq,
+                ack_buf, (uint8_t)sizeof(ack_buf));
+            if (ack_len > 0) {
+                rf_tx_request_t ack_req;
+                memset(&ack_req, 0, sizeof(ack_req));
+                memcpy(ack_req.data, ack_buf, (uint8_t)ack_len);
+                ack_req.len    = (uint8_t)ack_len;
+                ack_req.toa_us = RF_TOA_APPROX_US(ack_req.len);
+                ack_req.due_ms = 0u;
+                if (rb_try_push(&rf_tx_queue, &ack_req)) {
+                    g_rivr_metrics.ack_tx_total++;
+                    RIVR_LOGI(TAG, "[ACK] sent to 0x%08lx for pkt_id=0x%04x",
+                             (unsigned long)pkt_hdr.src_id,
+                             (unsigned)pkt_hdr.pkt_id);
+                }
+            }
+        }
         /* ── 4a. Handle PKT_BEACON: log + learn, skip RIVR injection ────────────────── */
         if (pkt_hdr.pkt_type == PKT_BEACON) {
             char callsign[BEACON_CALLSIGN_MAX + 1] = {0};

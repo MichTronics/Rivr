@@ -289,6 +289,10 @@ extern route_cache_t    g_route_cache;
 /** Phase-D pending-message queue — initialised in rivr_embed_init(). */
 extern pending_queue_t  g_pending_queue;
 
+#include "../firmware_core/retry_table.h"
+/** ACK-and-retry table — initialised in BSS; ticked in sources_rf_rx_drain(). */
+extern retry_table_t g_retry_table;
+
 /**
  * This node's unique 32-bit ID.
  * In production: derive from ESP32 MAC (e.g. esp_efuse_mac_get_default()).

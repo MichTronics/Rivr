@@ -119,6 +119,13 @@ extern "C" {
  * ─────────────────────────────────────────────────────────────────────────── */
 #define RIVR_FALLBACK_TTL  3u   /**< TTL for unicast-failed flood fallback   */
 
+/**
+ * ACK payload layout (ACK_PAYLOAD_LEN = 6 bytes):
+ *   [0–3]  ack_src_id  u32 LE — src_id of the frame being acknowledged
+ *   [4–5]  ack_pkt_id  u16 LE — pkt_id currently active in sender's retry entry
+ */
+#define ACK_PAYLOAD_LEN  6u
+
 /* ── Packet header struct (in-memory, NOT the wire layout) ──────────────── *
  *
  * Use protocol_encode() / protocol_decode() to convert between this struct

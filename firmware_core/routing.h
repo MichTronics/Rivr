@@ -569,6 +569,31 @@ bool routing_should_reply_route_req(const rivr_pkt_hdr_t *pkt,
                                      route_cache_t        *cache,
                                      uint32_t              now_ms);
 
+/**
+ * @brief Build a PKT_ACK wire frame.
+ *
+ * The 6-byte payload carries { ack_src_id (u32 LE), ack_pkt_id (u16 LE) }.
+ * These identify which of the sender's retry-table entries should be cleared
+ * upon receipt.
+ *
+ * @param my_id        ID of the node sending the ACK (= the frame's final dst).
+ * @param dst_id       Node that should receive the ACK (= pkt_hdr.src_id).
+ * @param ack_src_id   src_id of the frame being acknowledged.
+ * @param ack_pkt_id   pkt_id currently active in the sender's retry entry.
+ * @param seq          Sequence number for this ACK frame (u16).
+ * @param pkt_id       Per-injection forwarding identity for this ACK (u16).
+ * @param out_buf / out_cap  Output buffer.
+ * @return Number of bytes written, or -1 on buffer overflow.
+ */
+int routing_build_ack(uint32_t my_id,
+                       uint32_t dst_id,
+                       uint32_t ack_src_id,
+                       uint16_t ack_pkt_id,
+                       uint16_t seq,
+                       uint16_t pkt_id,
+                       uint8_t *out_buf,
+                       uint8_t  out_cap);
+
 #ifdef __cplusplus
 }
 #endif

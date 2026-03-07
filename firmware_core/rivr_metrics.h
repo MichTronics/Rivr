@@ -71,6 +71,12 @@ typedef struct {
     uint32_t forward_drop_ttl_total;          /**< RIVR_FWD_DROP_TTL: relay dropped TTL=0     */
     uint32_t route_cache_miss_total;          /**< route_cache_lookup returned NULL           */
     uint32_t route_cache_hit_total;           /**< route_cache_lookup returned valid entry    */
+    /* ── Reliability layer: ACK + retry counters ─────────────────────────── */
+    uint32_t ack_tx_total;         /**< PKT_ACK frames sent by this node              */
+    uint32_t ack_rx_total;         /**< PKT_ACK frames received                       */
+    uint32_t retry_success_total;  /**< retry entries cleared by ACK                  */
+    uint32_t retry_fail_total;     /**< retry entries exhausted without ACK           */
+    uint32_t retry_fallback_total; /**< fallback floods sent after retry exhaustion    */
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;
