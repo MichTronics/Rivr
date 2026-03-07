@@ -74,9 +74,11 @@ typedef struct {
     /* ── Reliability layer: ACK + retry counters ─────────────────────────── */
     uint32_t ack_tx_total;         /**< PKT_ACK frames sent by this node              */
     uint32_t ack_rx_total;         /**< PKT_ACK frames received                       */
+    uint32_t retry_attempt_total;  /**< retry transmissions emitted by retry_table_tick */
     uint32_t retry_success_total;  /**< retry entries cleared by ACK                  */
     uint32_t retry_fail_total;     /**< retry entries exhausted without ACK           */
     uint32_t retry_fallback_total; /**< fallback floods sent after retry exhaustion    */
+    uint32_t fallback_flood_total; /**< TX-queue-full fallback floods (rivr_sinks path) */
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;

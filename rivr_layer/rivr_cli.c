@@ -437,7 +437,6 @@ static void cli_handle_line(void)
                "  pending       : %u\r\n"
                "  retry_cap     : %u\r\n"
                "  relay_budget  : %u fwd/type/min\r\n"
-               "  loop_drops    : %lu\r\n"
                "  rc_hit        : %lu\r\n"
                "  rc_miss       : %lu\r\n"
                "Routing metrics:\r\n"
@@ -449,7 +448,17 @@ static void cli_handle_line(void)
                "  rrpl_learn    : %lu\r\n"
                "  fwd_ttl_drop  : %lu\r\n"
                "  pq_drained    : %lu\r\n"
-               "  pq_expired    : %lu\r\n",
+               "  pq_expired    : %lu\r\n"
+               "Retry / reliability:\r\n"
+               "  ack_rx        : %lu\r\n"
+               "  ack_tx        : %lu\r\n"
+               "  retry_attempt : %lu\r\n"
+               "  retry_ok      : %lu\r\n"
+               "  retry_fail    : %lu\r\n"
+               "  retry_fallback: %lu\r\n"
+               "  flood_fallback: %lu\r\n"
+               "Loop guard:\r\n"
+               "  loop_drops    : %lu\r\n",
                (unsigned long)g_my_node_id,
                g_callsign,
                (unsigned)g_net_id,
@@ -461,7 +470,6 @@ static void cli_handle_line(void)
                (unsigned)pending,
                (unsigned)RETRY_TABLE_SIZE,
                (unsigned)FWDBUDGET_MAX_FWD_ROLE,
-               (unsigned long)g_rivr_metrics.loop_detect_drop_total,
                (unsigned long)g_rivr_metrics.route_cache_hit_total,
                (unsigned long)g_rivr_metrics.route_cache_miss_total,
                (unsigned long)g_rivr_metrics.route_req_rx_total,
@@ -472,7 +480,15 @@ static void cli_handle_line(void)
                (unsigned long)g_rivr_metrics.route_rpl_learn_total,
                (unsigned long)g_rivr_metrics.forward_drop_ttl_total,
                (unsigned long)g_rivr_metrics.pending_queue_drained_total,
-               (unsigned long)g_rivr_metrics.pending_queue_expired_total);
+               (unsigned long)g_rivr_metrics.pending_queue_expired_total,
+               (unsigned long)g_rivr_metrics.ack_rx_total,
+               (unsigned long)g_rivr_metrics.ack_tx_total,
+               (unsigned long)g_rivr_metrics.retry_attempt_total,
+               (unsigned long)g_rivr_metrics.retry_success_total,
+               (unsigned long)g_rivr_metrics.retry_fail_total,
+               (unsigned long)g_rivr_metrics.retry_fallback_total,
+               (unsigned long)g_rivr_metrics.fallback_flood_total,
+               (unsigned long)g_rivr_metrics.loop_detect_drop_total);
         fflush(stdout);
         return;
     }

@@ -131,11 +131,13 @@ uint8_t retry_table_tick(retry_table_t *rt,
 
             if (rb_try_push(tx_queue, &req)) {
                 pushed++;
+                g_rivr_metrics.retry_attempt_total++;
                 RIVR_LOGW(TAG,
-                    "[RETRY] attempt %u/%u dst=0x%08lx new_pkt_id=0x%04x",
+                    "[RETRY] attempt=%u/%u pkt_id=0x%04x dst=0x%08lx",
                     (unsigned)(RETRY_MAX - e->retries_left + 1u),
                     (unsigned)RETRY_MAX,
-                    (unsigned long)e->dst_id, (unsigned)new_pkt_id);
+                    (unsigned)new_pkt_id,
+                    (unsigned long)e->dst_id);
             }
             e->retries_left--;
             e->timeout_interval_ms <<= 1u;  /* exponential backoff */
@@ -145,8 +147,8 @@ uint8_t retry_table_tick(retry_table_t *rt,
             /* ── All retries exhausted — emit fallback flood ─────────────── */
             g_rivr_metrics.retry_fail_total++;
             RIVR_LOGW(TAG,
-                "[RETRY] failed dst=0x%08lx – fallback flood",
-                (unsigned long)e->dst_id);
+                "[RETRY] failed=%u dst=0x%08lx – initiating fallback flood",
+                (unsigned)RETRY_MAX, (unsigned long)e->dst_id);
 
             /* Build fallback flood by patching the stored frame's wire bytes.
              * Field offsets per protocol.h wire layout:
@@ -178,6 +180,9 @@ uint8_t retry_table_tick(retry_table_t *rt,
             if (rb_try_push(tx_queue, &fb)) {
                 pushed++;
                 g_rivr_metrics.retry_fallback_total++;
+                RIVR_LOGW(TAG,
+                    "[FLOOD_FALLBACK] pkt_id=0x%04x dst=0x%08lx reason=retry_exhausted",
+                    (unsigned)fb_pkt_id, (unsigned long)e->dst_id);
             }
 
             memset(e, 0, sizeof(*e));

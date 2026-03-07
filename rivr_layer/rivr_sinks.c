@@ -217,11 +217,10 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                 req.toa_us = RF_TOA_APPROX_US(req.len);
                 pushed     = rb_try_push(&rf_tx_queue, &req);
                 if (pushed) {
-                    ESP_LOGW(TAG,
-                        "rf_tx: unicast queue full → FALLBACK flood "
-                        "dst=0x%08lx ttl=%u seq=%u pkt_id=%u flags=FALLBACK",
-                        (unsigned long)pkt.dst_id, RIVR_FALLBACK_TTL,
-                        (unsigned)fb.seq, (unsigned)fb.pkt_id);
+                    g_rivr_metrics.fallback_flood_total++;
+                    RIVR_LOGW(TAG,
+                        "[FLOOD_FALLBACK] pkt_id=0x%04x dst=0x%08lx reason=queue_full",
+                        (unsigned)fb.pkt_id, (unsigned long)pkt.dst_id);
                 }
             }
         }

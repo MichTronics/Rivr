@@ -89,9 +89,28 @@ I [rivr] role: CLIENT | relay_budget=20 fwd/type/min | rc_cap=32 | retry_cap=8 |
   pending       : 2
   retry_cap     : 8
   relay_budget  : 20 fwd/type/min
-  loop_drops    : 0
   rc_hit        : 612
   rc_miss       : 89
+Routing metrics:
+  rreq_rx       : 14
+  rreq_target   : 3
+  rreq_cache    : 11
+  rreq_suppress : 0
+  rrpl_rx       : 14
+  rrpl_learn    : 14
+  fwd_ttl_drop  : 0
+  pq_drained    : 12
+  pq_expired    : 2
+Retry / reliability:
+  ack_rx        : 102
+  ack_tx        : 98
+  retry_attempt : 4
+  retry_ok      : 3
+  retry_fail    : 1
+  retry_fallback: 1
+  flood_fallback: 0
+Loop guard:
+  loop_drops    : 0
 ========================
 ```
 

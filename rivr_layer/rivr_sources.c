@@ -194,10 +194,12 @@ uint32_t sources_rf_rx_drain(void)
                                  | ((uint32_t)payload_ptr[3] << 24u);
                 uint16_t ack_pid = (uint16_t)payload_ptr[4]
                                  | ((uint16_t)payload_ptr[5] << 8u);
+                RIVR_LOGI(TAG, "[ACK] received pkt_id=0x%04x src=0x%08lx",
+                         (unsigned)ack_pid, (unsigned long)ack_src);
                 if (retry_table_ack(&g_retry_table, ack_src, ack_pid)) {
                     g_rivr_metrics.retry_success_total++;
-                    RIVR_LOGI(TAG, "[ACK] rx cleared src=0x%08lx pkt_id=0x%04x",
-                             (unsigned long)ack_src, (unsigned)ack_pid);
+                    RIVR_LOGI(TAG, "[ACK] cleared retry pkt_id=0x%04x src=0x%08lx",
+                             (unsigned)ack_pid, (unsigned long)ack_src);
                 }
             }
             goto maybe_relay;
