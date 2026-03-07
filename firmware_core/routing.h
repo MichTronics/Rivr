@@ -527,12 +527,19 @@ int routing_build_route_rpl(uint32_t  my_id,
  *  1. **We are the requested destination** — pkt->dst_id == my_id.
  *     Reply payload: { target=my_id, next_hop=my_id, hop_count=0 }.
  *
- *  2. **We have a live (non-expired) route cache entry** for pkt->dst_id.
+ *  2. **We have an eligible cached route** for pkt->dst_id, as determined
+ *     by route_cache_can_reply_for_dst() (see route_cache.h for the full
+ *     reply-eligibility policy):
+ *       a. Entry is valid and non-expired.
+ *       b. RCACHE_FLAG_PENDING is NOT set (route is confirmed).
+ *       c. entry->metric >= RCACHE_REPLY_MIN_METRIC (not a marginal path).
+ *       d. entry->hop_count <= RCACHE_REPLY_MAX_HOPS (not a deep chain).
  *     Reply payload: { target=pkt->dst_id,
  *                      next_hop=cache_entry.next_hop,
  *                      hop_count=cache_entry.hop_count }.
- *     Stale / expired entries do NOT qualify — only a live lookup via
- *     route_cache_lookup() (which applies lazy expiry) counts.
+ *
+ * All other cases return false (invalid pkt, unknown destination, expired,
+ * pending, weak, or too-deep cached route).
  *
  * @param pkt      Decoded ROUTE_REQ header (pkt_type must be PKT_ROUTE_REQ).
  * @param my_id    This node's own identifier.
@@ -540,7 +547,7 @@ int routing_build_route_rpl(uint32_t  my_id,
  *                 case 1 is checked, as before).
  * @param now_ms   Monotonic millisecond timestamp (for expiry test).
  * @return true  → caller should build and send a ROUTE_RPL.
- * @return false → do not reply (we don't know a route, or pkt is invalid).
+ * @return false → do not reply.
  */
 bool routing_should_reply_route_req(const rivr_pkt_hdr_t *pkt,
                                      uint32_t              my_id,

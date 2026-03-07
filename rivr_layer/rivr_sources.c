@@ -304,15 +304,13 @@ uint32_t sources_rf_rx_drain(void)
 
         /* ── 4c. Phase-D: Handle ROUTE_REQ ── *
          *                                                                    *
-         * Reply conditions (checked by routing_should_reply_route_req):      *
+         * Reply conditions (routing_should_reply_route_req / route_cache_can_reply_for_dst):
          *  1. We ARE the requested destination (pkt_hdr.dst_id == my_id).   *
          *     Reply: { target=my_id, next_hop=my_id, hop_count=0 }           *
-         *  2. We have a LIVE (non-expired) route cache entry for dst_id.    *
+         *  2. We have an ELIGIBLE cached route (route_cache_can_reply_for_dst):  *
+         *       a. valid+non-expired, b. not PENDING, c. metric>=MIN, d. hops<=MAX  *
          *     Reply: { target=dst_id, next_hop=ce->next_hop,                *
          *              hop_count=ce->hop_count }                             *
-         *                                                                    *
-         * Stale / expired cache entries do NOT qualify (route_cache_lookup   *
-         * applies lazy expiry, returning NULL for any stale entry).          *
          *                                                                    *
          * ROUTE_RPL uses directed-flood semantics: dst_id = requester_id,   *
          * TTL = ROUTE_REQ_TTL.  Any overhearer may learn the route.         *

@@ -507,9 +507,10 @@ bool routing_should_reply_route_req(const rivr_pkt_hdr_t *pkt,
     /* Case 1: We ARE the requested destination. */
     if (pkt->dst_id == my_id) return true;
 
-    /* Case 2: We have a live (non-expired) route cache entry for the target.
-     * route_cache_lookup() applies lazy expiry — it returns NULL for any
-     * entry older than RCACHE_EXPIRY_MS, so stale entries never qualify. */
+    /* Case 2: We have a live, eligible (non-pending, sufficient quality,
+     * limited hop depth) cached route for the target.
+     * route_cache_can_reply_for_dst() encapsulates all reply-eligibility
+     * gates: expiry, PENDING flag, metric threshold, max hop count. */
     if (!cache) return false;
-    return (route_cache_lookup(cache, pkt->dst_id, now_ms) != NULL);
+    return route_cache_can_reply_for_dst(cache, pkt->dst_id, now_ms);
 }

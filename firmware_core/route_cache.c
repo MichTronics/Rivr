@@ -229,3 +229,28 @@ void route_cache_print(const route_cache_t *cache, uint32_t now_ms)
     }
     if (shown == 0u) printf("  (no live routes)\r\n");
 }
+bool route_cache_can_reply_for_dst(route_cache_t *cache,
+                                    uint32_t       dst_id,
+                                    uint32_t       now_ms)
+{
+    /* Gate 1: valid, non-expired entry must exist (lazy expiry applied). */
+    const route_cache_entry_t *e = route_cache_lookup(cache, dst_id, now_ms);
+    if (!e) return false;
+
+    /* Gate 2: entry must not be pending — route is tentative until we
+     * receive a ROUTE_RPL for our own outstanding request. */
+    if (e->flags & RCACHE_FLAG_PENDING) return false;
+
+    /* Gate 3: metric must meet the minimum quality threshold.  Paths with a
+     * combined RSSI+SNR score below RCACHE_REPLY_MIN_METRIC are marginal;
+     * advertising them generates noisy control-plane traffic with little
+     * benefit to the requester. */
+    if (e->metric < RCACHE_REPLY_MIN_METRIC) return false;
+
+    /* Gate 4: route must not pass through too many hops.  Deep cached paths
+     * age faster and are less reliable than a direct reply from the target,
+     * so we stay silent and let the target speak for itself. */
+    if (e->hop_count > RCACHE_REPLY_MAX_HOPS) return false;
+
+    return true;
+}

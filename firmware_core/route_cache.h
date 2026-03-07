@@ -45,6 +45,27 @@ extern "C" {
 #define RCACHE_METRIC_INF    0xFFu       /**< "unreachable" sentinel           */
 #define RCACHE_METRIC_HYSTERESIS 10u    /**< Min score gain needed to swap routes */
 
+/* ── Reply-eligibility thresholds ───────────────────────────────────────── *
+ * ROUTE_RPL reply-eligibility policy for cached-route responders.           *
+ *                                                                            *
+ * A node may only volunteer a cached route in response to a ROUTE_REQ if:  *
+ *   1. Entry is valid and non-expired  (checked by route_cache_lookup).      *
+ *   2. RCACHE_FLAG_PENDING is NOT set  (we are still awaiting our own REQ;  *
+ *      the cached data is tentative and we cannot vouch for it yet).         *
+ *   3. metric >= RCACHE_REPLY_MIN_METRIC  (not a barely-heard marginal path; *
+ *      prevents advertising paths the requester could not use reliably).     *
+ *   4. hop_count <= RCACHE_REPLY_MAX_HOPS  (reasonably direct; deep cached  *
+ *      paths are unlikely to beat a direct answer from the target itself,   *
+ *      and age faster than short paths).                                     *
+ *                                                                            *
+ * These gates keep the control plane lean and deterministic: weak, deep, or  *
+ * pending routes contribute no unsolicited ROUTE_RPL traffic.               *
+ * ─────────────────────────────────────────────────────────────────────────── */
+/** Minimum metric (0..100 composite score) for a cached reply to qualify. */
+#define RCACHE_REPLY_MIN_METRIC  30u
+/** Maximum hop depth of a qualifying cached route (inclusive). */
+#define RCACHE_REPLY_MAX_HOPS     3u
+
 /* ── Entry flags ─────────────────────────────────────────────────────────── */
 
 #define RCACHE_FLAG_VALID    0x01u  /**< Entry holds live data                 */
@@ -196,6 +217,29 @@ uint8_t route_cache_count(const route_cache_t *cache, uint32_t now_ms);
  * @param now_ms  Current monotonic millisecond timestamp.
  */
 void route_cache_print(const route_cache_t *cache, uint32_t now_ms);
+
+/**
+ * @brief Test whether a cached route qualifies for replying to a ROUTE_REQ.
+ *
+ * Implements the reply-eligibility policy:
+ *
+ *  1. A valid, non-expired entry for @p dst_id must exist.
+ *  2. The entry must NOT carry RCACHE_FLAG_PENDING (route is tentative —
+ *     we are still awaiting our own ROUTE_RPL for this destination).
+ *  3. entry->metric >= RCACHE_REPLY_MIN_METRIC (not a barely-heard path).
+ *  4. entry->hop_count <= RCACHE_REPLY_MAX_HOPS (not a deep stale chain).
+ *
+ * No memory allocation; safe to call from any context.
+ *
+ * @param cache   Route cache to query.
+ * @param dst_id  Destination node ID to test.
+ * @param now_ms  Monotonic millisecond timestamp (for expiry check).
+ * @return true  → caller should send a ROUTE_RPL for @p dst_id.
+ * @return false → stay silent (no entry / expired / pending / weak / deep).
+ */
+bool route_cache_can_reply_for_dst(route_cache_t *cache,
+                                    uint32_t       dst_id,
+                                    uint32_t       now_ms);
 
 #ifdef __cplusplus
 }

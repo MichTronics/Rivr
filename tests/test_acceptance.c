@@ -706,6 +706,9 @@ static void run5_airtime_sched(void)
  *   6h  ROUTE_RPL payload correct for cache case
  *   6i  requester correctly learns route from a cache-sourced ROUTE_RPL
  *   6j  requester drains pending queue after learning route via intermediate
+ *   6k  PENDING cache entry          → no reply (tentative route)
+ *   6l  metric < RCACHE_REPLY_MIN_METRIC → no reply (marginal link)
+ *   6m  hop_count > RCACHE_REPLY_MAX_HOPS → no reply (deep chain)
  * ══════════════════════════════════════════════════════════════════════════ */
 static void run6_route_req_reply_logic(void)
 {
@@ -885,6 +888,41 @@ static void run6_route_req_reply_logic(void)
     CHECK(gout6.dst_id == MY_NODE, "6j: drained dst_id == MY_NODE (intermediate)");
     CHECK(gout6.ttl    == 1u,      "6j: drained ttl == 1 (single-hop unicast)");
     CHECK(greq6.due_ms == 0u,      "6j: drained due_ms == 0 (send immediately)");
+
+    /* ── 6k: PENDING route → no reply ──────────────────────────────────── */
+    {
+        route_cache_t rck; route_cache_init(&rck);
+        uint32_t now_k = tb_millis();
+        route_cache_update(&rck, NODE_D, NODE_B, 1u, 80u,
+                           RCACHE_FLAG_VALID | RCACHE_FLAG_PENDING, now_k);
+        rivr_pkt_hdr_t req_k = req;
+        CHECK(!routing_should_reply_route_req(&req_k, MY_NODE, &rck, now_k),
+              "6k: PENDING route for target → no reply (tentative)");
+    }
+
+    /* ── 6l: metric below RCACHE_REPLY_MIN_METRIC → no reply ───────────── */
+    {
+        route_cache_t rcl; route_cache_init(&rcl);
+        uint32_t now_l = tb_millis();
+        route_cache_update(&rcl, NODE_D, NODE_B, 1u,
+                           RCACHE_REPLY_MIN_METRIC - 1u,
+                           RCACHE_FLAG_VALID, now_l);
+        rivr_pkt_hdr_t req_l = req;
+        CHECK(!routing_should_reply_route_req(&req_l, MY_NODE, &rcl, now_l),
+              "6l: weak route (metric < RCACHE_REPLY_MIN_METRIC) → no reply");
+    }
+
+    /* ── 6m: hop_count > RCACHE_REPLY_MAX_HOPS → no reply ───────────────── */
+    {
+        route_cache_t rcm; route_cache_init(&rcm);
+        uint32_t now_m = tb_millis();
+        route_cache_update(&rcm, NODE_D, NODE_B,
+                           RCACHE_REPLY_MAX_HOPS + 1u, 80u,
+                           RCACHE_FLAG_VALID, now_m);
+        rivr_pkt_hdr_t req_m = req;
+        CHECK(!routing_should_reply_route_req(&req_m, MY_NODE, &rcm, now_m),
+              "6m: deep route (hop_count > RCACHE_REPLY_MAX_HOPS) → no reply");
+    }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
