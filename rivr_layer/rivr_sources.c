@@ -209,11 +209,12 @@ uint32_t sources_rf_rx_drain(void)
          * ACK'd on first receipt).                                           */
         if ((pkt_hdr.flags & PKT_FLAG_ACK_REQ) != 0u
                 && pkt_hdr.dst_id == g_my_node_id) {
+            ++g_ctrl_seq;
             uint8_t ack_buf[RIVR_PKT_HDR_LEN + ACK_PAYLOAD_LEN + RIVR_PKT_CRC_LEN];
             int ack_len = routing_build_ack(
                 g_my_node_id, pkt_hdr.src_id,
                 pkt_hdr.src_id, pkt_hdr.pkt_id,
-                (uint16_t)++g_ctrl_seq, (uint16_t)g_ctrl_seq,
+                (uint16_t)g_ctrl_seq, (uint16_t)g_ctrl_seq,
                 ack_buf, (uint8_t)sizeof(ack_buf));
             if (ack_len > 0) {
                 rf_tx_request_t ack_req;
@@ -401,6 +402,7 @@ uint32_t sources_rf_rx_drain(void)
                     rpl_hops     = ce->hop_count;
                 }
 
+                ++g_ctrl_seq;
                 uint8_t rpl_buf[64];
                 int rpl_len = routing_build_route_rpl(
                     g_my_node_id,
@@ -408,7 +410,7 @@ uint32_t sources_rf_rx_drain(void)
                     rpl_target,       /* target_id in payload   */
                     rpl_next_hop,     /* next_hop in payload    */
                     rpl_hops,         /* hop_count in payload   */
-                    (uint16_t)++g_ctrl_seq, (uint16_t)g_ctrl_seq,
+                    (uint16_t)g_ctrl_seq, (uint16_t)g_ctrl_seq,
                     rpl_buf, sizeof(rpl_buf));
 
                 if (rpl_len > 0) {

@@ -128,10 +128,11 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                     req.data, req.len, req.toa_us, now_ms);
 
                 /* Build + enqueue ROUTE_REQ broadcast */
+                ++g_ctrl_seq;
                 uint8_t rreq_buf[RIVR_PKT_HDR_LEN + RIVR_PKT_CRC_LEN];
                 int rreq_enc = routing_build_route_req(
                     g_my_node_id, pkt.dst_id,
-                    (uint16_t)++g_ctrl_seq, (uint16_t)g_ctrl_seq,
+                    (uint16_t)g_ctrl_seq, (uint16_t)g_ctrl_seq,
                     rreq_buf, sizeof(rreq_buf));
                 bool rreq_ok = false;
                 if (rreq_enc > 0) {
