@@ -267,7 +267,7 @@ void routing_fwdbudget_init(forward_budget_t *fb)
 {
     if (!fb) return;
     memset(fb, 0, sizeof(*fb));
-    fb->max_fwd_count    = FWDBUDGET_MAX_FWD;
+    fb->max_fwd_count    = FWDBUDGET_MAX_FWD_ROLE;  /* role-scaled; see routing.h */
     fb->max_air_us       = FWDBUDGET_MAX_AIR_US;
     fb->max_hour_air_us  = FWDBUDGET_MAX_HOUR_AIR_US;
 }

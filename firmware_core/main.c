@@ -546,6 +546,23 @@ void app_main(void)
 
     /* Emit single-line build identity banner (git SHA, env, radio profile). */
     build_info_print_banner();
+
+    /* ── Role-specific startup ─────────────────────────────────────────────
+     * Log the active role and any role-governed capacity limits.
+     * Each role implies a set of compile-time knobs — this block makes them
+     * visible in the boot log so operators can confirm configuration.       */
+#if RIVR_ROLE_CLIENT
+    RIVR_LOGI(TAG, "role: CLIENT   | CLI enabled | relay budget=%u fwd/type/min",
+              (unsigned)FWDBUDGET_MAX_FWD_ROLE);
+#elif RIVR_ROLE_REPEATER
+    RIVR_LOGI(TAG, "role: REPEATER | relay budget=%u fwd/type/min | fabric=%s",
+              (unsigned)FWDBUDGET_MAX_FWD_ROLE,
+              RIVR_FABRIC_REPEATER ? "on" : "off");
+#elif RIVR_ROLE_GATEWAY
+    RIVR_LOGI(TAG, "role: GATEWAY  | stub — no active relay");
+#else
+    RIVR_LOGI(TAG, "role: GENERIC  | sim/test build");
+#endif
     /* Also emit @SUPPORTPACK at boot so the first log line is copy-paste ready. */
     {
         char sp_buf[768];

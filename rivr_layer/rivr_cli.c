@@ -30,6 +30,7 @@
  *   id                    print this node's 32-bit ID, callsign and net ID
  *   set callsign <CS>     set and persist callsign (max 11 chars, A-Z a-z 0-9 -)
  *   set netid <HEX>       set and persist network ID (hex 0..FFFF)
+ *   status                print role, node ID, routing snapshot, loop-guard drops
  *   help                  print command list
  *
  * TX PATH
@@ -234,6 +235,7 @@ static void cli_handle_line(void)
                "  supportpack           JSON dump: build info + metrics snapshot\r\n"
                "  neighbors             show live neighbour table with link scores\r\n"
                "  routes                show route cache with scores and ages\r\n"
+               "  status                role, node ID, routing snapshot, loop-guard drops\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
@@ -412,6 +414,42 @@ static void cli_handle_line(void)
         uint8_t  cnt    = route_cache_count(&g_route_cache, now_ms);
         printf("Routes (%u live):\r\n", (unsigned)cnt);
         route_cache_print(&g_route_cache, now_ms);
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "status" ── */
+    if (strncmp(p, "status", 6u) == 0 && (p[6] == '\0' || p[6] == ' ')) {
+        uint32_t now_ms  = tb_millis();
+        uint8_t  nbrs    = routing_neighbor_count(&g_neighbor_table, now_ms);
+        uint8_t  routes  = route_cache_count(&g_route_cache, now_ms);
+        uint8_t  pending = pending_queue_count(&g_pending_queue);
+        printf("Status:\r\n"
+               "  role          : " _RIVR_ROLE_TAG "\r\n"
+               "  node_id       : 0x%08lX\r\n"
+               "  callsign      : %s\r\n"
+               "  net_id        : 0x%04X\r\n"
+               "  uptime_ms     : %lu\r\n"
+               "  rx_frames     : %lu\r\n"
+               "  tx_frames     : %lu\r\n"
+               "  neighbors     : %u\r\n"
+               "  routes        : %u\r\n"
+               "  pending_queue : %u\r\n"
+               "  loop_drops    : %lu\r\n"
+               "  rc_hit        : %lu\r\n"
+               "  rc_miss       : %lu\r\n",
+               (unsigned long)g_my_node_id,
+               g_callsign,
+               (unsigned)g_net_id,
+               (unsigned long)now_ms,
+               (unsigned long)g_rx_frame_count,
+               (unsigned long)g_tx_frame_count,
+               (unsigned)nbrs,
+               (unsigned)routes,
+               (unsigned)pending,
+               (unsigned long)g_rivr_metrics.loop_detect_drop_total,
+               (unsigned long)g_rivr_metrics.route_cache_hit_total,
+               (unsigned long)g_rivr_metrics.route_cache_miss_total);
         fflush(stdout);
         return;
     }

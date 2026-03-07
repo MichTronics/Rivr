@@ -79,8 +79,8 @@ static uint32_t s_fail = 0;
  * ══════════════════════════════════════════════════════════════════════════ */
 static void run1_flood_correctness(void)
 {
-    /* FLOOD_BATCH < FWDBUDGET_MAX_FWD(30) and < DEDUPE_CACHE_SIZE(32)
-     * so neither the budget cap nor ring-wrap interfere with this test. */
+    /* FLOOD_BATCH < FWDBUDGET_MAX_FWD_ROLE (30 in sim/test builds, see routing.h)
+     * and < DEDUPE_CACHE_SIZE(32) so all packets are unique and under-budget.     * so neither the budget cap nor ring-wrap interfere with this test. */
 #define FLOOD_BATCH 25u
     printf("\n=== RUN 1: Flood Correctness (%u chat pkts) ===\n", (unsigned)FLOOD_BATCH);
 

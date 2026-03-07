@@ -14,6 +14,8 @@
  * ├──────────────────────────────────────────────────────────────────────┤
  * │ RIVR_ROLE_CLIENT             │  0      │ Node is a client (chat only) │
  * │ RIVR_ROLE_REPEATER           │  0      │ Node relays CHAT+DATA        │
+ * │ RIVR_ROLE_GATEWAY            │  0      │ Gateway stub (future IP      │
+ * │                              │         │ bridge — no active relay)    │
  * │ RIVR_FABRIC_REPEATER         │  0      │ Congestion fabric enabled    │
  * │ RIVR_RADIO_SX1262            │  1      │ Use SX1262/E22 driver        │
  * │ RIVR_RADIO_SX1276            │  0      │ Use SX1276/RFM95 driver      │
@@ -52,6 +54,16 @@
 /** Repeater node: relays CHAT, DATA, and all control frames. */
 #ifndef RIVR_ROLE_REPEATER
 #  define RIVR_ROLE_REPEATER     0
+#endif
+
+/**
+ * Gateway node (stub): reserved for a future IP-bridge implementation.
+ * When RIVR_ROLE_GATEWAY=1 the node boots but performs no active relay;
+ * the application layer is responsible for bridging RF↔IP.
+ * Cannot be combined with CLIENT or REPEATER.
+ */
+#ifndef RIVR_ROLE_GATEWAY
+#  define RIVR_ROLE_GATEWAY      0
 #endif
 
 /** Congestion-aware relay suppression (effective only when ROLE_REPEATER=1). */
@@ -176,9 +188,13 @@
 #  error "RIVR: Both RIVR_ROLE_CLIENT and RIVR_ROLE_REPEATER are set — pick one."
 #endif
 
+#if RIVR_ROLE_GATEWAY && (RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER)
+#  error "RIVR: RIVR_ROLE_GATEWAY cannot be combined with RIVR_ROLE_CLIENT or RIVR_ROLE_REPEATER."
+#endif
+
 /* Warn (not error) when no role is set — valid for tests / generic builds */
-#if !RIVR_ROLE_CLIENT && !RIVR_ROLE_REPEATER && !RIVR_SIM_MODE
-#  pragma message("RIVR: No role flag set (RIVR_ROLE_CLIENT / RIVR_ROLE_REPEATER). Using generic defaults.")
+#if !RIVR_ROLE_CLIENT && !RIVR_ROLE_REPEATER && !RIVR_ROLE_GATEWAY && !RIVR_SIM_MODE
+#  pragma message("RIVR: No role flag set (RIVR_ROLE_CLIENT / RIVR_ROLE_REPEATER / RIVR_ROLE_GATEWAY). Using generic defaults.")
 #endif
 
 /* ── Feature string (for build_info banner) ─────────────────────────────── */

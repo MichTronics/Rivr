@@ -54,8 +54,10 @@ extern "C" {
 
 #if RIVR_ROLE_CLIENT
 #  define _RIVR_ROLE_TAG "client"
-#elif defined(RIVR_BUILD_REPEATER) && RIVR_BUILD_REPEATER
+#elif RIVR_ROLE_REPEATER || (defined(RIVR_BUILD_REPEATER) && RIVR_BUILD_REPEATER)
 #  define _RIVR_ROLE_TAG "repeater"
+#elif RIVR_ROLE_GATEWAY
+#  define _RIVR_ROLE_TAG "gateway"
 #else
 #  define _RIVR_ROLE_TAG "generic"
 #endif

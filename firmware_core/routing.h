@@ -49,6 +49,7 @@
 #include <stdbool.h>
 #include "protocol.h"
 #include "route_cache.h"   /* route_cache_t, route_cache_lookup() */
+#include "hal/feature_flags.h"  /* RIVR_ROLE_REPEATER for budget scaling */
 
 #ifdef __cplusplus
 extern "C" {
@@ -258,8 +259,22 @@ typedef enum {
 
 #define FWDBUDGET_PKT_TYPES    8u           /**< Types 0–7                     */
 #define FWDBUDGET_WINDOW_MS    60000u       /**< Rolling 1-minute window        */
-#define FWDBUDGET_MAX_FWD      30u          /**< Max forwards / type / minute   */
+#define FWDBUDGET_MAX_FWD      30u          /**< Max forwards / type / minute (base) */
 #define FWDBUDGET_MAX_AIR_US   3000000u     /**< Max airtime / type / minute    */
+
+/**
+ * Role-specific forward rate cap (applied by routing_fwdbudget_init).
+ *   REPEATER : 60 fwd/type/min — optimised for relay throughput.
+ *   CLIENT   : 20 fwd/type/min — conservative; client is not a relay hub.
+ *   generic  : 30 fwd/type/min — base constant (sim/test default).
+ */
+#if RIVR_ROLE_REPEATER
+#  define FWDBUDGET_MAX_FWD_ROLE  60u
+#elif RIVR_ROLE_CLIENT
+#  define FWDBUDGET_MAX_FWD_ROLE  20u
+#else
+#  define FWDBUDGET_MAX_FWD_ROLE  FWDBUDGET_MAX_FWD  /**< sim/test: use base 30 */
+#endif
                                             /**  (3 s = ~5% duty on SF9 BW125) */
 
 /* Hour-level airtime cap (independent of the per-minute per-type caps). */
