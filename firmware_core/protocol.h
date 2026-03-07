@@ -72,6 +72,53 @@ extern "C" {
  *  Receiver stores to NVS and hot-reloads the engine.  Not relayed. */
 #define PKT_PROG_PUSH      7u
 
+/** Compact sensor / telemetry reading (SVC_TELEMETRY_PAYLOAD_LEN = 11 bytes):
+ *   [0–1]  sensor_id  u16 LE — application-defined sensor identifier
+ *   [2–5]  value      i32 LE — scaled integer (e.g. °C × 100, mV, ppm × 100)
+ *   [6]    unit_code  u8     — UNIT_* constant (0 = NONE, 1 = CELSIUS, …)
+ *   [7–10] timestamp  u32 LE — seconds since node boot (0 = unset) */
+#define PKT_TELEMETRY      8u
+
+/** Store-and-forward mailbox message (SVC_MAILBOX_HDR_LEN = 7 bytes + text):
+ *   [0–3]  recipient_id  u32 LE — intended final recipient; 0 = any store node
+ *   [4–5]  msg_seq       u16 LE — per-origin message sequence counter
+ *   [6]    flags         u8     — MB_FLAG_* bitmask
+ *   [7..N] text payload  UTF-8  — message body (N ≤ RIVR_PKT_MAX_PAYLOAD − 7) */
+#define PKT_MAILBOX        9u
+
+/** Priority event notification (SVC_ALERT_PAYLOAD_LEN = 7 bytes):
+ *   [0]    severity    u8     — ALERT_SEV_INFO/WARN/CRIT (1/2/3)
+ *   [1–2]  alert_code  u16 LE — application-defined event code
+ *   [3–6]  value       i32 LE — associated reading (e.g. batt_mv, temp × 100) */
+#define PKT_ALERT         10u
+
+/* ── Service payload lengths ─────────────────────────────────────────────── */
+
+#define SVC_TELEMETRY_PAYLOAD_LEN  11u   /**< Fixed telemetry field size             */
+#define SVC_MAILBOX_HDR_LEN         7u   /**< Fixed header in PKT_MAILBOX frames     */
+/** Maximum text body in a PKT_MAILBOX payload. */
+#define SVC_MAILBOX_MAX_TEXT  ((uint8_t)(RIVR_PKT_MAX_PAYLOAD - SVC_MAILBOX_HDR_LEN))
+#define SVC_ALERT_PAYLOAD_LEN       7u   /**< Fixed alert field size                 */
+
+/* ── Telemetry unit codes ────────────────────────────────────────────────── */
+#define UNIT_NONE          0u   /**< Dimensionless / raw ADC                  */
+#define UNIT_CELSIUS       1u   /**< Temperature — value = °C × 100          */
+#define UNIT_PERCENT_RH    2u   /**< Relative humidity — value = %RH × 100   */
+#define UNIT_MILLIVOLTS    3u   /**< Voltage — value = mV                     */
+#define UNIT_DBM           4u   /**< Signal strength — value = dBm            */
+#define UNIT_PPM           5u   /**< Gas concentration — value = ppm × 100   */
+#define UNIT_CUSTOM      255u   /**< Vendor-specific; interpret via alert_code*/
+
+/* ── Alert severity levels ───────────────────────────────────────────────── */
+#define ALERT_SEV_INFO     1u   /**< Informational — no immediate action needed */
+#define ALERT_SEV_WARN     2u   /**< Caution — threshold exceeded               */
+#define ALERT_SEV_CRIT     3u   /**< Critical — immediate attention required    */
+
+/* ── Mailbox flags ───────────────────────────────────────────────────────── */
+#define MB_FLAG_NEW        0x01u /**< Message not yet read at destination      */
+#define MB_FLAG_DELIVERED  0x02u /**< Delivery confirmed (set by recipient ACK)*/
+#define MB_FLAG_FORWARD    0x04u /**< Frame is at an intermediate store node   */
+
 /** Beacon payload layout (11 bytes after header):
  *  [0..9]  callsign (ASCII, NUL-padded)
  *  [10]    hop_count (always 0 for the originating node)

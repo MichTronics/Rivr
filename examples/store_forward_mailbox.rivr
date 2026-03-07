@@ -1,7 +1,71 @@
 // examples/store_forward_mailbox.rivr
 //
-// Store-and-forward message buffer for intermittently-reachable nodes.
+// Store-and-forward mailbox for intermittently-reachable nodes.
 //
+// Use case: a node at the edge of the mesh that only becomes reachable for
+// brief periods (e.g. a mobile node, or one with a directional antenna).
+// This program works with the new PKT_MAILBOX (9) service type, which
+// provides a dedicated store-and-forward primitive with:
+//
+//   Wire format (PKT_MAILBOX payload, ≤ RIVR_PKT_MAX_PAYLOAD bytes):
+//     [0–3]  recipient_id  u32 LE  — final recipient; 0 = any store node
+//     [4–5]  msg_seq       u16 LE  — per-source sequence counter
+//     [6]    flags         u8      — MB_FLAG_NEW | MB_FLAG_DELIVERED | MB_FLAG_FORWARD
+//     [7..N] text payload  UTF-8   — message body
+//
+// C-layer behaviour (handle_mailbox_store in rivr_svc.c):
+//   • Frames addressed to this node (recipient_id == my_id || 0) are stored
+//     in g_mailbox_store (8-entry LRU ring buffer in BSS; no heap).
+//   • A @MAIL JSON log line is printed for every received frame.
+//   • Other frames continue through the relay path to their destination.
+//
+// RIVR program role:
+//   The RIVR engine controls relay gating and timing.  The window collects
+//   up to 8 mailbox frames per 12-tick window; overflow evicts the oldest.
+//   A 3-tick delay separates re-forwards from the original flood burst.
+//   The 4 % duty-cycle cap prevents the re-forward burst from saturating
+//   the channel on crowded mesh segments.
+//
+// Also keeps PKT_CHAT (1) buffering for nodes that have not migrated to
+// the PKT_MAILBOX service yet (backward-compatible transition period).
+
+source rf_rx @lmp = rf;            // LoRa receive stream (Lamport clock)
+source beacon_tick = timer(30000); // 30 s beacon so we show up in neighbour lists
+
+// ── PKT_MAILBOX buffer (primary) ─────────────────────────────────────────────
+// New dedicated store-and-forward service: collect up to 8 frames per window,
+// defer forwarding by 3 ticks, then re-emit under a tight duty-cycle cap.
+
+let mailbox_buffered = rf_rx
+  |> filter.pkt_type(9)
+  |> window.ticks(12, 8, "drop_oldest")
+  |> delay.ticks(3)
+  |> budget.toa_us(600000, 0.04, 280000);
+
+// ── PKT_CHAT buffer (legacy, backward-compatible) ────────────────────────────
+// Same windowing strategy as mailbox for nodes that still use plain chat.
+
+let chat_buffered = rf_rx
+  |> filter.pkt_type(1)
+  |> window.ticks(12, 8, "drop_oldest")
+  |> delay.ticks(3)
+  |> budget.toa_us(600000, 0.04, 280000);
+
+// ── PKT_ALERT pass-through (no buffering — always forward immediately) ────────
+// Priority alerts must not be delayed by window accumulation.
+
+let alerts = rf_rx
+  |> filter.pkt_type(10)
+  |> budget.toa_us(600000, 0.20, 280000);
+
+// ── Emit ────────────────────────────────────────────────────────────────────
+
+emit { io.lora.tx(mailbox_buffered); }  // re-forward mailbox burst over LoRa
+emit { io.usb.print(mailbox_buffered); } // local serial log of mailbox bursts
+emit { io.lora.tx(chat_buffered); }     // re-forward legacy chat burst
+emit { io.lora.tx(alerts); }            // immediate alert relay
+emit { io.lora.beacon(beacon_tick); }   // periodic presence advertisement
+
 // Use case: a node at the edge of the mesh that only becomes reachable for
 // brief periods (e.g. a mobile node, or one with a directional antenna).
 // This program collects incoming chat messages in a bounded ring buffer and

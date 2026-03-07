@@ -25,6 +25,7 @@
 #include "../firmware_core/policy.h"
 #include "../firmware_core/rivr_policy.h"
 #include "../firmware_core/retry_table.h"
+#include "rivr_svc.h"
 
 #define TAG "RIVR_SRC"
 
@@ -495,6 +496,34 @@ uint32_t sources_rf_rx_drain(void)
             goto maybe_relay;
         }
 
+        /* ── 5d. Application service dispatch ──────────────────────────────── *
+         * Handlers are called for every matching frame that reaches this node. *
+         * Each handler emits a structured @-prefixed log line and, in the     *
+         * case of MAILBOX, updates g_mailbox_store.  All frames still proceed *
+         * to RIVR injection and the relay path below.                         *
+         * ─────────────────────────────────────────────────────────────────── */
+        if (pkt_hdr.pkt_type == PKT_CHAT
+                && payload_ptr != NULL && pkt_hdr.payload_len > 0u) {
+            handle_chat_message(&pkt_hdr, payload_ptr,
+                                pkt_hdr.payload_len, frame.rssi_dbm);
+        }
+        if (pkt_hdr.pkt_type == PKT_TELEMETRY
+                && payload_ptr != NULL
+                && pkt_hdr.payload_len >= SVC_TELEMETRY_PAYLOAD_LEN) {
+            handle_telemetry_publish(&pkt_hdr, payload_ptr, pkt_hdr.payload_len);
+        }
+        if (pkt_hdr.pkt_type == PKT_MAILBOX
+                && payload_ptr != NULL
+                && pkt_hdr.payload_len >= SVC_MAILBOX_HDR_LEN) {
+            handle_mailbox_store(&pkt_hdr, payload_ptr,
+                                  pkt_hdr.payload_len, now_ms);
+        }
+        if (pkt_hdr.pkt_type == PKT_ALERT
+                && payload_ptr != NULL
+                && pkt_hdr.payload_len >= SVC_ALERT_PAYLOAD_LEN) {
+            handle_alert_event(&pkt_hdr, payload_ptr, pkt_hdr.payload_len);
+        }
+
         /* ── 6. Inject non-control frames into RIVR ── */
         {
             /* Advance Lamport clock using sender's seq as hint */
@@ -524,14 +553,7 @@ uint32_t sources_rf_rx_drain(void)
             }
         }
 
-        /* ── 6b. Display received chat messages on the client serial console ── */
-#if RIVR_ROLE_CLIENT
-        if (pkt_hdr.pkt_type == PKT_CHAT
-                && payload_ptr != NULL
-                && pkt_hdr.payload_len > 0u) {
-            rivr_cli_on_chat_rx(pkt_hdr.src_id, payload_ptr, pkt_hdr.payload_len);
-        }
-#endif /* RIVR_ROLE_CLIENT */
+        /* ── 6b. Chat display is handled by handle_chat_message() in step 5d. ── */
 
         /* ── 7. Phase-A relay: re-encode modified header + enqueue with deterministic jitter ── */
         maybe_relay:

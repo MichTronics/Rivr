@@ -1,7 +1,98 @@
 // examples/chat_relay.rivr
 //
-// Full mesh relay with EU868 duty-cycle gating.
+// Full mesh relay with EU868 duty-cycle gating for all four application
+// services: CHAT, TELEMETRY, ALERT, and MAILBOX.
 //
+// Node role: relay-only (no originating traffic).  Install on repeater
+// nodes mounted at elevation to extend mesh coverage.  The program
+// decides whether a received frame is allowed to be re-transmitted;
+// the actual relay TX (hop increment, TTL decrement, jitter) is
+// performed by the C-layer (rivr_sources.c / maybe_relay).
+//
+// Service types relayed:
+//   PKT_CHAT      (1) — person-to-person text messages
+//   PKT_DATA      (6) — generic sensor payloads (legacy)
+//   PKT_TELEMETRY (8) — compact structured sensor readings
+//   PKT_ALERT     (10)— priority event notifications (elevated duty)
+//   PKT_MAILBOX   (9) — store-and-forward messages (no dedup throttle;
+//                        freshness is maintained by the C-layer mailbox store)
+//
+// EU868 g3 sub-band parameters:
+//   Frequency : 869.480 MHz
+//   Modulation: SF8, BW 125 kHz, CR 4/8
+//   ToA (50B) : ~280 ms
+//   Duty cycle budgets (percentage of 5-minute sliding window):
+//     chat      10 % → 30 s airtime / window
+//     data       5 % → 15 s airtime / window
+//     telemetry  5 % → 15 s airtime / window
+//     alert     20 % → 60 s airtime / window  (priority)
+//     mailbox    4 % → 12 s airtime / window  (deferred re-forward)
+//
+// Flash this program via OTA:
+//   echo "$(cat examples/chat_relay.rivr)" | rivr_push --target <NODE_ID>
+
+source rf_rx       @lmp = rf;           // LoRa receive stream (Lamport clock)
+source beacon_tick      = timer(30000); // 30-second periodic beacon
+
+// ── CHAT relay ──────────────────────────────────────────────────────────────
+// Rate-limited to 10 % EU868 g3 duty cycle over a 5-minute sliding window.
+// throttle.ticks(1) deduplicates flood copies within the same Lamport tick
+// so the node never relays the same packet twice.
+
+let chat = rf_rx
+  |> filter.pkt_type(1)
+  |> budget.toa_us(300000, 0.10, 280000)
+  |> throttle.ticks(1);
+
+// ── DATA relay (legacy PKT_DATA = 6) ────────────────────────────────────────
+// PKT_DATA packets are typically short (<20 bytes), so a lighter budget
+// is sufficient.  One relay per Lamport tick prevents burst amplification.
+
+let data = rf_rx
+  |> filter.pkt_type(6)
+  |> budget.toa_us(300000, 0.05, 280000)
+  |> throttle.ticks(1);
+
+// ── TELEMETRY relay (PKT_TELEMETRY = 8) ─────────────────────────────────────
+// Compact 11-byte structured readings: sensor_id, value, unit_code, timestamp.
+// The C-layer handle_telemetry_publish() logs a @TEL JSON line on every
+// reception; this pipeline controls mesh propagation.
+
+let telemetry = rf_rx
+  |> filter.pkt_type(8)
+  |> budget.toa_us(300000, 0.05, 280000)
+  |> throttle.ticks(1);
+
+// ── ALERT relay (PKT_ALERT = 10) ────────────────────────────────────────────
+// 7-byte priority notifications: severity, alert_code, associated value.
+// Higher duty allowance ensures critical alerts propagate quickly.
+// No per-tick throttle — every alert is relayed immediately.
+
+let alerts = rf_rx
+  |> filter.pkt_type(10)
+  |> budget.toa_us(300000, 0.20, 280000);
+
+// ── MAILBOX relay (PKT_MAILBOX = 9) ─────────────────────────────────────────
+// 7-byte header + free-form text body.  The C-layer handle_mailbox_store()
+// checks recipient_id: frames addressed to this node are stored locally;
+// all others continue through the relay path to reach their destination.
+// A 4-tick deferred window lets the C-layer finish processing before
+// the re-forward burst is emitted.
+
+let mailbox = rf_rx
+  |> filter.pkt_type(9)
+  |> budget.toa_us(300000, 0.04, 280000)
+  |> throttle.ticks(4);
+
+// ── Emit ────────────────────────────────────────────────────────────────────
+
+emit { io.lora.tx(chat); }             // gate C-layer chat relay
+emit { io.lora.tx(data); }             // gate C-layer data relay
+emit { io.lora.tx(telemetry); }        // gate C-layer telemetry relay
+emit { io.lora.tx(alerts); }           // gate C-layer alert relay (priority)
+emit { io.lora.tx(mailbox); }          // gate C-layer mailbox relay
+emit { io.lora.beacon(beacon_tick); }  // periodic presence advertisement
+
 // Node role: relay-only (no originating traffic).  Install on repeater
 // nodes mounted at elevation to extend mesh coverage.  The program
 // decides whether a received frame is allowed to be re-transmitted;

@@ -1,7 +1,88 @@
 // examples/telemetry_periodic.rivr
 //
-// Periodic uptime / heartbeat transmitter.
+// Telemetry aggregation: count and window incoming PKT_TELEMETRY frames,
+// relay them under duty-cycle constraints, and transmit a periodic heartbeat.
 //
+// Use case: an aggregation / gateway node that:
+//   1. Relays incoming PKT_TELEMETRY (8) frames from sensor nodes.
+//   2. Counts received frames in a 30-second tumbling window and reports
+//      the count over USB so a host tool can detect sensor outages.
+//   3. Emits its own uptime-tick heartbeat as a PKT_DATA frame every
+//      5 minutes so the mesh knows this gateway is alive.
+//
+// Wire format reminder — PKT_TELEMETRY (8) payload (11 bytes fixed):
+//   [0–1]  sensor_id  u16 LE  — application-defined sensor ID
+//   [2–5]  value      i32 LE  — scaled integer (°C×100, mV, ppm×100, …)
+//   [6]    unit_code  u8      — UNIT_CELSIUS / UNIT_MILLIVOLTS / UNIT_PPM / …
+//   [7–10] timestamp  u32 LE  — seconds since node boot (0 = unset)
+//
+// The C-layer handle_telemetry_publish() decodes each frame and prints:
+//   @TEL {"src":"0x…","sid":N,"val":V,"unit":U,"unit_str":"C*100","ts":T}
+//
+// This RIVR program adds:
+//   - Relay gating (duty-cycle budget)
+//   - 30-second reception windows for host-side outage detection
+//   - A running frame count alongside the heartbeat uptime counter
+//
+// Resource budget (SF8, BW 125 kHz, 50-byte frame, ~280 ms ToA):
+//   Telemetry relay: 10 % over 5-minute window → 30 s max airtime
+//   Heartbeat:       ~50 ms every 5 min → < 0.01 % daily
+
+source rf_rx       @lmp  = rf;           // LoRa receive stream (Lamport clock)
+source beacon_tick       = timer(30000); // 30-second periodic beacon
+source heartbeat_tick    = timer(300000);// 5-minute uptime heartbeat
+
+// ── Incoming TELEMETRY relay ─────────────────────────────────────────────────
+// Gate relaying of PKT_TELEMETRY frames to 10 % duty cycle.
+// throttle.ticks(1) drops duplicate floods within the same Lamport tick.
+
+let tel_relay = rf_rx
+  |> filter.pkt_type(8)
+  |> budget.toa_us(300000, 0.10, 280000)
+  |> throttle.ticks(1);
+
+// ── 30-second reception window (outage detection) ────────────────────────────
+// Collects all telemetry arrivals in a tumbling 30-second window.
+// The host tool can alert if a window emits 0 frames (sensor silent).
+// CAP=32 prevents unbounded accumulation on high-density sensor fields.
+
+let tel_window = rf_rx
+  |> filter.pkt_type(8)
+  |> window.ms(30000);
+
+// ── Running frame counter ────────────────────────────────────────────────────
+// Emits the cumulative count each time a telemetry frame arrives.
+// Resets to zero at boot (not persisted; a lower-than-expected count
+// indicates a gateway reboot, not a sensor gap).
+
+let tel_count = rf_rx
+  |> filter.pkt_type(8)
+  |> fold.count();
+
+// ── Uptime heartbeat ─────────────────────────────────────────────────────────
+// Turns each timer event into a monotonically increasing integer counter.
+// On the first tick this emits 1, on the second 2, and so on.
+
+let uptime = heartbeat_tick
+  |> fold.count();
+
+// ── Alert relay (pass-through, no window) ────────────────────────────────────
+// PKT_ALERT frames need low latency — relay immediately without windowing.
+
+let alerts = rf_rx
+  |> filter.pkt_type(10)
+  |> budget.toa_us(300000, 0.20, 280000);
+
+// ── Emit ────────────────────────────────────────────────────────────────────
+
+emit { io.lora.tx(tel_relay); }        // gate C-layer telemetry relay
+emit { io.lora.tx(alerts); }           // gate C-layer alert relay
+emit { io.usb.print(tel_window); }     // 30-second window events → host
+emit { io.usb.print(tel_count); }      // running frame count → host
+emit { io.lora.tx(uptime); }           // transmit heartbeat over LoRa (PKT_DATA)
+emit { io.usb.print(uptime); }         // echo counter to UART for debugging
+emit { io.lora.beacon(beacon_tick); }  // periodic presence advertisement
+
 // Use case: a sensor node that must prove it is alive at regular intervals
 // without carrying any meaningful sensor data.  Transmits a monotonically
 // increasing counter ("uptime ticks") as a PKT_DATA frame over LoRa every
