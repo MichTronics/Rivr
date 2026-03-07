@@ -55,7 +55,9 @@
 | `platform_esp32.c` | Klokdivisie, SPI-bus, GPIO-initialisatie |
 | `radio_sx1262.c` | SX1262-stuurprogramma; `radio_isr()` zet alleen vlag (geen SPI in ISR); `radio_service_rx()` doet alle SPI vanuit de hoofdlus |
 | `protocol.c` | Binaire frame-encode/decode met CRC-16 |
-| `routing.c` | Dedupe-cache, hop-limietcontrole, buurttabel |
+| `routing.c` | Dedupe-cache (LRU-ring), TTL-decrement, jitter, doorstuurbudgetlimieten, lusbeveiligingsvingerafdruk; `routing_next_hop_score()` berekent composiet RSSI+SNR-score voor een kandidaät-volgende-hop |
+| `route_cache.c` | Unicast reverse-path-cache; `rivr_route_t` (bestemming, volgende-hop, metric, hop-aantal, vervaltijd); `route_cache_best_hop()` drietraps volgende-hopbeslissing: (1) beste gecachede entry op score, (2) directe nabuurfallback via `neighbor_best()`, (3) retourneer false → aanroeper verstuurt als flood |
+| `neighbor_table.c` | 16-slot BSS koppelkwaliteitstabel; `rivr_neighbor_t` met EWMA RSSI/SNR, seq-gap verliespercentage, `last_seen_ms` en vlaggen (`NTABLE_FLAG_DIRECT`, `NTABLE_FLAG_STALE`, `NTABLE_FLAG_BEACON`); API: `neighbor_update()`, `neighbor_find()`, `neighbor_best()`, `neighbor_link_score()`, `neighbor_set_flag()`, `neighbor_table_expire()`; globale `g_ntable` beschikbaar via `rivr_embed.h` |
 | `rivr_fabric.c` | Congestie-bewuste relaybeslissingen: 60 s schuivend-venster-score, DELAY/DROP voor `PKT_CHAT`/`PKT_DATA`-relay; actief wanneer `RIVR_FABRIC_REPEATER=1` |
 | `rivr_policy.c` | Runtime-instelbaar beleid: beacon-interval, TX-vermogen, relay-throttle, knooprol; `@PARAMS`-parser + NVS-opslag; `@POLICY` JSON-rapportage; oorsprongspoort (`rivr_policy_allow_origination()`); HMAC-SHA-256 handtekeningverificatie (`rivr_verify_params_sig()`); `policy` CLI-commando; statistiektellers; selftest |
 | `rivr_ota.c` | Ondertekende `PKT_PROG_PUSH`-poort: Ed25519-verificatie, anti-replay volgnummer in NVS, `rivr_ota_activate()` / `rivr_ota_confirm()` / `rivr_ota_is_pending()` |

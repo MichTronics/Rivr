@@ -65,7 +65,10 @@ rivr/
 │   ├── platform_esp32.c/.h GPIO / SPI / LED init
 │   ├── ringbuf.h           Lock-free SPSC ring buffer
 │   ├── protocol.c/.h       Binary on-air packet format (encode/decode/CRC)
-│   ├── routing.c/.h        Dedupe cache, TTL, neighbour table
+│   ├── routing.c/.h        Dedupe cache, TTL, jitter, forward-budget caps, loop-guard
+│   ├── route_cache.c/.h    Unicast reverse-path cache; `route_cache_best_hop()` three-tier next-hop
+│   ├── neighbor_table.c/.h 16-slot EWMA link-quality table; `neighbor_update/best/expire`
+│   ├── pending_queue.c/.h  16-slot pending queue (ACK-awaiting unicast frames)
 │   ├── rivr_policy.c/.h    Runtime @PARAMS policy, role enforcement, origination gate, HMAC sig
 │   ├── rivr_ota.c/.h       Signed PKT_PROG_PUSH gate (Ed25519 + anti-replay)
 │   └── crypto/             Self-contained SHA-256 + HMAC-SHA-256 (no heap)

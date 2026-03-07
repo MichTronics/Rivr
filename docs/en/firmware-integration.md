@@ -279,18 +279,28 @@ Both functions return `0` on success, negative error code on failure.
 
 ## Routing API
 
-`firmware_core/routing.h` provides lightweight deduplication and forwarding
-decisions without heap allocation.
+`firmware_core/routing.h` provides lightweight deduplication, forwarding
+decisions, and next-hop quality scoring without heap allocation.
 
 ```c
-/* Returns non-zero if this (src, seq_no) pair was already seen recently */
-int routing_dedupe_check(uint32_t src_node_id, uint32_t seq_no);
+/* Returns non-zero if this (src_id, pkt_id) pair was already seen recently.
+ * NOTE: Phase 11 split the original uint32 seq into seq (u16) + pkt_id (u16).
+ * Dedupe keys on pkt_id; seq is the application-level ordering field. */
+int routing_dedupe_check(uint32_t src_node_id, uint16_t pkt_id);
 
 /* Returns non-zero if the frame should be forwarded based on hop_limit */
 int routing_should_forward(const rivr_pkt_hdr_t *hdr);
 
-/* Update neighbour table with signal-quality information */
+/* Update built-in neighbour table with signal-quality information */
 void routing_update_neighbour(uint32_t node_id, int8_t rssi, int8_t snr);
+
+/* Compute composite next-hop desirability score for a candidate peer.
+ * Uses the neighbor_table entry for candidate_id: RSSI+SNR quality,
+ * STALE flag penalty, loss-rate penalty.  Returns 0 if peer is unknown
+ * or expired.  Used internally by route_cache_best_hop(). */
+uint8_t routing_next_hop_score(const rivr_neighbor_table_t *ntbl,
+                               uint32_t candidate_id,
+                               uint32_t now_ms);
 ```
 
 Typical usage in the main loop (**not** in the ISR — SPI calls are illegal from interrupt context on ESP32):
@@ -302,13 +312,83 @@ uint8_t payload[128];
 if (protocol_decode(raw, raw_len, &hdr, payload, sizeof(payload)) < 0)
     return;                                        // bad CRC → drop
 
-if (routing_dedupe_check(hdr.src_node_id, hdr.seq_no))
+if (routing_dedupe_check(hdr.src_node_id, hdr.pkt_id))
     return;                                        // duplicate → drop
+
+neighbor_update(&g_ntable, hdr.src_node_id,       // update link-quality table
+                last_rssi, last_snr, hdr.seq, tb_millis(), flags);
 
 if (routing_should_forward(&hdr))
     rf_enqueue(raw, raw_len);                      // re-broadcast
 
 rivr_inject_event(&(rivr_event_t){ ... });         // feed local pipeline
+```
+
+---
+
+## Neighbor Table API
+
+`firmware_core/neighbor_table.h` provides a 16-slot BSS link-quality table
+that tracks EWMA RSSI/SNR and seq-gap loss-rate for every directly heard peer.
+The global `g_ntable` instance is declared in `rivr_embed.h` and initialised
+by `rivr_embed_init()`.
+
+```c
+#include "firmware_core/neighbor_table.h"
+
+/* Initialise (zero) the table — called once from rivr_embed_init() */
+void neighbor_table_init(rivr_neighbor_table_t *tbl);
+
+/* Called on every valid decoded RX frame to update or insert the peer entry.
+ * Returns a pointer to the updated entry (never NULL — evicts LRU on overflow). */
+rivr_neighbor_t *neighbor_update(rivr_neighbor_table_t *tbl,
+                                 uint32_t id, int16_t rssi, int8_t snr,
+                                 uint16_t seq, uint32_t now_ms, uint8_t flags);
+
+/* Lookup a peer by node ID.  Returns NULL if not in table. */
+const rivr_neighbor_t *neighbor_find(const rivr_neighbor_table_t *tbl,
+                                     uint32_t id);
+
+/* Return the peer with the highest composite link score.
+ * Excludes STALE entries.  Returns NULL if the table is empty. */
+const rivr_neighbor_t *neighbor_best(const rivr_neighbor_table_t *tbl,
+                                     uint32_t now_ms);
+
+/* Composite link score for a single entry (0–255). */
+uint8_t neighbor_link_score(const rivr_neighbor_t *n);
+
+/* Set or clear a flag bit on a peer entry (no-op if peer not found). */
+void neighbor_set_flag(rivr_neighbor_table_t *tbl, uint32_t id, uint8_t flag);
+
+/* Expire stale entries.  Returns the number of entries evicted.
+ * Call periodically (e.g. every 10 s) from the main loop. */
+uint8_t neighbor_table_expire(rivr_neighbor_table_t *tbl, uint32_t now_ms);
+```
+
+### Flag constants
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `NTABLE_FLAG_DIRECT` | `0x01` | Frame received directly (hop count == 1) |
+| `NTABLE_FLAG_STALE` | `0x02` | No frame for > `NTABLE_STALE_MS` (30 s) |
+| `NTABLE_FLAG_BEACON` | `0x04` | Last-heard frame was `PKT_BEACON` |
+
+### Next-hop routing integration
+
+`route_cache_best_hop()` (in `firmware_core/route_cache.h`) uses the neighbor
+table to select the best unicast next-hop:
+
+```c
+/* Three-tier next-hop decision:
+ *   1. Scan cache entries for dst_id → pick highest entry_composite_score().
+ *   2. No cache hit → use neighbor_best() if score ≥ NTABLE_SCORE_UNICAST_MIN.
+ *   3. No viable hop → return false (caller should flood).
+ * Increments neighbor_route_used_total or neighbor_route_failed_total. */
+bool route_cache_best_hop(route_cache_t *cache,
+                          const rivr_neighbor_table_t *ntbl,
+                          uint32_t dst_id,
+                          uint32_t now_ms,
+                          rivr_route_t *out);
 ```
 
 ---

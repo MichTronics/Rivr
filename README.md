@@ -144,7 +144,8 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 | **Reactive DSL** | Composable `filter / window / merge / budget / emit` pipeline |
 | **Zero heap after boot** | All engine state in BSS; deterministic memory footprint |
 | **EU868 duty-cycle limiter** | 1-hour sliding window, 512-slot ring buffer with LRU eviction; 10 % default (g3) |
-| **Mesh routing** | Flood (TTL/hop/dedupe) + unicast (reverse-path cache) + 16-slot pending queue |
+| **Mesh routing** | Flood (TTL/hop/dedupe) + unicast (reverse-path cache) + 16-slot pending queue; three-tier next-hop selection via neighbor-quality scores (`route_cache_best_hop`) |
+| **Neighbor-quality tracking** | EWMA RSSI/SNR + seq-gap loss-rate per peer; 16-slot BSS table; `DIRECT`/`STALE`/`BEACON` flags; `neighbor_best()` score drives unicast fallback |
 | **Rivr Fabric** | Congestion-aware relay suppression for repeater nodes |
 | **Application services** | CHAT · TELEMETRY · MAILBOX · ALERT — structured service dispatch with `@CHT`/`@TEL`/`@MAIL`/`@ALERT` JSON log records; 8-entry LRU mailbox store in BSS |
 | **OTA program push** | `PKT_PROG_PUSH` delivers a new RIVR program over the mesh; Ed25519-signed, hot-reloaded from NVS |
@@ -152,7 +153,7 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 | **Signed `@PARAMS`** | Optional HMAC-SHA-256 PSK authentication of `@PARAMS` updates; `sig=<64hex>` wire field; rejected frames emit `@PARAMS REJECTED sig` |
 | **USB origination gate** | `rivr_policy_allow_origination()` blocks new chat originations when airtime budget is depleted; rejected frames emit `@DROP` |
 | **OLED UI** | SSD1306 128×64; 7 auto-rotating pages: overview, RF, routing, duty-cycle, RIVR VM, neighbours, Fabric |
-| **34 metric counters** | Emitted as `@MET` JSON; attach `@SUPPORTPACK` to every bug report |
+| **63 metric counters** | Emitted as `@MET` JSON; attach `@SUPPORTPACK` to every bug report |
 | **Simulation mode** | 8-round mesh simulation without SX1262 hardware (`RIVR_SIM_MODE`) |
 
 ---
@@ -166,6 +167,8 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 - ✅ **Signed `@PARAMS`** — optional HMAC-SHA-256 PSK authentication; `sig=<64hex>` wire field; metrics: `sig_ok` / `sig_fail`
 - ✅ **OLED display** — SSD1306 128×64 seven-page rotating UI; FreeRTOS task on CPU1
 - ✅ **Application services** — `PKT_TELEMETRY` (8), `PKT_MAILBOX` (9), `PKT_ALERT` (10) with dedicated C-layer handlers (`rivr_svc.c`); structured `@TEL`/`@MAIL`/`@ALERT` JSON log records; 8-entry LRU static mailbox store
+- ✅ **Neighbor table** — `neighbor_table.h/.c`: 16-slot BSS table tracking EWMA RSSI/SNR and seq-gap loss-rate per peer; `DIRECT`/`STALE`/`BEACON` flags; `neighbor_link_score()` composite; auto-expiry; integrated into RX path via `neighbor_update()`
+- ✅ **Neighbor-aware next-hop routing** — `route_cache_best_hop()` three-tier decision: (1) best scored cache entry, (2) direct-peer fallback via `neighbor_best()`, (3) flood; `entry_composite_score()` weights RSSI+SNR, hop count, age decay, and loss rate; metrics `neighbor_route_used_total` / `neighbor_route_failed_total`
 
 ## Roadmap
 
@@ -222,12 +225,13 @@ Rivr/
 │   ├── main.c                  — app_main(), tx_drain_loop(), sim rounds
 │   ├── radio_sx1262.c/.h       — SX1262 driver (E22)
 │   ├── radio_sx1276.c/.h       — SX1276 driver (LilyGo)
-│   ├── routing.c/.h            — flood + jitter + forward-budget caps
-│   ├── route_cache.c/.h        — unicast reverse-path cache
+│   ├── routing.c/.h            — flood + jitter + forward-budget caps; routing_next_hop_score()
+│   ├── route_cache.c/.h        — unicast reverse-path cache; route_cache_best_hop() three-tier next-hop
+│   ├── neighbor_table.c/.h     — 16-slot EWMA link-quality table; neighbor_update/find/best/expire
 │   ├── pending_queue.c/.h      — 16-slot pending queue
 │   ├── protocol.c/.h           — wire format + CRC-16
 │   ├── dutycycle.c/.h          — EU868 sliding-window limiter (512-slot, LRU)
-│   ├── rivr_metrics.c/.h       — 34-counter metrics + @SUPPORTPACK
+│   ├── rivr_metrics.c/.h       — 63-counter metrics + @SUPPORTPACK
 │   ├── rivr_fabric.c/.h        — Rivr Fabric congestion relay policy
 │   ├── rivr_policy.c/.h        — runtime @PARAMS policy, role enforcement, origination gate, HMAC sig
 │   ├── rivr_ota.c/.h           — signed PKT_PROG_PUSH gate (Ed25519 + anti-replay)

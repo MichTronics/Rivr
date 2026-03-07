@@ -57,7 +57,9 @@
 | `platform_esp32.c` | GPIO, SPI bus, LED initialisation |
 | `ringbuf.h` | Lock-free SPSC ring buffer (ISR-safe) |
 | `protocol.c` | Binary packet encode/decode, CRC-16/CCITT |
-| `routing.c` | Dedupe cache (LRU ring), TTL decrement, neighbour table (with callsign) |
+| `routing.c` | Dedupe cache (LRU ring), TTL decrement, jitter, forward-budget caps, loop-guard relay fingerprint, `pkt_id` split; `routing_next_hop_score()` computes composite RSSI+SNR score for a candidate next-hop peer |
+| `route_cache.c` | Unicast reverse-path cache; `rivr_route_t` (dest, next_hop, metric, hop_count, expires_ms); `route_cache_best_hop()` three-tier next-hop decision: (1) best scored cache entry, (2) `neighbor_best()` direct peer fallback, (3) return false → caller floods; `entry_composite_score()`: metric × hop-weight × age-decay × loss-penalty |
+| `neighbor_table.c` | 16-slot BSS link-quality table; `rivr_neighbor_t` tracks EWMA RSSI/SNR (`rssi_avg`, `snr_avg`), seq-gap loss-rate (`loss_rate`), `last_seen_ms`, and `flags` (`NTABLE_FLAG_DIRECT`, `NTABLE_FLAG_STALE`, `NTABLE_FLAG_BEACON`); API: `neighbor_update()`, `neighbor_find()`, `neighbor_best()`, `neighbor_link_score()`, `neighbor_set_flag()`, `neighbor_table_expire()`; `g_ntable` global exposed via `rivr_embed.h` |
 | `rivr_fabric.c` | Congestion-aware relay policy: 60 s sliding-window score, DELAY / DROP decisions for `PKT_CHAT` / `PKT_DATA` relay; enabled when `RIVR_FABRIC_REPEATER=1` |
 | `rivr_policy.c` | Runtime-adjustable policy: `rivr_policy_params_t` (beacon interval, TX power, relay throttle, node role); `@PARAMS` parser + NVS-backed storage; `@POLICY` JSON reporter; USB origination gate (`rivr_policy_allow_origination()`); HMAC-SHA-256 signature verification (`rivr_verify_params_sig()`); `policy` CLI command; metrics counters (`params_sig_ok_count`, `params_sig_fail_count`); built-in selftest |
 | `rivr_ota.c` | Signed `PKT_PROG_PUSH` gate: Ed25519 verify (`rivr_ota_verify()`), anti-replay sequence counter stored in NVS, `rivr_ota_activate()` / `rivr_ota_confirm()` / `rivr_ota_is_pending()` |
@@ -643,3 +645,112 @@ All callers updated: `rivr_sources.c`, `rivr_sinks.c`, `rivr_cli.c`,
 | RAM delta | 0 (`dedupe_entry_t` field rename only, same struct size) |
 | Flash delta | ~+60 bytes (encode/decode split) |
 | Wire backward compatibility | Old receivers read `seq` as the 32-bit union of both fields; new `seq` = low 16 bits, `pkt_id` = high 16 bits — no crash, just `pkt_id` silently lost on old firmware |
+
+---
+
+### Phase 12 — Neighbor table + neighbor-aware next-hop routing
+
+#### Neighbor table (`firmware_core/neighbor_table.h/.c`)
+
+A new 16-slot BSS table (`rivr_neighbor_table_t`) tracks link quality to all
+directly heard peers without heap allocation.
+
+##### Data structures
+
+```c
+#define NTABLE_SIZE             16      /* max tracked peers           */
+#define NTABLE_EXPIRY_MS    120000      /* stale → evict after 2 min   */
+#define NTABLE_STALE_MS      30000      /* mark STALE after 30 s quiet */
+#define NTABLE_SCORE_UNICAST_MIN 20     /* min score to attempt unicast */
+
+#define NTABLE_FLAG_DIRECT  0x01       /* packet received directly (hop==1) */
+#define NTABLE_FLAG_STALE   0x02       /* no frame for > NTABLE_STALE_MS   */
+#define NTABLE_FLAG_BEACON  0x04       /* last-heard frame was PKT_BEACON  */
+
+typedef struct {
+    uint32_t neighbor_id;   /* node ID of the peer                    */
+    int16_t  rssi_avg;      /* EWMA smoothed RSSI (dBm × 10)          */
+    int8_t   snr_avg;       /* EWMA smoothed SNR (dB)                 */
+    uint8_t  loss_rate;     /* seq-gap loss estimate, 0-255 (0=clean) */
+    uint32_t last_seen_ms;  /* tb_millis() of most recent RX          */
+    uint8_t  flags;         /* NTABLE_FLAG_* bitmask                  */
+} rivr_neighbor_t;
+```
+
+##### API
+
+```c
+void              neighbor_table_init(rivr_neighbor_table_t *tbl);
+rivr_neighbor_t  *neighbor_update(rivr_neighbor_table_t *tbl,
+                                  uint32_t id, int16_t rssi, int8_t snr,
+                                  uint16_t seq, uint32_t now_ms, uint8_t flags);
+const rivr_neighbor_t *neighbor_find(const rivr_neighbor_table_t *tbl, uint32_t id);
+const rivr_neighbor_t *neighbor_best(const rivr_neighbor_table_t *tbl, uint32_t now_ms);
+uint8_t           neighbor_link_score(const rivr_neighbor_t *n);
+void              neighbor_set_flag(rivr_neighbor_table_t *tbl, uint32_t id, uint8_t flag);
+uint8_t           neighbor_table_expire(rivr_neighbor_table_t *tbl, uint32_t now_ms);
+```
+
+Call site: `rivr_sources.c` calls `neighbor_update()` on every decoded RX
+frame; the display driver reads the table directly via `g_ntable`.
+
+#### Neighbor-aware next-hop routing (`firmware_core/route_cache.h/.c`)
+
+`route_cache_best_hop()` replaces the previous `route_cache_tx_decide()` call
+in `rivr_sinks.c` with a three-tier decision:
+
+| Tier | Condition | Action |
+|------|-----------|--------|
+| 1 | Route cache has entry for `dst_id` | Pick highest `entry_composite_score()` |
+| 2 | No cache hit; `neighbor_best()` score ≥ `NTABLE_SCORE_UNICAST_MIN` | Promote direct peer as next-hop |
+| 3 | No viable hop found | Return `false` → caller floods |
+
+`entry_composite_score()` weights four factors:
+
+```
+score = metric × hop_weight(100%/75%/50%) × age_decay × (1 − loss_rate)
+```
+
+New fields in `rivr_route_t`:
+
+```c
+typedef struct {
+    uint32_t dest_id;      /* destination node ID          */
+    uint32_t next_hop_id;  /* first-hop node ID            */
+    uint16_t metric;       /* composite link-quality score */
+    uint8_t  hop_count;    /* path length in hops          */
+    uint32_t expires_ms;   /* tb_millis() expiry timestamp */
+} rivr_route_t;
+```
+
+#### `routing_next_hop_score()` (`firmware_core/routing.h/.c`)
+
+New function exposed by `routing.h` that computes the composite next-hop
+desirability score for a given candidate peer ID:
+
+```c
+uint8_t routing_next_hop_score(const rivr_neighbor_table_t *ntbl,
+                               uint32_t candidate_id,
+                               uint32_t now_ms);
+```
+
+Used internally by `route_cache_best_hop()` and available to any caller
+that wants to compare peer quality without routing a packet.
+
+#### New metrics
+
+| Field | `@MET` key | Meaning |
+|-------|-----------|--------|
+| `neighbor_route_used_total` | `nb_route_ok` | Unicast attempted with neighbor-quality best-hop |
+| `neighbor_route_failed_total` | `nb_route_fail` | Best-hop score=0 → fell back to flood |
+
+#### Memory impact (neighbor table + routing)
+
+| Change | RAM delta | Flash delta |
+|--------|-----------|-------------|
+| `rivr_neighbor_table_t` (16 entries × ~14 B) | +224 bytes BSS | — |
+| `rivr_route_t` extension (2 new fields) | +0 (inline in existing cache) | ~+40 bytes |
+| `routing_next_hop_score()` | 0 | ~+60 bytes |
+| `route_cache_best_hop()` + score fn | 0 | ~+200 bytes |
+| 2 new metrics fields | +8 bytes | +60 bytes |
+| **Total** | **+232 bytes** | **~+360 bytes** |
