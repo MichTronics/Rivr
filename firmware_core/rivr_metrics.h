@@ -46,8 +46,8 @@ typedef struct {
     uint32_t ota_accepted;       /* signed OTA verifications that passed              */
     uint32_t ota_rejected;       /* OTA rejected: bad sig, replay, or short payload   */
     uint32_t policy_drop;        /* packets dropped by policy token-bucket gate       */
-    uint32_t policy_ttl_clamp;   /* packets TTL-clamped by policy engine              */
-    /* ── RF airtime accounting (Phase 4 / EU868 compliance audit) ───────── */
+    uint32_t policy_ttl_clamp;   /* packets TTL-clamped by policy engine              */    /* ── Loop-guard loop detection ────────────────────────────────────────── */
+    uint32_t loop_detect_drop;   /* RIVR_FWD_DROP_LOOP: relay fingerprint matched     */    /* ── RF airtime accounting (Phase 4 / EU868 compliance audit) ───────── */
     /** Cumulative time-on-air in milliseconds for all transmitted frames.
      *  Incremented in the TX path after each successful radio_transmit() call.
      *  Mirrors dc_ctx_t.used_us but in uint32 ms for the @MET JSON output.

@@ -54,7 +54,8 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"rst_busy\":%" PRIu32 ","
            "\"rst_txtmo\":%" PRIu32 ","
            "\"rst_spurious\":%" PRIu32 ","
-           "\"rst_rxtmo\":%" PRIu32
+           "\"rst_rxtmo\":%" PRIu32 ","
+           "\"loop_drop\":%" PRIu32
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -95,5 +96,6 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.radio_reset_busy_stuck,
         g_rivr_metrics.radio_reset_tx_timeout,
         g_rivr_metrics.radio_reset_spurious_irq,
-        g_rivr_metrics.radio_reset_rx_timeout);
+        g_rivr_metrics.radio_reset_rx_timeout,
+        g_rivr_metrics.loop_detect_drop);
 }

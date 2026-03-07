@@ -92,7 +92,8 @@ uint32_t sources_rf_rx_drain(void)
         uint32_t toa_us = RF_TOA_APPROX_US(frame.len);
 
         rivr_fwd_result_t fwd = routing_flood_forward(dedupe, fb,
-                                                       &fwd_hdr, toa_us, now_ms);
+                                                       &fwd_hdr, g_my_node_id,
+                                                       toa_us, now_ms);
 
         if (fwd == RIVR_FWD_DROP_DEDUPE) {
             /* Seen before — discard completely (no RIVR injection, no learning) */
@@ -101,12 +102,14 @@ uint32_t sources_rf_rx_drain(void)
             continue;
         }
 
-        /* ── GATE 1 — TTL/hop invariant ────────────────────────────────────── *
-         * Every forward must decrement TTL by exactly 1 and increment hop by  *
-         * exactly 1, and this mutation must happen BEFORE enqueue.            *
-         * routing_flood_forward() is the only site that mutates fwd_hdr, so   *
-         * we assert the delta here at the call site immediately after return.  *
-         * ─────────────────────────────────────────────────────────────────── */
+        if (fwd == RIVR_FWD_DROP_LOOP) {
+            /* Relay fingerprint in loop_guard matched — packet has looped back. */
+            RIVR_LOGW(TAG, "rf_rx: LOOP-DROP src=0x%08lx seq=%lu guard=0x%02x",
+                      (unsigned long)pkt_hdr.src_id, (unsigned long)pkt_hdr.seq,
+                      (unsigned)pkt_hdr.loop_guard);
+            continue;
+        }
+
         if (fwd == RIVR_FWD_FORWARD) {
             uint8_t want_ttl = (uint8_t)(pkt_hdr.ttl - 1u);
             uint8_t want_hop = (uint8_t)(pkt_hdr.hop  + 1u);

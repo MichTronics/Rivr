@@ -5,9 +5,10 @@
  *
  * PHASE A — Flood hardening:
  *  1. `routing_flood_forward()` — strict flood decision with explicit
- *     DEDUPE / TTL / BUDGET drop reasons.
- *  2. `routing_jitter_ticks()` — deterministic xorshift jitter in [0..J].
- *  3. `forward_budget_t` — per-pkt_type forwards/minute + airtime cap so
+ *     DEDUPE / TTL / LOOP / BUDGET drop reasons.
+ *  2. `routing_loop_guard_hash()` — 8-bit relay fingerprint for loop_guard field.
+ *  3. `routing_jitter_ticks()` — deterministic xorshift jitter in [0..J].
+ *  4. `forward_budget_t` — per-pkt_type forwards/minute + airtime cap so
  *     the C layer enforces safety even if the RIVR policy misbehaves.
  *
  * PHASE D — Hybrid unicast hooks:
@@ -227,6 +228,7 @@ typedef enum {
     RIVR_FWD_DROP_DEDUPE,    /**< Duplicate — suppress                         */
     RIVR_FWD_DROP_TTL,       /**< TTL exhausted (already 0 on arrival)         */
     RIVR_FWD_DROP_BUDGET,    /**< Safety forward budget exceeded               */
+    RIVR_FWD_DROP_LOOP,      /**< Loop detected via loop_guard fingerprint     */
 } rivr_fwd_result_t;
 
 /* ── Safety forward budget ───────────────────────────────────────────────── *
@@ -320,14 +322,38 @@ void routing_fwdbudget_record(forward_budget_t *fb,
 /* ── Strict flood forward ────────────────────────────────────────────────── */
 
 /**
+ * @brief Fold a 32-bit node ID to an 8-bit relay fingerprint for loop_guard.
+ *
+ * Each relay XORs all four bytes of its node_id then ensures the result is
+ * non-zero (0 means "not set" in the OR-accumulator).  The hash is the same
+ * across all nodes in the mesh, so the same node always produces the same
+ * fingerprint — deterministic and replay-testable.
+ *
+ * @param node_id  The relay node's own unique ID.
+ * @return         A non-zero 8-bit fingerprint.
+ */
+static inline uint8_t routing_loop_guard_hash(uint32_t node_id)
+{
+    uint8_t h = (uint8_t)(    node_id          &  0xFFu)
+              ^ (uint8_t)((node_id >>  8u)     &  0xFFu)
+              ^ (uint8_t)((node_id >> 16u)     &  0xFFu)
+              ^ (uint8_t)((node_id >> 24u)     &  0xFFu);
+    return (h != 0u) ? h : 1u;   /* 0 is reserved for "originator" */
+}
+
+/**
  * @brief Strict flood-forward decision (Phase A).
  *
  * Executes in order:
  *  1. Dedupe check against @p cache — drop if already seen.
  *  2. TTL check — drop if pkt->ttl == 0 on arrival.
- *  3. Forward budget check — drop if @p fb would be exceeded.
- *  4. Mutate: pkt->ttl--, pkt->hop++, pkt->flags |= PKT_FLAG_RELAY.
- *  5. Return RIVR_FWD_FORWARD.
+ *  3. Loop-guard check — if @p my_id != 0, compute h=routing_loop_guard_hash(my_id)
+ *     and drop (RIVR_FWD_DROP_LOOP) when (pkt->loop_guard & h) == h, meaning
+ *     this node's fingerprint is already set — the packet has looped back here.
+ *  4. Forward budget check — drop if @p fb would be exceeded.
+ *  5. Mutate: pkt->ttl--, pkt->hop++, pkt->flags |= PKT_FLAG_RELAY,
+ *             pkt->loop_guard |= h  (records this relay's fingerprint).
+ *  6. Return RIVR_FWD_FORWARD.
  *
  * On FORWARD the caller must re-encode @p pkt and enqueue it for TX
  * (optionally after a jitter delay from routing_jitter_ticks()).
@@ -335,12 +361,14 @@ void routing_fwdbudget_record(forward_budget_t *fb,
  * @param cache    Dedupe cache.
  * @param fb       Forward budget (may be NULL to skip budget check).
  * @param pkt      Mutable decoded packet header.
+ * @param my_id    This node's own ID (0 = skip loop-guard check).
  * @param toa_us   Estimated ToA for the frame (used by budget check).
  * @param now_ms   Current monotonic millisecond timestamp.
  */
 rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
                                          forward_budget_t *fb,
                                          rivr_pkt_hdr_t   *pkt,
+                                         uint32_t          my_id,
                                          uint32_t          toa_us,
                                          uint32_t          now_ms);
 

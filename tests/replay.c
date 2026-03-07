@@ -334,10 +334,11 @@ static void handle_rx_frame(replay_ctx_t *ctx, const char *line)
                           (int16_t)rssi, (int8_t)snr,
                           ctx->now_ms);
 
-    /* ── Flood-forward decision (dedupe + TTL + budget) ───────────────── */
+    /* ── Flood-forward decision (dedupe + TTL + loop + budget) ──────────────── */
     rivr_fwd_result_t fwd = routing_flood_forward(&ctx->dc,
                                                    &ctx->fb,
                                                    &dec_hdr,
+                                                   ctx->my_id,
                                                    fwd_toa,
                                                    ctx->now_ms);
     switch (fwd) {
@@ -349,6 +350,9 @@ static void handle_rx_frame(replay_ctx_t *ctx, const char *line)
         return;
     case RIVR_FWD_DROP_BUDGET:
         g_rivr_metrics.drop_rate_limited++;
+        return;
+    case RIVR_FWD_DROP_LOOP:
+        /* loop_detect_drop already incremented inside routing.c */
         return;
     case RIVR_FWD_FORWARD:
         break;  /* proceed to TX path */

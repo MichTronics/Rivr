@@ -107,17 +107,19 @@ int protocol_encode(const rivr_pkt_hdr_t *hdr,
     p[20] = (uint8_t)((hdr->seq >> 24) & 0xFFu);
     /* [21] payload_len */
     p[21] = payload_len;
+    /* [22] loop_guard */
+    p[22] = hdr->loop_guard;
 
-    /* [22 .. 22+payload_len-1] payload */
+    /* [23 .. 23+payload_len-1] payload */
     if (payload_len > 0 && payload) {
-        memcpy(p + 22, payload, payload_len);
+        memcpy(p + 23, payload, payload_len);
     }
 
-    /* CRC over header + payload (bytes 0 .. 21+payload_len) */
+    /* CRC over header + payload (bytes 0 .. 22+payload_len) */
     uint8_t  data_len = (uint8_t)(RIVR_PKT_HDR_LEN + payload_len);
     uint16_t crc      = protocol_crc16(out_buf, data_len);
-    p[22 + payload_len]     = (uint8_t)(crc & 0xFFu);
-    p[22 + payload_len + 1] = (uint8_t)(crc >> 8);
+    p[23 + payload_len]     = (uint8_t)(crc & 0xFFu);
+    p[23 + payload_len + 1] = (uint8_t)(crc >> 8);
 
     return (int)total;
 }
@@ -169,6 +171,7 @@ bool protocol_decode(const uint8_t    *buf,
                                            | ((uint32_t)buf[19] << 16)
                                            | ((uint32_t)buf[20] << 24));
     hdr->payload_len = payload_len;
+    hdr->loop_guard  = buf[LOOP_GUARD_BYTE_OFFSET];   /* byte [22] */
 
     /* Pointer into @p buf for the payload */
     if (payload_out) {

@@ -121,14 +121,16 @@ int main(void)
 
             rivr_fwd_result_t result =
                 routing_flood_forward(&cache, &budget, &hdr,
+                                      /*my_id=*/0u,
                                       /*toa_us=*/1000u,
                                       /*now_ms=*/0u);
 
-            /* Verify result is one of the four defined enum values. */
-            assert(result == RIVR_FWD_FORWARD   ||
+            /* Verify result is one of the five defined enum values. */
+            assert(result == RIVR_FWD_FORWARD    ||
                    result == RIVR_FWD_DROP_DEDUPE ||
-                   result == RIVR_FWD_DROP_TTL   ||
-                   result == RIVR_FWD_DROP_BUDGET);
+                   result == RIVR_FWD_DROP_TTL    ||
+                   result == RIVR_FWD_DROP_BUDGET  ||
+                   result == RIVR_FWD_DROP_LOOP);
         }
 
         /* ── 3. Fuzz jitter helper (always safe to call) ──────────────── */

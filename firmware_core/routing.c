@@ -329,6 +329,7 @@ void routing_fwdbudget_record(forward_budget_t *fb,
 rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
                                          forward_budget_t *fb,
                                          rivr_pkt_hdr_t   *pkt,
+                                         uint32_t          my_id,
                                          uint32_t          toa_us,
                                          uint32_t          now_ms)
 {
@@ -344,7 +345,20 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
         return RIVR_FWD_DROP_TTL;
     }
 
-    /* Step 3 — Safety budget */
+    /* Step 3 — Loop-guard check (skip if my_id == 0, e.g. replay/fuzz) */
+    uint8_t my_h = 0u;
+    if (my_id != 0u) {
+        my_h = routing_loop_guard_hash(my_id);
+        if ((pkt->loop_guard & my_h) == my_h) {
+            /* This node's fingerprint is already in the guard byte — the
+             * packet has looped back here (possibly with a mutated seq that
+             * defeated the dedupe cache).  Drop and count. */
+            g_rivr_metrics.loop_detect_drop++;
+            return RIVR_FWD_DROP_LOOP;
+        }
+    }
+
+    /* Step 4 — Safety budget */
     if (fb && !routing_fwdbudget_check(fb, pkt->pkt_type, toa_us, now_ms)) {
         if (pkt->pkt_type < FWDBUDGET_PKT_TYPES) {
             fb->fwd_drop_count[pkt->pkt_type] += 1u;
@@ -353,10 +367,13 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
         return RIVR_FWD_DROP_BUDGET;
     }
 
-    /* Step 4 — Mutate header for relay */
-    pkt->ttl  -= 1u;
-    pkt->hop  += 1u;
-    pkt->flags = (uint8_t)(pkt->flags | PKT_FLAG_RELAY);
+    /* Step 5 — Mutate header for relay */
+    pkt->ttl        -= 1u;
+    pkt->hop        += 1u;
+    pkt->flags       = (uint8_t)(pkt->flags | PKT_FLAG_RELAY);
+    if (my_id != 0u) {
+        pkt->loop_guard = (uint8_t)(pkt->loop_guard | my_h);
+    }
 
     /* Record against budget */
     if (fb) {

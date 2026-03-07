@@ -365,7 +365,7 @@
                 "SOC_MMU_PAGE_SIZE=CONFIG_MMU_PAGE_SIZE",
                 "IDF_VER=\"5.5.0\"",
                 "ESP_PLATFORM",
-                "RIVR_GIT_SHA=\"50e9b488\"",
+                "RIVR_GIT_SHA=\"6cea3cb7\"",
                 "PLATFORMIO=60119",
                 "ARDUINO_ESP32_DEV",
                 "LOG_LOCAL_LEVEL=ESP_LOG_DEBUG",
@@ -377,7 +377,7 @@
             "cStandard": "gnu17",
             "cppStandard": "gnu++23",
             "forcedInclude": [
-                "/home/kali/source/Rivr/variants/esp32devkit_e22_900_repeater/config.h",
+                "/home/kali/source/Rivr/variants/esp32devkit_e22_900/config.h",
                 ""
             ],
             "compilerPath": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32-elf-gcc",

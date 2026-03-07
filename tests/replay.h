@@ -95,6 +95,10 @@ typedef struct {
 typedef struct {
     uint32_t         now_ms;   /**< Simulated monotonic clock (ms)             */
 
+    /** This node's own ID — passed to routing_flood_forward() as my_id.
+     *  Set to 0 (default) to skip the loop-guard check during replay.      */
+    uint32_t         my_id;
+
     /* Routing layer state */
     dedupe_cache_t   dc;
     neighbor_table_t nb;

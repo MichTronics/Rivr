@@ -15,11 +15,30 @@
  *   [13–16] dst_id      u32 LE  destination node ID (0 = broadcast)
  *   [17–20] seq         u32 LE  per-source monotonic counter
  *   [21]    payload_len u8      bytes of application payload following header
- *   [22 .. 22+payload_len-1]    payload
- *   [22+payload_len .. +1]      CRC-16/CCITT (LE) over bytes [0 .. 22+payload_len-1]
+ *   [22]    loop_guard  u8      OR-accumulating relay fingerprint (loop defence)
+ *   [23 .. 23+payload_len-1]    payload
+ *   [23+payload_len .. +1]      CRC-16/CCITT (LE) over bytes [0 .. 23+payload_len-1]
  *
- * Total minimum wire size = 24 bytes (header + 0-byte payload + CRC).
- * Maximum wire size       = 24 + RIVR_PKT_MAX_PAYLOAD bytes.
+ * Total minimum wire size = 25 bytes (header + 0-byte payload + CRC).
+ * Maximum wire size       = 25 + RIVR_PKT_MAX_PAYLOAD bytes.
+ *
+ * Loop-guard semantics
+ * ────────────────────
+ * The loop_guard field is a 1-byte OR-accumulating Bloom fingerprint that lets
+ * each relay detect when a packet has circulated back to a node that already
+ * forwarded it — including packets whose seq has been mutated by buggy firmware.
+ *
+ *   Originator sets loop_guard = 0.
+ *   Each relay:
+ *     1. Compute h = routing_loop_guard_hash(my_id)   (8-bit fold of node_id).
+ *     2. If (loop_guard & h) == h → packet has visited this node before → drop
+ *        (RIVR_FWD_DROP_LOOP, increments loop_detect_drop metric).
+ *     3. Set loop_guard |= h and forward.
+ *
+ * The check fires when the same node receives a packet it already relayed —
+ * even if seq was mutated — because its own fingerprint bits remain set in the
+ * OR-accumulated byte.  False-positive probability for a legitimate 4-hop path
+ * with distinct relays is < 2.5%; for a 7-hop path it is < 8%.
  */
 
 #ifndef RIVR_PROTOCOL_H
@@ -61,8 +80,11 @@ extern "C" {
 /** Byte offset of the pkt_type field in the serialised wire frame. */
 #define PKT_TYPE_BYTE_OFFSET   3u
 
+/** Byte offset of the loop_guard field in the serialised wire frame. */
+#define LOOP_GUARD_BYTE_OFFSET 22u
+
 /** Fixed header length in bytes (before payload). */
-#define RIVR_PKT_HDR_LEN       22u
+#define RIVR_PKT_HDR_LEN       23u
 
 /** CRC appended after payload: 2 bytes. */
 #define RIVR_PKT_CRC_LEN       2u
@@ -109,6 +131,7 @@ typedef struct {
     uint32_t dst_id;       /**< Destination node ID (0 = broadcast)          */
     uint32_t seq;          /**< Per-source monotonic counter                 */
     uint8_t  payload_len;  /**< Length of accompanying payload               */
+    uint8_t  loop_guard;   /**< OR-accumulating relay fingerprint (loop def) */
 } rivr_pkt_hdr_t;
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
