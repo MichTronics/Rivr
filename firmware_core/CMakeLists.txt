@@ -27,6 +27,7 @@ idf_component_register(
         "protocol.c"
         "routing.c"
         "route_cache.c"
+        "neighbor_table.c"
         "pending_queue.c"
         "rivr_fabric.c"
         "rivr_metrics.c"
