@@ -186,8 +186,9 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                                             req.toa_us, now_ms);
                     }
                     RIVR_LOGI(TAG,
-                        "rf_tx: unicast dst=0x%08lx via next_hop=0x%08lx",
-                        (unsigned long)pkt.dst_id, (unsigned long)next_hop);
+                        "rf_tx: unicast dst=0x%08lx via next_hop=0x%08lx score=%u",
+                        (unsigned long)pkt.dst_id, (unsigned long)next_hop,
+                        (unsigned)routing_next_hop_score(&g_ntable, next_hop, now_ms));
                 }
             }
         }

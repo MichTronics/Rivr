@@ -105,6 +105,7 @@ $Sources = @(
     "firmware_core/routing.c",
     "firmware_core/route_cache.c",
     "firmware_core/pending_queue.c",
+    "firmware_core/neighbor_table.c",
     "tests/test_stubs.c",
     "tests/test_acceptance.c"
 )

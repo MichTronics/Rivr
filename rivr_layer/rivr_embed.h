@@ -346,6 +346,12 @@ extern uint32_t     g_vm_last_error;
  *  updated by rivr_sources.c on every successfully decoded inbound frame. */
 extern neighbor_table_t g_neighbor_table;
 
+/** Standalone link-quality neighbor table — initialised in rivr_embed_init(),
+ *  updated in parallel with g_neighbor_table on every valid inbound frame.
+ *  Adds loss_rate tracking and flag-based peer classification; used by
+ *  routing_next_hop_score() to gate unicast route quality. */
+extern rivr_neighbor_table_t g_ntable;
+
 #ifdef __cplusplus
 }
 #endif

@@ -71,7 +71,8 @@ int16_t         g_last_rssi_dbm  = 0;   /* RSSI of most recent RX frame */
 int8_t          g_last_snr_db    = 0;   /* SNR  of most recent RX frame */
 uint32_t        g_vm_total_cycles = 0u; /* accumulated from rivr_engine_run() */
 uint32_t        g_vm_last_error   = 0u; /* last non-OK result code */
-neighbor_table_t g_neighbor_table;     /* updated by rivr_sources.c */
+neighbor_table_t      g_neighbor_table;     /* updated by rivr_sources.c */
+rivr_neighbor_table_t g_ntable;             /* standalone quality tracker */
 /* ── Node identity (set by main.c before rivr_embed_init) ───────────────── */
 char             g_callsign[12]           = "RIVR";
 uint16_t         g_net_id                 = 0u;
@@ -280,6 +281,7 @@ void rivr_embed_init(void)
     /* Initialise C-layer routing state (dedupe cache, forward budget) */
     routing_init();
     routing_neighbor_init(&g_neighbor_table);
+    neighbor_table_init(&g_ntable);
     route_cache_init(&g_route_cache);
     pending_queue_init(&g_pending_queue);
     ESP_LOGD(TAG, "routing + route_cache + pending_queue + neighbor_table initialised");

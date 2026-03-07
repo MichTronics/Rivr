@@ -236,6 +236,28 @@ uint8_t routing_neighbor_link_score(const neighbor_entry_t *n,
  */
 void routing_neighbor_print(const neighbor_table_t *tbl, uint32_t now_ms);
 
+/* Pull in the standalone neighbor-table types (rivr_neighbor_table_t) so
+ * that routing_next_hop_score() can accept the richer quality table. */
+#include "neighbor_table.h"
+
+/**
+ * @brief Quality score for a candidate next-hop from the standalone neighbor
+ *        table.
+ *
+ * Wraps neighbor_find() + neighbor_link_score() and returns 0 when the
+ * candidate is unknown or its entry has expired.  Callers in the TX path
+ * compare this score against NTABLE_SCORE_UNICAST_MIN to decide whether to
+ * proceed with a unicast or fall back to a flood.
+ *
+ * @param ntbl          Standalone neighbor table (rivr_neighbor_table_t).
+ * @param candidate_id  Node ID of the proposed next-hop.
+ * @param now_ms        Current monotonic millisecond timestamp.
+ * @return Quality score in [0, 100]; 0 means unknown / expired.
+ */
+uint8_t routing_next_hop_score(const rivr_neighbor_table_t *ntbl,
+                               uint32_t                     candidate_id,
+                               uint32_t                     now_ms);
+
 /* ════════════════════════════════════════════════════════════════════════════
  * PHASE A — Flood hardening
  * ══════════════════════════════════════════════════════════════════════════ */

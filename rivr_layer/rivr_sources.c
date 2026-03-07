@@ -156,6 +156,17 @@ uint32_t sources_rf_rx_drain(void)
         routing_neighbor_update(&g_neighbor_table, &pkt_hdr,
                                 (int8_t)frame.rssi_dbm, frame.snr_db, now_ms);
 
+        /* ── Standalone quality tracker: RSSI/SNR/loss-rate per neighbor ────
+         * neighbor_update() records wide RSSI (int16), SEQ-gap loss rate,
+         * and DIRECT / BEACON flags used by routing_next_hop_score().        */
+        neighbor_update(&g_ntable,
+                        pkt_hdr.src_id,
+                        (int16_t)frame.rssi_dbm,
+                        frame.snr_db,
+                        pkt_hdr.hop,
+                        pkt_hdr.seq,
+                        now_ms);
+
         route_cache_learn_rx(&g_route_cache,
                               pkt_hdr.src_id, from_id,
                               pkt_hdr.hop,

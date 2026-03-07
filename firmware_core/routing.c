@@ -138,6 +138,16 @@ void routing_neighbor_print(const neighbor_table_t *tbl, uint32_t now_ms)
     if (shown == 0u) printf("  (no live neighbours)\r\n");
 }
 
+uint8_t routing_next_hop_score(const rivr_neighbor_table_t *ntbl,
+                               uint32_t                     candidate_id,
+                               uint32_t                     now_ms)
+{
+    if (!ntbl || candidate_id == 0u) return 0u;
+    const rivr_neighbor_t *n = neighbor_find(ntbl, candidate_id, now_ms);
+    if (!n) return 0u;
+    return neighbor_link_score(n, now_ms);
+}
+
 void routing_neighbor_init(neighbor_table_t *tbl)
 {
     memset(tbl, 0, sizeof(*tbl));
