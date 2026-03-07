@@ -354,6 +354,7 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
              * packet has looped back here (possibly with a mutated seq that
              * defeated the dedupe cache).  Drop and count. */
             g_rivr_metrics.loop_detect_drop++;
+            g_rivr_metrics.loop_detect_drop_total++;
             return RIVR_FWD_DROP_LOOP;
         }
     }

@@ -132,6 +132,7 @@ uint8_t pending_queue_expire(pending_queue_t *pq, uint32_t now_ms)
     }
     if (evicted > 0u) {
         g_rivr_metrics.pq_expired += evicted;
+        g_rivr_metrics.pending_queue_expired_total += evicted;
     }
     return evicted;
 }

@@ -55,7 +55,19 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"rst_txtmo\":%" PRIu32 ","
            "\"rst_spurious\":%" PRIu32 ","
            "\"rst_rxtmo\":%" PRIu32 ","
-           "\"loop_drop\":%" PRIu32
+           "\"loop_drop\":%" PRIu32 ","
+           "\"rreq_rx\":%" PRIu32 ","
+           "\"rreq_sent\":%" PRIu32 ","
+           "\"rreq_cache\":%" PRIu32 ","
+           "\"rreq_target\":%" PRIu32 ","
+           "\"rreq_supp\":%" PRIu32 ","
+           "\"rrpl_rx\":%" PRIu32 ","
+           "\"rrpl_learn\":%" PRIu32 ","
+           "\"pq_drain\":%" PRIu32 ","
+           "\"pq_exp_total\":%" PRIu32 ","
+           "\"loop_drop_total\":%" PRIu32 ","
+           "\"rc_miss\":%" PRIu32 ","
+           "\"rc_hit\":%" PRIu32
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -97,5 +109,17 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.radio_reset_tx_timeout,
         g_rivr_metrics.radio_reset_spurious_irq,
         g_rivr_metrics.radio_reset_rx_timeout,
-        g_rivr_metrics.loop_detect_drop);
+        g_rivr_metrics.loop_detect_drop,
+        g_rivr_metrics.route_req_rx_total,
+        g_rivr_metrics.route_req_reply_sent_total,
+        g_rivr_metrics.route_req_reply_cache_total,
+        g_rivr_metrics.route_req_reply_target_total,
+        g_rivr_metrics.route_req_reply_suppressed_total,
+        g_rivr_metrics.route_rpl_rx_total,
+        g_rivr_metrics.route_rpl_learn_total,
+        g_rivr_metrics.pending_queue_drained_total,
+        g_rivr_metrics.pending_queue_expired_total,
+        g_rivr_metrics.loop_detect_drop_total,
+        g_rivr_metrics.route_cache_miss_total,
+        g_rivr_metrics.route_cache_hit_total);
 }

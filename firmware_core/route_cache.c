@@ -65,10 +65,17 @@ const route_cache_entry_t *route_cache_lookup(route_cache_t *cache,
     for (uint8_t i = 0; i < RCACHE_SIZE; i++) {
         route_cache_entry_t *e = &cache->entries[i];
         if (e->dst_id == dst_id) {
-            if (expire_entry(e, now_ms)) return NULL;   /* lazily evicted */
-            if (e->flags & RCACHE_FLAG_VALID)   return e;
+            if (expire_entry(e, now_ms)) {
+                g_rivr_metrics.route_cache_miss_total++;
+                return NULL;   /* lazily evicted */
+            }
+            if (e->flags & RCACHE_FLAG_VALID) {
+                g_rivr_metrics.route_cache_hit_total++;
+                return e;
+            }
         }
     }
+    g_rivr_metrics.route_cache_miss_total++;
     return NULL;
 }
 

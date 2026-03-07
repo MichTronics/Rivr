@@ -317,6 +317,7 @@ uint32_t sources_rf_rx_drain(void)
          * Only the requester (dst_id match) drains its pending queue.        *
          * ─────────────────────────────────────────────────────────────────── */
         if (pkt_hdr.pkt_type == PKT_ROUTE_REQ) {
+            g_rivr_metrics.route_req_rx_total++;
             if (routing_should_reply_route_req(&pkt_hdr, g_my_node_id,
                                                &g_route_cache, now_ms)) {
                 uint32_t rpl_target;
@@ -326,6 +327,7 @@ uint32_t sources_rf_rx_drain(void)
                 if (pkt_hdr.dst_id == g_my_node_id) {
                     /* Case 1: We ARE the destination.
                      * Requester's next step toward us is us; 0 additional hops. */
+                    g_rivr_metrics.route_req_reply_target_total++;
                     rpl_target   = g_my_node_id;
                     rpl_next_hop = g_my_node_id;
                     rpl_hops     = 0u;
@@ -337,6 +339,7 @@ uint32_t sources_rf_rx_drain(void)
                     const route_cache_entry_t *ce =
                         route_cache_lookup(&g_route_cache, pkt_hdr.dst_id, now_ms);
                     if (!ce) goto maybe_relay;   /* expired between check & here */
+                    g_rivr_metrics.route_req_reply_cache_total++;
                     rpl_target   = pkt_hdr.dst_id;
                     rpl_next_hop = ce->next_hop;
                     rpl_hops     = ce->hop_count;
@@ -361,6 +364,7 @@ uint32_t sources_rf_rx_drain(void)
                     if (rb_try_push(&rf_tx_queue, &rpl_req)) {
                         uint32_t _occ = rb_available(&rf_tx_queue);
                         if (_occ > g_rivr_metrics.tx_queue_peak) { g_rivr_metrics.tx_queue_peak = _occ; }
+                        g_rivr_metrics.route_req_reply_sent_total++;
                         RIVR_LOGI(TAG,
                             "rf_rx: ROUTE_RPL to 0x%08lx target=0x%08lx "
                             "via 0x%08lx hops=%u",
@@ -370,6 +374,12 @@ uint32_t sources_rf_rx_drain(void)
                             (unsigned)rpl_hops);
                     }
                 }
+            } else {
+                /* No eligible route and not the destination — stay silent. */
+                g_rivr_metrics.route_req_reply_suppressed_total++;
+                RIVR_LOGD(TAG, "rf_rx: ROUTE_REQ src=0x%08lx dst=0x%08lx suppressed",
+                          (unsigned long)pkt_hdr.src_id,
+                          (unsigned long)pkt_hdr.dst_id);
             }
             /* ROUTE_REQ: handled in C layer, also forwarded via relay below,
              * but do NOT inject into RIVR (control traffic, not app data).   */
@@ -378,6 +388,7 @@ uint32_t sources_rf_rx_drain(void)
 
         /* ── 5. Phase-D: Handle ROUTE_RPL ── */
         if (pkt_hdr.pkt_type == PKT_ROUTE_RPL) {
+            g_rivr_metrics.route_rpl_rx_total++;
             /* Parse 9-byte payload: target_id (4B) + next_hop (4B) + hop_count (1B) */
             if (payload_ptr && pkt_hdr.payload_len >= ROUTE_RPL_PAYLOAD_LEN) {
                 uint32_t target_id = (uint32_t)payload_ptr[0]
@@ -402,6 +413,7 @@ uint32_t sources_rf_rx_drain(void)
                                    metric,
                                    RCACHE_FLAG_VALID,
                                    now_ms);
+                g_rivr_metrics.route_rpl_learn_total++;
                 RIVR_LOGI(TAG, "rf_rx: ROUTE_RPL target=0x%08lx via 0x%08lx hops=%u",
                          (unsigned long)target_id,
                          (unsigned long)next_hop,
@@ -415,6 +427,7 @@ uint32_t sources_rf_rx_drain(void)
                     &g_pending_queue,
                     target_id, effective_next_hop,
                     &rf_tx_queue, now_ms);
+                g_rivr_metrics.pending_queue_drained_total += drained;
                 if (drained > 0u) {
                     RIVR_LOGI(TAG,
                         "rf_rx: drained %u pending msg(s) for 0x%08lx via 0x%08lx",

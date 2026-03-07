@@ -57,6 +57,19 @@ typedef struct {
      *  returned false).  Combines the hardware and token-bucket layers.
      *  Distinct from duty_blocked (which is only the dc_ctx hardware gate). */
     uint32_t rf_duty_blocked_total;
+    /* ── Routing control-plane observability ─────────────────────────────── */
+    uint32_t route_req_rx_total;              /**< ROUTE_REQ frames received                  */
+    uint32_t route_req_reply_sent_total;      /**< ROUTE_RPL enqueued in response             */
+    uint32_t route_req_reply_cache_total;     /**< replies sourced from route cache           */
+    uint32_t route_req_reply_target_total;    /**< replies because we ARE the destination     */
+    uint32_t route_req_reply_suppressed_total;/**< ROUTE_REQ heard — no eligible reply        */
+    uint32_t route_rpl_rx_total;              /**< ROUTE_RPL frames received                  */
+    uint32_t route_rpl_learn_total;           /**< route-cache entries written from RPL       */
+    uint32_t pending_queue_drained_total;     /**< frames drained from pending queue          */
+    uint32_t pending_queue_expired_total;     /**< pending entries evicted on expiry          */
+    uint32_t loop_detect_drop_total;          /**< RIVR_FWD_DROP_LOOP relay drops (alias)     */
+    uint32_t route_cache_miss_total;          /**< route_cache_lookup returned NULL           */
+    uint32_t route_cache_hit_total;           /**< route_cache_lookup returned valid entry    */
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;
