@@ -79,6 +79,9 @@ typedef struct {
     uint32_t retry_fail_total;     /**< retry entries exhausted without ACK           */
     uint32_t retry_fallback_total; /**< fallback floods sent after retry exhaustion    */
     uint32_t fallback_flood_total; /**< TX-queue-full fallback floods (rivr_sinks path) */
+    /* ── Neighbor-aware next-hop routing ────────────────────────────────── */
+    uint32_t neighbor_route_used_total;   /**< unicast used neighbor-quality best-hop      */
+    uint32_t neighbor_route_failed_total; /**< best-hop returned score=0 → fell back flood */
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;

@@ -4,6 +4,7 @@
  */
 
 #include "route_cache.h"
+#include "neighbor_table.h"
 #include "rivr_metrics.h"
 #include <string.h>
 #include <stdio.h>
@@ -25,6 +26,46 @@ static uint8_t link_to_metric(int16_t rssi_dbm, int8_t snr_db)
     if (s < 0)  s = 0;
     if (s > 20) s = 20;
     return (uint8_t)(r + s);  /* 0..100: higher = better */
+}
+
+/* ── Composite route score ───────────────────────────────────────────────── *
+ * Factors in:                                                                *
+ *   1. entry->metric        (RSSI+SNR composite, 0..100)                    *
+ *   2. hop-count penalty    (1 hop=100%, 2 hops=75%, 3+ hops=50%)          *
+ *   3. age decay            (linear toward 0 at RCACHE_EXPIRY_MS)           *
+ *   4. loss-rate penalty    (from standalone ntbl, if peer is known)        *
+ * Result is in [0, 100].                                                     *
+ * ─────────────────────────────────────────────────────────────────────────── */
+static uint32_t entry_composite_score(const route_cache_entry_t   *e,
+                                      const rivr_neighbor_table_t *ntbl,
+                                      uint32_t                     now_ms)
+{
+    uint32_t age = now_ms - e->last_seen_ms;
+    if (age >= RCACHE_EXPIRY_MS) return 0u;
+
+    /* 1. Base metric (0..100) */
+    uint32_t score = e->metric;
+
+    /* 2. Hop-count weight */
+    if (e->hop_count >= 3u) {
+        score = score * 50u / 100u;
+    } else if (e->hop_count == 2u) {
+        score = score * 75u / 100u;
+    }
+    /* hop_count == 1 → no penalty */
+
+    /* 3. Linear age decay */
+    score = score * (RCACHE_EXPIRY_MS - age) / RCACHE_EXPIRY_MS;
+
+    /* 4. Loss-rate penalty from standalone neighbor table */
+    if (ntbl) {
+        const rivr_neighbor_t *n = neighbor_find(ntbl, e->next_hop, now_ms);
+        if (n) {
+            score = score * (uint32_t)(100u - n->loss_rate) / 100u;
+        }
+    }
+
+    return score > 100u ? 100u : score;
 }
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
@@ -260,4 +301,72 @@ bool route_cache_can_reply_for_dst(route_cache_t *cache,
     if (e->hop_count > RCACHE_REPLY_MAX_HOPS) return false;
 
     return true;
+}
+
+bool route_cache_best_hop(route_cache_t              *cache,
+                          const rivr_neighbor_table_t *ntbl,
+                          uint32_t                    dst_id,
+                          uint32_t                    now_ms,
+                          rivr_route_t               *out)
+{
+    if (!cache || !out || dst_id == 0u) return false;
+
+    /* ── Tier 1: route-cache hit ────────────────────────────────────────── *
+     * Scan the whole table (not just the first match) to pick the highest-  
+     * scoring path when more than one cached route covers the same dst_id.  
+     * This can happen after a path change teaches a new route while the old  
+     * route is still fresh.                                                  */
+    const route_cache_entry_t *best_entry = NULL;
+    uint32_t                   best_score = 0u;
+
+    for (uint8_t i = 0u; i < RCACHE_SIZE; i++) {
+        route_cache_entry_t *e = &cache->entries[i];
+        if (e->dst_id != dst_id) continue;
+        if (expire_entry(e, now_ms)) continue;          /* lazy expiry */
+        if (!(e->flags & RCACHE_FLAG_VALID))   continue;
+        if (  e->flags & RCACHE_FLAG_PENDING)  continue; /* tentative */
+
+        uint32_t sc = entry_composite_score(e, ntbl, now_ms);
+        if (sc > best_score) {
+            best_score = sc;
+            best_entry = e;
+        }
+    }
+
+    if (best_entry) {
+        out->dest_id    = dst_id;
+        out->next_hop_id = best_entry->next_hop;
+        out->metric     = (uint16_t)best_score;
+        out->hop_count  = best_entry->hop_count;
+        out->expires_ms = best_entry->last_seen_ms + RCACHE_EXPIRY_MS;
+        g_rivr_metrics.route_cache_hit_total++;
+        g_rivr_metrics.neighbor_route_used_total++;
+        return true;
+    }
+
+    /* ── Tier 2: neighbor-best forwarder ───────────────────────────────── *
+     * No cache entry for dst_id but we do have a live direct neighbor that   
+     * can forward traffic.  Promote that neighbor as a best-effort next hop. 
+     * This avoids a full flood when the mesh is dense and the next hop is     
+     * very likely to be able to reach the destination.                        */
+    if (ntbl) {
+        const rivr_neighbor_t *nb = neighbor_best(ntbl, now_ms);
+        if (nb && (nb->flags & NTABLE_FLAG_DIRECT)) {
+            uint8_t nb_score = neighbor_link_score(nb, now_ms);
+            if (nb_score >= NTABLE_SCORE_UNICAST_MIN) {
+                out->dest_id    = dst_id;
+                out->next_hop_id = nb->neighbor_id;
+                out->metric     = nb_score;
+                out->hop_count  = 2u;  /* estimate: 1 to neighbor + 1 to dst */
+                out->expires_ms = nb->last_seen_ms + NTABLE_EXPIRY_MS;
+                g_rivr_metrics.neighbor_route_used_total++;
+                return true;
+            }
+        }
+    }
+
+    /* ── Tier 3: no usable next hop ───────────────────────────────────────── */
+    g_rivr_metrics.route_cache_miss_total++;
+    g_rivr_metrics.neighbor_route_failed_total++;
+    return false;
 }

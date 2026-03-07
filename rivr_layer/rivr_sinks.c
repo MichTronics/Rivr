@@ -114,13 +114,14 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
         }
 
         if (dec && pkt.dst_id != 0u) {
-            uint32_t next_hop = 0u;
-            rcache_tx_decision_t cache_dec =
-                route_cache_tx_decide(&g_route_cache, pkt.dst_id, now_ms, &next_hop);
+            rivr_route_t  chosen;
+            bool          have_route =
+                route_cache_best_hop(&g_route_cache, &g_ntable,
+                                     pkt.dst_id, now_ms, &chosen);
 
-            if (cache_dec == RCACHE_TX_FLOOD) {
-                /* ── Cache MISS for unicast-destined packet ─────────────────
-                 * Save to pending queue and send a ROUTE_REQ instead.
+            if (!have_route) {
+                /* ── Tier 3: cache MISS + no qualified neighbor forwarder ──
+                 * Save to pending queue and send a ROUTE_REQ broadcast.
                  * The original frame will be drained by the ROUTE_RPL handler
                  * in rivr_sources.c when the route is resolved.             */
                 bool pend_ok = pending_queue_enqueue(
@@ -149,14 +150,17 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                     pend_ok ? "ok" : "full",
                     rreq_ok ? "ok" : "fail");
                 if (!pend_ok) {
-                    /* Frame can never be delivered — pending queue was full */
                     g_rivr_metrics.drop_no_route++;
                 }
                 if (rreq_ok) { UPDATE_TXQ_PEAK(); }
                 return;   /* do NOT push original frame; wait for ROUTE_RPL */
 
             } else {
-                /* ── Cache HIT — rewrite as unicast one-hop ──────────────── */
+                /* ── Tier 1 or 2: rewrite as unicast one-hop ──────────────
+                 * chosen.next_hop_id comes from either:
+                 *   Tier 1 — route-cache hit (best composite-scored entry)
+                 *   Tier 2 — best direct neighbor as forwarder             */
+                uint32_t next_hop = chosen.next_hop_id;
                 rivr_pkt_hdr_t uni = pkt;
                 uni.dst_id = next_hop;
                 uni.ttl    = 1u;
@@ -186,9 +190,9 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
                                             req.toa_us, now_ms);
                     }
                     RIVR_LOGI(TAG,
-                        "rf_tx: unicast dst=0x%08lx via next_hop=0x%08lx score=%u",
+                        "rf_tx: unicast dst=0x%08lx via next_hop=0x%08lx score=%u hops=%u",
                         (unsigned long)pkt.dst_id, (unsigned long)next_hop,
-                        (unsigned)routing_next_hop_score(&g_ntable, next_hop, now_ms));
+                        (unsigned)chosen.metric, (unsigned)chosen.hop_count);
                 }
             }
         }

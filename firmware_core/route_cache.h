@@ -77,6 +77,24 @@ extern "C" {
 #define RCACHE_FLAG_PENDING  0x02u  /**< ROUTE_REQ sent; awaiting ROUTE_RPL   */
 #define RCACHE_FLAG_DIRECT   0x04u  /**< dst_id is a direct (1-hop) neighbour  */
 
+/* ── Public route view (read-only snapshot) ─────────────────────────────── */
+
+/**
+ * Stable, caller-facing route description.
+ *
+ * Mirrors route_cache_entry_t but uses the naming requested by the routing
+ * upgrade: dest_id / next_hop_id / metric / hop_count / expires_ms.
+ * Callers receive this by value from route_cache_best_hop() so they never
+ * hold a pointer into the mutable cache table.
+ */
+typedef struct {
+    uint32_t dest_id;      /**< Destination node ID                             */
+    uint32_t next_hop_id;  /**< Immediate next hop toward dest                  */
+    uint16_t metric;       /**< Composite quality score 0–100 (higher = better) */
+    uint8_t  hop_count;    /**< Total hops from us to dest (1 = direct)         */
+    uint32_t expires_ms;   /**< Absolute expiry timestamp (last_seen + EXPIRY)  */
+} rivr_route_t;
+
 /* ── Route-cache entry ───────────────────────────────────────────────────── */
 
 typedef struct {
@@ -193,6 +211,36 @@ rcache_tx_decision_t route_cache_tx_decide(route_cache_t *cache,
                                             uint32_t       dst_id,
                                             uint32_t       now_ms,
                                             uint32_t      *next_hop_out);
+
+/* Pull in neighbor-table types here (forward usage by route_cache_best_hop). */
+#include "neighbor_table.h"
+
+/**
+ * @brief Select the best next hop for @p dst_id using full neighbor quality.
+ *
+ * Three-tier decision (in order):
+ *   1. Route-cache hit — selects the entry with the highest composite score.
+ *      Composite score = entry->metric (RSSI+SNR 0..100)
+ *                      × hop_weight (1.0 for 1 hop, 0.75 for 2, 0.5 for 3+)
+ *                      × time_decay (linear, same formula as neighbor_link_score)
+ *                      — penalty for loss_rate from @p ntbl (if peer known).
+ *   2. Neighbor-best forwarder — no cache entry for dst, but ntbl has a live
+ *      direct neighbor with score >= NTABLE_SCORE_UNICAST_MIN; that neighbor
+ *      is promoted as a best-effort next hop (will flood-forward to dst).
+ *   3. Returns false — caller should flood.
+ *
+ * @param cache     Route cache.
+ * @param ntbl      Standalone neighbor-quality table (may be NULL).
+ * @param dst_id    Destination node ID.
+ * @param now_ms    Current monotonic timestamp in ms.
+ * @param[out] out  Populated with the chosen route on true return.
+ * @return true if a unicast next hop was selected; false → flood.
+ */
+bool route_cache_best_hop(route_cache_t              *cache,
+                          const rivr_neighbor_table_t *ntbl,
+                          uint32_t                    dst_id,
+                          uint32_t                    now_ms,
+                          rivr_route_t               *out);
 
 /**
  * @brief Expire stale cache entries.
