@@ -66,6 +66,20 @@ extern "C" {
  *  relay time to fire and cancel this node's copy before it transmits. */
 #define FWDSET_HOLDOFF_LOW_MS   120u
 
+/**
+ * Extra hold-off added when network density is high (viable_count ≥ 4).
+ * Dense meshes have many relay candidates; wait longer so the best-placed
+ * node fires first and Phase 4 reactive suppression can cancel copies from
+ * weaker nodes.  This complements the quality tiers above.
+ */
+#define FWDSET_DENSITY_DENSE_MS  80u
+
+/**
+ * Extra hold-off for medium-density networks (viable_count 2–3).
+ * Some relay competition exists; modest delay reduces duplicate airtime.
+ */
+#define FWDSET_DENSITY_MED_MS    40u
+
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
 /** A single forward candidate (node + its link score). */
@@ -205,13 +219,24 @@ static inline bool fwdset_suppress_relay(const fwd_set_t *fs)
 /**
  * Additional hold-off to add on top of the normal jitter window.
  *
- * Three tiers based on best_direct_score:
+ * Returns the sum of two independent dimensions:
+ *
+ * **Quality tier** (best_direct_score):
  *   ≥ 70  →   0 ms  (high quality — relay at normal jitter pace)
  *   ≥ 40  →  50 ms  (medium quality — slight delay)
  *   ≥ 20  → 120 ms  (low quality — Phase 4 opfwd suppression can cancel)
- *   <  20 →   0 ms  (node is suppressed — extra holdoff irrelevant)
+ *   <  20 →   0 ms  (node is suppressed — quality holdoff irrelevant)
  *
- * Call fwdset_suppress_relay() before this; if suppress returns true, the
+ * **Density tier** (viable_count — adaptive relay density):
+ *   ≥ 4   →  80 ms  (dense mesh — many candidates, wait for best to fire)
+ *   ≥ 2   →  40 ms  (medium mesh — moderate competition)
+ *   ≤ 1   →   0 ms  (sparse mesh — relay promptly; don't risk connectivity gap)
+ *
+ * The two components are additive so a low-quality node in a dense mesh
+ * waits longest (120 + 80 = 200 ms), while a high-quality node in a sparse
+ * mesh relays at once (0 + 0 = 0 ms).
+ *
+ * Call fwdset_suppress_relay() before this; if suppress returns true the
  * relay is skipped entirely and this function's return value is unused.
  *
  * @param fs  Built fwd_set_t.
@@ -219,17 +244,30 @@ static inline bool fwdset_suppress_relay(const fwd_set_t *fs)
  */
 static inline uint32_t fwdset_extra_holdoff_ms(const fwd_set_t *fs)
 {
+    /* Quality component */
+    uint32_t quality_ms;
     if (fs->best_direct_score >= 70u) {
-        return 0u;
+        quality_ms = 0u;
+    } else if (fs->best_direct_score >= 40u) {
+        quality_ms = FWDSET_HOLDOFF_MID_MS;
+    } else if (fs->best_direct_score >= FWDSET_MIN_RELAY_SCORE) {
+        quality_ms = FWDSET_HOLDOFF_LOW_MS;
+    } else {
+        quality_ms = 0u;  /* suppressed or no direct neighbours */
     }
-    if (fs->best_direct_score >= 40u) {
-        return FWDSET_HOLDOFF_MID_MS;
+
+    /* Density component — adaptive relay: dense mesh waits longer so the
+     * best-positioned relay fires first; sparse mesh skips extra delay. */
+    uint32_t density_ms;
+    if (fs->viable_count >= 4u) {
+        density_ms = FWDSET_DENSITY_DENSE_MS;
+    } else if (fs->viable_count >= 2u) {
+        density_ms = FWDSET_DENSITY_MED_MS;
+    } else {
+        density_ms = 0u;
     }
-    if (fs->best_direct_score >= FWDSET_MIN_RELAY_SCORE) {
-        return FWDSET_HOLDOFF_LOW_MS;
-    }
-    /* Below threshold — either suppressed or no direct neighbours */
-    return 0u;
+
+    return quality_ms + density_ms;
 }
 
 /* ── fwdset_sprint ───────────────────────────────────────────────────────── */

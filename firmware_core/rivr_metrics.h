@@ -137,6 +137,12 @@ typedef struct {
      *       − policy/fabric/txqueue drops
      */
     uint32_t relay_forwarded_total; /**< relay frames that completed TX      */
+
+    /** Cumulative extra hold-off applied to relay frames, in milliseconds.
+     *  Incremented by fwdset_extra_holdoff_ms() whenever a non-zero holdoff
+     *  is added to a relay's due_ms.  Lets operators quantify airtime saved
+     *  by adaptive relay delay (density + quality tiers combined).          */
+    uint32_t relay_delay_ms_total;
 } rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;
@@ -162,6 +168,11 @@ typedef struct {
     uint8_t  lnk_best;      /**< Best neighbor_link_score_full (0–100)       */
     int8_t   lnk_best_rssi; /**< EWMA RSSI of best-scoring neighbor (dBm)   */
     uint8_t  lnk_avg_loss;  /**< Average packet-loss % across live neighbors */
+    /* ── Adaptive relay density snapshot ────────────────────────────────────
+     * viable_count from the most recent fwdset_build() (or lnk_cnt when
+     * @MET is emitted outside a relay decision).  Drives the density tier
+     * in fwdset_extra_holdoff_ms() and exposed in @MET for observability. */
+    uint8_t  relay_density;  /**< Viable neighbor count (score ≥ FWDSET_MIN_RELAY_SCORE) */
 } rivr_live_stats_t;
 
 /**

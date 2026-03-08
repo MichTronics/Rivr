@@ -340,18 +340,27 @@ static void cli_handle_line(void)
     /* ── "metrics" ── */
     if (strncmp(p, "metrics", 7u) == 0 && (p[7] == '\0' || p[7] == ' ')) {
         uint32_t now_ms = tb_millis();
-        const rivr_live_stats_t ls = {
-            .node_id     = g_my_node_id,
-            .dc_pct      = (uint8_t)(DC_BUDGET_US > 0u
-                           ? ((DC_BUDGET_US - dutycycle_remaining_us(&g_dc)) * 100ULL
-                              / DC_BUDGET_US)
-                           : 0u),
-            .q_depth     = (uint8_t)rb_available(&rf_tx_queue),
-            .tx_total    = g_tx_frame_count,
-            .rx_total    = g_rx_frame_count,
-            .route_cache = route_cache_count(&g_route_cache, now_ms),
-        };
-        rivr_metrics_print(&ls);
+        {
+            const neighbor_link_summary_t _lnk =
+                neighbor_table_link_summary(&g_ntable, now_ms);
+            const rivr_live_stats_t ls = {
+                .node_id       = g_my_node_id,
+                .dc_pct        = (uint8_t)(DC_BUDGET_US > 0u
+                                 ? ((DC_BUDGET_US - dutycycle_remaining_us(&g_dc)) * 100ULL
+                                    / DC_BUDGET_US)
+                                 : 0u),
+                .q_depth       = (uint8_t)rb_available(&rf_tx_queue),
+                .tx_total      = g_tx_frame_count,
+                .rx_total      = g_rx_frame_count,
+                .route_cache   = route_cache_count(&g_route_cache, now_ms),
+                .lnk_cnt       = _lnk.count,
+                .lnk_best      = _lnk.best_score,
+                .lnk_best_rssi = _lnk.best_rssi,
+                .lnk_avg_loss  = _lnk.avg_loss,
+                .relay_density = _lnk.count,
+            };
+            rivr_metrics_print(&ls);
+        }
         fflush(stdout);
         return;
     }

@@ -92,7 +92,11 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"lnk_cnt\":%" PRIu8 ","
            "\"lnk_best\":%" PRIu8 ","
            "\"lnk_rssi\":%" PRId8 ","
-           "\"lnk_loss\":%" PRIu8
+           "\"lnk_loss\":%" PRIu8 ","
+           /* adaptive relay observability */
+           "\"relay_skip\":%" PRIu32 ","
+           "\"relay_delay\":%" PRIu32 ","
+           "\"relay_density\":%" PRIu8
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -172,5 +176,10 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         live->lnk_cnt,
         live->lnk_best,
         live->lnk_best_rssi,
-        live->lnk_avg_loss);
+        live->lnk_avg_loss,
+        /* adaptive relay: relay_skip = phase-4 + phase-5 suppress totals */
+        g_rivr_metrics.flood_fwd_cancelled_opport_total
+            + g_rivr_metrics.flood_fwd_score_suppressed_total,
+        g_rivr_metrics.relay_delay_ms_total,
+        live->relay_density);
 }

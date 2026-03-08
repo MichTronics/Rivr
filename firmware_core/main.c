@@ -843,6 +843,10 @@ void app_main(void)
                     .lnk_best      = _lnk.best_score,
                     .lnk_best_rssi = _lnk.best_rssi,
                     .lnk_avg_loss  = _lnk.avg_loss,
+                    /* relay_density: live neighbor count is the best proxy
+                     * available at @MET print time (fwdset is built only
+                     * during actual relay decisions, not here). */
+                    .relay_density = _lnk.count,
                 };
                 rivr_metrics_print(&ls);
             }

@@ -713,11 +713,17 @@ uint32_t sources_rf_rx_drain(void)
                     goto skip_relay_policy;
 #endif
                 }
-                delay_ms += fwdset_extra_holdoff_ms(&_fs);
+                {
+                    uint32_t _extra = fwdset_extra_holdoff_ms(&_fs);
+                    if (_extra > 0u) {
+                        delay_ms += _extra;
+                        g_rivr_metrics.relay_delay_ms_total += _extra;
+                    }
+                }
                 if (_fs.best_direct_score > 0u) {
                     ESP_LOGD(TAG,
                         "rf_rx: fwdset holdoff +%lu ms "
-                        "src=0x%08lx best_direct=%u viable=%u",
+                        "src=0x%08lx best_direct=%u viable=%u(density)",
                         (unsigned long)fwdset_extra_holdoff_ms(&_fs),
                         (unsigned long)fwd_hdr.src_id,
                         (unsigned)_fs.best_direct_score,
