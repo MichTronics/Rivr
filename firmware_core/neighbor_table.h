@@ -255,3 +255,61 @@ uint8_t neighbor_table_expire(rivr_neighbor_table_t *tbl, uint32_t now_ms);
  * @param now_ms  Current monotonic timestamp in milliseconds.
  */
 void neighbor_table_print(const rivr_neighbor_table_t *tbl, uint32_t now_ms);
+
+/* ── Per-print link quality summary ─────────────────────────────────────── */
+
+/**
+ * Aggregate link-quality snapshot across all live (non-stale) neighbors.
+ * Computed on demand at metrics-print time; O(NTABLE_SIZE) with no allocation.
+ */
+typedef struct {
+    uint8_t count;       /**< Live neighbor count (age < NTABLE_STALE_MS)    */
+    uint8_t best_score;  /**< Highest neighbor_link_score_full (0–100)        */
+    int8_t  best_rssi;   /**< EWMA RSSI of the best-scoring neighbor (dBm)   */
+    uint8_t avg_loss;    /**< Average loss_rate % across all live neighbors   */
+} neighbor_link_summary_t;
+
+/**
+ * Compute the link quality summary from a neighbor table in O(NTABLE_SIZE).
+ * Safe to call from the main loop every 5 s; all integer math, no alloc.
+ *
+ * @param tbl     Pointer to the global neighbor table.
+ * @param now_ms  Current tb_millis() timestamp.
+ * @return        Populated neighbor_link_summary_t by value (4 bytes).
+ */
+static inline neighbor_link_summary_t
+neighbor_table_link_summary(const rivr_neighbor_table_t *tbl, uint32_t now_ms)
+{
+    neighbor_link_summary_t s;
+    s.count      = 0u;
+    s.best_score = 0u;
+    s.best_rssi  = -120;   /* sentinel: updated on first live neighbor */
+    s.avg_loss   = 0u;
+
+    if (!tbl) return s;
+
+    uint32_t loss_sum = 0u;
+
+    for (uint8_t _i = 0u; _i < NTABLE_SIZE; _i++) {
+        const rivr_neighbor_t *_n = &tbl->entries[_i];
+        if (_n->neighbor_id == 0u) continue;
+        if ((now_ms - _n->last_seen_ms) >= NTABLE_STALE_MS) continue;  /* stale */
+
+        uint8_t _sc = neighbor_link_score_full(_n, now_ms);
+        s.count++;
+        loss_sum += _n->loss_rate;
+
+        if (_sc >= s.best_score) {   /* >= so first entry always wins */
+            s.best_score = _sc;
+            /* Clamp int16_t rssi_avg to int8_t range (practical LoRa RSSI */
+            /* is always in [-120, -20] which fits, but be defensive). */
+            int16_t _r = _n->rssi_avg;
+            s.best_rssi = (int8_t)(_r < -128 ? -128 : _r > 127 ? 127 : _r);
+        }
+    }
+
+    if (s.count > 0u) {
+        s.avg_loss = (uint8_t)(loss_sum / s.count);
+    }
+    return s;
+}

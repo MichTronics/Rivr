@@ -155,6 +155,13 @@ typedef struct {
     uint32_t tx_total;    /**< Total TX frames since boot (g_tx_frame_count) */
     uint32_t rx_total;    /**< Total RX frames since boot (g_rx_frame_count) */
     uint8_t  route_cache; /**< Live route-cache entries                      */
+    /* ── Link quality snapshot (computed from g_ntable at each print) ────────
+     * These four fields give a real-time view of neighborhood health.
+     * All are zero when no live neighbors are known.                        */
+    uint8_t  lnk_cnt;       /**< Count of live (non-stale) neighbors        */
+    uint8_t  lnk_best;      /**< Best neighbor_link_score_full (0–100)       */
+    int8_t   lnk_best_rssi; /**< EWMA RSSI of best-scoring neighbor (dBm)   */
+    uint8_t  lnk_avg_loss;  /**< Average packet-loss % across live neighbors */
 } rivr_live_stats_t;
 
 /**

@@ -485,9 +485,24 @@ uint32_t sources_rf_rx_drain(void)
 
                 /* For us: the replier is at pkt_hdr.hop + 1 hops away,
                  * so the full route is: target via replier via from_id. */
-                uint8_t metric = (uint8_t)(frame.rssi_dbm < -255 ? 0
-                                         : (uint8_t)(255 + frame.rssi_dbm));
                 uint32_t effective_next_hop = (from_id != 0) ? from_id : pkt_hdr.src_id;
+                /* Use composite link-quality score (RSSI+SNR+loss+age, 0–100)
+                 * from the already-updated g_ntable entry for effective_next_hop.
+                 * This is consistent with route_cache.c entry_composite_score()
+                 * which expects metric in [0,100].
+                 * Fallback: if the peer is not yet in g_ntable (first ever frame
+                 * via a relay), approximate from raw RSSI using the same clamp
+                 * formula as link_to_metric() in route_cache.c. */
+                const rivr_neighbor_t *_rpl_nb =
+                    neighbor_find(&g_ntable, effective_next_hop, now_ms);
+                uint8_t metric;
+                if (_rpl_nb != NULL) {
+                    metric = neighbor_link_score_full(_rpl_nb, now_ms);
+                } else {
+                    /* rssi_part = clamp(rssi_dbm + 140, 0, 80) — same as link_to_metric */
+                    int32_t _r = (int32_t)frame.rssi_dbm + 140;
+                    metric = (uint8_t)(_r < 0 ? 0u : _r > 80 ? 80u : (uint32_t)_r);
+                }
                 route_cache_update(&g_route_cache,
                                    target_id,
                                    effective_next_hop,

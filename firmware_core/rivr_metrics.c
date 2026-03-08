@@ -87,7 +87,12 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"at_fb\":%" PRIu32 ","
            "\"relay_sel\":%" PRIu32 ","
            "\"relay_can\":%" PRIu32 ","
-           "\"relay_fwd\":%" PRIu32
+           "\"relay_fwd\":%" PRIu32 ","
+           /* real-time link quality snapshot (4 fields from g_ntable) */
+           "\"lnk_cnt\":%" PRIu8 ","
+           "\"lnk_best\":%" PRIu8 ","
+           "\"lnk_rssi\":%" PRId8 ","
+           "\"lnk_loss\":%" PRIu8
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -162,5 +167,10 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         /* opportunistic relay: selected / cancelled / forwarded */
         g_rivr_metrics.flood_fwd_attempted_total,
         g_rivr_metrics.flood_fwd_cancelled_opport_total,
-        g_rivr_metrics.relay_forwarded_total);
+        g_rivr_metrics.relay_forwarded_total,
+        /* link quality snapshot */
+        live->lnk_cnt,
+        live->lnk_best,
+        live->lnk_best_rssi,
+        live->lnk_avg_loss);
 }
