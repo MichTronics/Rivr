@@ -4,6 +4,8 @@ target/
 # ─── ESP-IDF / CMake build output ─────────────────────────────────────────────
 build/
 sdkconfig
+sdkconfig.*
+!sdkconfig.defaults
 managed_components/
 dependencies.lock
 

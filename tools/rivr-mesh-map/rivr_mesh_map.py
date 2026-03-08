@@ -43,6 +43,7 @@ import re
 import sys
 from collections import defaultdict
 from datetime import datetime
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 # ── Regex patterns ─────────────────────────────────────────────────────────
