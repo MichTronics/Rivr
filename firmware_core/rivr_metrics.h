@@ -81,8 +81,30 @@ typedef struct {
     uint32_t fallback_flood_total; /**< TX-queue-full fallback floods (rivr_sinks path) */
     /* ── Neighbor-aware next-hop routing ────────────────────────────────── */
     uint32_t neighbor_route_used_total;   /**< unicast used neighbor-quality best-hop      */
-    uint32_t neighbor_route_failed_total; /**< best-hop returned score=0 → fell back flood */
-} rivr_metrics_t;
+    uint32_t neighbor_route_failed_total; /**< best-hop returned score=0 → fell back flood */    /* ── Phase 0: next-gen routing telemetry foundation ──────────────────────── *
+     * All four counters are incremented unconditionally (no feature-flag     *
+     * guard) so Phase 1–4 baseline comparisons hold before new behaviors    *
+     * are enabled.  The last three will remain zero until the corresponding  *
+     * phase flag is enabled.                                                 */
+
+    /** Total times RIVR_FWD_FORWARD was returned for flood relay.
+     *  Cascaded suppressions (policy, fabric, client gate, opportunistic
+     *  cancel) reduce effective relay count below this figure.
+     *  Phase 3 uses this as the normalizer for effective relay rate.        */
+    uint32_t flood_fwd_attempted_total;
+
+    /** Relays cancelled because a neighbor was heard forwarding the same
+     *  (src_id, pkt_id) during our jitter hold-off window.
+     *  Zero until RIVR_FEATURE_OPPORTUNISTIC_FWD=1 (Phase 4).              */
+    uint32_t flood_fwd_cancelled_opport_total;
+
+    /** Next-hop chosen by airtime-aware ETX scoring (Phase 2 path).
+     *  Zero until RIVR_FEATURE_AIRTIME_ROUTING=1.                           */
+    uint32_t airtime_route_selected_total;
+
+    /** Airtime scoring had insufficient data → fell back to hop-count.
+     *  Zero until RIVR_FEATURE_AIRTIME_ROUTING=1.                           */
+    uint32_t airtime_route_fallback_total;} rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;
 

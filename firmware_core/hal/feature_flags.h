@@ -215,6 +215,50 @@
 #  endif
 #endif
 
+/* ── Next-gen routing feature flags (Phase 0 baseline — all default OFF) ── *
+ *                                                                            *
+ * All three flags default to 0 on every role/board.                         *
+ * Enable in variants/<board>/config.h when the corresponding phase is       *
+ * ready and validated.                                                       *
+ *                                                                            *
+ * Conservative design: when a flag is 0 the code path is identical to the   *
+ * pre-Phase-0 behavior — no CPU, RAM, or airtime overhead.                  *
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Replace hop-count-only route selection with ETX + airtime-aware scoring.
+ * Phase 2 implementation prerequisite.
+ * When 0 (default): existing route_cache_best_hop() behavior unchanged.
+ * When 1: composite scoring uses etx_x8 denominator; neighbor table must
+ *          carry etx_x8 data (added in Phase 1).
+ */
+#ifndef RIVR_FEATURE_AIRTIME_ROUTING
+#  define RIVR_FEATURE_AIRTIME_ROUTING    0
+#endif
+
+/**
+ * Enable channel-load-adaptive forward rate caps and dynamic TTL clamping.
+ * Phase 3 implementation prerequisite.
+ * When 0 (default): forward_budget_t caps are static role-based constants.
+ * When 1: routing_fwdbudget_adapt() adjusts caps each minute window based on
+ *          rivr_fabric_get_score() and dutycycle_get_used_pct().
+ * Meaningful only when RIVR_FABRIC_REPEATER=1.
+ */
+#ifndef RIVR_FEATURE_ADAPTIVE_FLOOD
+#  define RIVR_FEATURE_ADAPTIVE_FLOOD     0
+#endif
+
+/**
+ * Enable opportunistic relay cancellation (overheard-forward suppression).
+ * Phase 4 implementation prerequisite.
+ * When 0 (default): relay frames are never cancelled after queuing.
+ * When 1: if a neighbor's relay of (src_id,pkt_id) is heard during our jitter
+ *          window, our queued copy is cancelled before radio_transmit().
+ */
+#ifndef RIVR_FEATURE_OPPORTUNISTIC_FWD
+#  define RIVR_FEATURE_OPPORTUNISTIC_FWD  0
+#endif
+
 /* ── Compile-time guards ─────────────────────────────────────────────────── */
 
 #if RIVR_RADIO_SX1262 && RIVR_RADIO_SX1276
@@ -254,5 +298,24 @@
 #  define _RIVR_FEAT_BLE  ""
 #endif
 
+#if RIVR_FEATURE_AIRTIME_ROUTING
+#  define _RIVR_FEAT_AIR  "+air"
+#else
+#  define _RIVR_FEAT_AIR  ""
+#endif
+
+#if RIVR_FEATURE_ADAPTIVE_FLOOD
+#  define _RIVR_FEAT_AFLOOD "+aflood"
+#else
+#  define _RIVR_FEAT_AFLOOD ""
+#endif
+
+#if RIVR_FEATURE_OPPORTUNISTIC_FWD
+#  define _RIVR_FEAT_OPFWD "+opfwd"
+#else
+#  define _RIVR_FEAT_OPFWD ""
+#endif
+
 /** Concatenated feature tag string, e.g. "+enc+ble" — for build_info banner. */
-#define RIVR_FEATURE_TAG_STR  (_RIVR_FEAT_ENC _RIVR_FEAT_COMP _RIVR_FEAT_BLE)
+#define RIVR_FEATURE_TAG_STR  (_RIVR_FEAT_ENC _RIVR_FEAT_COMP _RIVR_FEAT_BLE \
+                               _RIVR_FEAT_AIR _RIVR_FEAT_AFLOOD _RIVR_FEAT_OPFWD)

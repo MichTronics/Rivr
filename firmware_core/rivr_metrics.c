@@ -77,7 +77,11 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"retry_fb\":%" PRIu32 ","
            "\"fb_flood\":%" PRIu32 ","
            "\"nb_route_ok\":%" PRIu32 ","
-           "\"nb_route_fail\":%" PRIu32
+           "\"nb_route_fail\":%" PRIu32 ","
+           "\"fwd_att\":%" PRIu32 ","
+           "\"fwd_opc\":%" PRIu32 ","
+           "\"at_sel\":%" PRIu32 ","
+           "\"at_fb\":%" PRIu32
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -141,5 +145,9 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.retry_fallback_total,
         g_rivr_metrics.fallback_flood_total,
         g_rivr_metrics.neighbor_route_used_total,
-        g_rivr_metrics.neighbor_route_failed_total);
+        g_rivr_metrics.neighbor_route_failed_total,
+        g_rivr_metrics.flood_fwd_attempted_total,
+        g_rivr_metrics.flood_fwd_cancelled_opport_total,
+        g_rivr_metrics.airtime_route_selected_total,
+        g_rivr_metrics.airtime_route_fallback_total);
 }

@@ -69,6 +69,7 @@
 #include "../firmware_core/rivr_metrics.h"
 #include "../firmware_core/dutycycle.h"
 #include "../firmware_core/rivr_policy.h"
+#include "../firmware_core/routing_stats.h"
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 
@@ -236,6 +237,7 @@ static void cli_handle_line(void)
                "  neighbors             show live neighbour table with link scores\r\n"
                "  routes                show route cache with scores and ages\r\n"
                "  status                role, node ID, routing snapshot, loop-guard drops\r\n"
+               "  rtstats               routing pipeline telemetry snapshot (@RST JSON block)\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
@@ -489,6 +491,22 @@ static void cli_handle_line(void)
                (unsigned long)g_rivr_metrics.retry_fallback_total,
                (unsigned long)g_rivr_metrics.fallback_flood_total,
                (unsigned long)g_rivr_metrics.loop_detect_drop_total);
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "rtstats" — Phase 0 routing pipeline telemetry snapshot ── */
+    if (strncmp(p, "rtstats", 7u) == 0 && (p[7] == '\0' || p[7] == ' ')) {
+        uint32_t now_ms = tb_millis();
+        uint8_t  rc  = (uint8_t)route_cache_count(&g_route_cache, now_ms);
+        uint8_t  nb  = (uint8_t)routing_neighbor_count(&g_neighbor_table, now_ms);
+        uint8_t  pq  = (uint8_t)pending_queue_count(&g_pending_queue);
+        uint8_t  dc  = (uint8_t)(DC_BUDGET_US > 0u
+                        ? ((DC_BUDGET_US - dutycycle_remaining_us(&g_dc)) * 100ULL
+                           / DC_BUDGET_US)
+                        : 0u);
+        rivr_routing_stats_t rs = rivr_routing_stats_collect(rc, nb, pq, dc, now_ms);
+        rivr_routing_stats_print(&rs);
         fflush(stdout);
         return;
     }

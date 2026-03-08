@@ -573,6 +573,7 @@ uint32_t sources_rf_rx_drain(void)
         /* ── 7. Phase-A relay: re-encode modified header + enqueue with deterministic jitter ── */
         maybe_relay:
         if (fwd == RIVR_FWD_FORWARD) {
+            g_rivr_metrics.flood_fwd_attempted_total++;
             /* ── Policy gate: TTL cap + flood token bucket ── */
             {
                 uint8_t clamped_ttl = fwd_hdr.ttl;
