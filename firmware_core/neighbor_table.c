@@ -6,6 +6,7 @@
  */
 
 #include "neighbor_table.h"
+#include "hal/feature_flags.h"  /* RIVR_FEATURE_AIRTIME_ROUTING */
 
 #include <string.h>  /* memset, memcpy */
 #include <stddef.h>
@@ -65,6 +66,7 @@ rivr_neighbor_t *neighbor_update(rivr_neighbor_table_t *tbl,
                                  int8_t                 snr_db,
                                  uint8_t                hop_count,
                                  uint16_t               seq,
+                                 uint8_t                frame_len,
                                  uint32_t               now_ms)
 {
     if (!tbl || node_id == 0u) return NULL;
@@ -115,6 +117,23 @@ rivr_neighbor_t *neighbor_update(rivr_neighbor_table_t *tbl,
         if (hop_count < n->hop_count) {
             n->hop_count = hop_count;
         }
+
+        /* ── Phase 1: recompute ETX × 8 from the updated loss rate ── *
+         * ETX = 1 / delivery_ratio;  delivery_ratio = (100 - loss_rate) / 100.
+         * etx_x8 = 8 × 100 / max(100 − loss_rate, 1).  Clamp to [8, 255]. *
+         *   loss_rate = 0   → etx_x8 =   8   (perfect link)               *
+         *   loss_rate = 50  → etx_x8 =  16   (two expected transmissions)  *
+         *   loss_rate = 87  → etx_x8 =  62   (heavy loss)                  *
+         *   loss_rate ≥ 97  → etx_x8 = 255   (saturated / dead)             */
+        {
+            uint32_t del_pct = 100u - (uint32_t)n->loss_rate;
+            if (del_pct == 0u) {
+                n->etx_x8 = 255u;
+            } else {
+                uint32_t etx = (8u * 100u) / del_pct;
+                n->etx_x8 = (uint8_t)(etx > 255u ? 255u : (etx < 8u ? 8u : etx));
+            }
+        }
     } else {
         /* New peer — allocate slot. */
         uint8_t slot;
@@ -137,7 +156,20 @@ rivr_neighbor_t *neighbor_update(rivr_neighbor_table_t *tbl,
         n->snr_avg      = snr_db;
         n->loss_rate    = 0u;  /* optimistic seed — no loss history yet */
         n->hop_count    = hop_count;
+        n->etx_x8       = 8u;  /* Phase 1: seed as perfect link (no loss observed yet) */
+        n->avg_frame_len = 0u; /* Phase 1: seeded on first frame_len observation below */
         /* last_seq seeded below; loss-rate gap not applied on first receive */
+    }
+
+    /* ── Phase 1: update avg_frame_len EWMA on every observation ── *
+     * frame_len == 0 means the caller did not supply a length (skip).      */
+    if (frame_len > 0u) {
+        if (n->avg_frame_len == 0u) {
+            n->avg_frame_len = frame_len;  /* seed with first observation */
+        } else {
+            n->avg_frame_len = (uint8_t)(
+                ((uint32_t)n->avg_frame_len * 7u + (uint32_t)frame_len) / 8u);
+        }
     }
 
     /* ── Fields updated on every observation ─────────────────────────────── */
@@ -205,6 +237,41 @@ uint8_t neighbor_link_score(const rivr_neighbor_t *n, uint32_t now_ms)
     return (uint8_t)(score > 100u ? 100u : score);
 }
 
+/**
+ * ETX-aware composite link-quality score.
+ * When RIVR_FEATURE_AIRTIME_ROUTING == 0 (default) the formula is identical
+ * to neighbor_link_score() so there is zero behavior change in Phase 1.
+ * When the flag is 1 (Phase 2+) the loss-rate penalty is replaced by ETX×8
+ * weighting: links with high delivery ratios score proportionally higher.
+ */
+uint8_t neighbor_link_score_full(const rivr_neighbor_t *n, uint32_t now_ms)
+{
+    if (!n || n->neighbor_id == 0u) return 0u;
+
+    uint32_t age = now_ms - n->last_seen_ms;
+    if (age >= NTABLE_EXPIRY_MS) return 0u;
+
+    /* Base quality: rssi_part (0..80) + snr_part (0..20) = 0..100 */
+    int32_t rssi_part = clamp_i32((int32_t)n->rssi_avg + 140, 0, 80);
+    int32_t snr_part  = clamp_i32((int32_t)n->snr_avg  +  10, 0, 20);
+    uint32_t base     = (uint32_t)(rssi_part + snr_part);   /* 0..100 */
+
+    uint32_t after_quality;
+#if RIVR_FEATURE_AIRTIME_ROUTING
+    /* ETX×8 weighting: etx_x8=8 (perfect) → ×1.0, etx_x8=16 → ×0.5, etc.
+     * Guarantee etx_x8 ≥ 8 to avoid divide-by-zero / inflation.            */
+    uint32_t etx = (uint32_t)(n->etx_x8 >= 8u ? n->etx_x8 : 8u);
+    after_quality = base * 8u / etx;
+#else
+    /* Classic loss-rate penalty (backward compatible path). */
+    after_quality = base * (uint32_t)(100u - n->loss_rate) / 100u;
+#endif
+
+    /* Linear age decay: score → 0 as age → NTABLE_EXPIRY_MS. */
+    uint32_t score = after_quality * (NTABLE_EXPIRY_MS - age) / NTABLE_EXPIRY_MS;
+    return (uint8_t)(score > 100u ? 100u : score);
+}
+
 const rivr_neighbor_t *neighbor_best(const rivr_neighbor_table_t *tbl,
                                      uint32_t                     now_ms)
 {
@@ -220,7 +287,10 @@ const rivr_neighbor_t *neighbor_best(const rivr_neighbor_table_t *tbl,
         uint32_t age = now_ms - n->last_seen_ms;
         if (age >= NTABLE_EXPIRY_MS) continue;
 
-        uint8_t sc = neighbor_link_score(n, now_ms);
+        /* Phase 1: use neighbor_link_score_full() so that enabling
+         * RIVR_FEATURE_AIRTIME_ROUTING upgrades best-neighbour selection
+         * automatically. When the flag is 0, result == neighbor_link_score(). */
+        uint8_t sc = neighbor_link_score_full(n, now_ms);
         if (sc > best_score) {
             best_score = sc;
             best       = n;

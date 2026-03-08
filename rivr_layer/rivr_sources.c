@@ -165,6 +165,7 @@ uint32_t sources_rf_rx_drain(void)
                         frame.snr_db,
                         pkt_hdr.hop,
                         pkt_hdr.seq,
+                        frame.len,   /* Phase 1: track avg frame length for ToA estimation */
                         now_ms);
 
         route_cache_learn_rx(&g_route_cache,

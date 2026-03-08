@@ -145,7 +145,11 @@ uint8_t routing_next_hop_score(const rivr_neighbor_table_t *ntbl,
     if (!ntbl || candidate_id == 0u) return 0u;
     const rivr_neighbor_t *n = neighbor_find(ntbl, candidate_id, now_ms);
     if (!n) return 0u;
-    return neighbor_link_score(n, now_ms);
+    /* Phase 1: call neighbor_link_score_full() so that enabling
+     * RIVR_FEATURE_AIRTIME_ROUTING upgrades scoring transparently.
+     * When the flag is 0 (default), the result is identical to
+     * neighbor_link_score(). */
+    return neighbor_link_score_full(n, now_ms);
 }
 
 void routing_neighbor_init(neighbor_table_t *tbl)

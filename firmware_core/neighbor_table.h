@@ -76,7 +76,20 @@ typedef struct {
     uint8_t  hop_count;     /**< Minimum observed hop-count for this peer.  */
     uint16_t last_seq;      /**< Last wire-protocol seq seen (loss tracking).*/
     uint32_t rx_ok;         /**< Total frames received from this peer.      */
-    uint8_t  _pad[2];       /**< Padding to 24 bytes (cache-line friendly). */
+
+    /* ── Phase 1: airtime metrics foundation ───────────────────────────── *
+     * etx_x8: ETX × 8 in fixed point (integer arithmetic; no float).      *
+     *   8   = perfect link (delivery ratio = 100%, ETX = 1.0)             *
+     *   16  = 50 % delivery (ETX = 2.0, two transmissions expected)       *
+     *   255 = link considered unreachable (< 4 % delivery)                *
+     * Recomputed from loss_rate on every neighbor_update() call.          *
+     * Used by neighbor_link_score_full() when                             *
+     *   RIVR_FEATURE_AIRTIME_ROUTING = 1 (Phase 2+).                      *
+     *
+     * avg_frame_len: EWMA of observed wire frame length in bytes (α=1/8). *
+     * Used by Phase 3 adaptive-flood control for ToA estimation.          */
+    uint8_t  etx_x8;        /**< ETX×8 fixed-point quality; 8=best, 255=dead. */
+    uint8_t  avg_frame_len; /**< EWMA wire frame length (bytes); 0=no data.   */
 } rivr_neighbor_t;
 
 /** Fixed-size table of rivr_neighbor_t entries. */
@@ -112,6 +125,8 @@ void neighbor_table_init(rivr_neighbor_table_t *tbl);
  * @param snr_db     Received SNR in dB.
  * @param hop_count  Hop field from the received packet header.
  * @param seq        Wire-protocol sequence number (for loss estimation).
+ * @param frame_len  Wire frame length in bytes (updates avg_frame_len EWMA);
+ *                   pass 0 if the length is unknown (no EWMA update).
  * @param now_ms     Current monotonic timestamp in milliseconds.
  * @return Pointer to the updated entry, or NULL if @p node_id is 0.
  */
@@ -121,6 +136,7 @@ rivr_neighbor_t *neighbor_update(rivr_neighbor_table_t *tbl,
                                  int8_t                 snr_db,
                                  uint8_t                hop_count,
                                  uint16_t               seq,
+                                 uint8_t                frame_len,
                                  uint32_t               now_ms);
 
 /**
@@ -170,6 +186,31 @@ const rivr_neighbor_t *neighbor_best(const rivr_neighbor_table_t *tbl,
  * @return Quality score in [0, 100].
  */
 uint8_t neighbor_link_score(const rivr_neighbor_t *n, uint32_t now_ms);
+
+/**
+ * Compute the ETX-aware composite link-quality score for one neighbor.
+ *
+ * When RIVR_FEATURE_AIRTIME_ROUTING == 1 (Phase 2+):
+ *   Uses ETX × 8 weighting instead of the linear loss-rate penalty:
+ *
+ *     rssi_part  = clamp(rssi_avg + 140, 0, 80)
+ *     snr_part   = clamp(snr_avg  +  10, 0, 20)
+ *     base       = rssi_part + snr_part               — 0..100
+ *     etx_scaled = base × 8 / etx_x8                 — 0..100
+ *                  (etx_x8=8 → ×1.0, etx_x8=16 → ×0.5)
+ *     score      = etx_scaled × (EXPIRY − age) / EXPIRY
+ *
+ * When RIVR_FEATURE_AIRTIME_ROUTING == 0 (default):
+ *   Identical to neighbor_link_score() — no behavior change.
+ *
+ * The routing layer calls this function (rather than neighbor_link_score)
+ * so that flipping the feature flag upgrades scoring transparently.
+ *
+ * @param n       Neighbor entry (may be NULL → returns 0).
+ * @param now_ms  Current monotonic timestamp.
+ * @return Quality score in [0, 100].
+ */
+uint8_t neighbor_link_score_full(const rivr_neighbor_t *n, uint32_t now_ms);
 
 /**
  * Set one or more flag bits on an existing neighbor entry.
