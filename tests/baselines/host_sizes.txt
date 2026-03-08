@@ -1,6 +1,7 @@
+# Auto-regenerated 2026-03-08
 # RIVR host test binary size baseline
 #
-# Generated: 2026-02-28  (commit 68c043d, P2 complete)
+# Generated: 2026-03-09  (commit becc549)
 # Platform:  Linux x86_64, gcc, -std=c11 -Wall -Wextra -g
 #
 # CI uses a +5% tolerance.  Regenerate with:
@@ -8,7 +9,7 @@
 #   bash tests/ci_size_check.sh --update tests/baselines/host_sizes.txt
 #
 # Format: <binary_name> <size_bytes>
-acceptance_test 96272
-radio_recovery_test 51152
-replay_test 78528
-dutycycle_test 31496
+acceptance_test 152568
+radio_recovery_test 58336
+replay_test 100528
+dutycycle_test 34320

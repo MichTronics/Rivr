@@ -28,7 +28,7 @@ if [[ "${BASELINE}" == "--update" ]]; then
         [[ "$line" =~ ^# ]] && echo "$line" >> "$tmpfile" && continue
         [[ -z "$line" ]]    && echo ""       >> "$tmpfile" && continue
         name=$(echo "$line" | awk '{print $1}')
-        bin="$TESTS_DIR/tests/$name"
+        bin="$TESTS_DIR/$name"
         if [[ -f "$bin" ]]; then
             sz=$(stat -c%s "$bin")
             echo "$name $sz" >> "$tmpfile"
