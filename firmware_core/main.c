@@ -356,7 +356,7 @@ static void sim_inject_packets(void)
 }
 
 /** Initialise ring-buffers without touching SPI/GPIO.
- *  TODO(SX1262): replace with radio_init() once hardware is connected. */
+ *  [HARDWARE-TODO / SIM-ONLY] TODO(SX1262): replace with radio_init() once hardware is connected. */
 static inline void radio_sim_init(void)
 {
     radio_init_buffers_only();
@@ -434,7 +434,7 @@ static void tx_drain_loop(void)
 #ifdef RIVR_SIM_TX_PRINT
         /* ── Simulation TX path ─────────────────────────────────────────── *
          * Decode the binary frame and log what would be transmitted.        *
-         * TODO(SX1262): remove #ifdef and always use radio_transmit() once  *
+         * [HARDWARE-TODO / SIM-ONLY] TODO(SX1262): remove #ifdef and always use radio_transmit() once  *
          * the real radio driver is verified.                                 *
          * ────────────────────────────────────────────────────────────────── */
         {
@@ -542,7 +542,7 @@ static void rivr_init_gateway(void)
               (unsigned)FWDBUDGET_MAX_FWD_ROLE,
               (unsigned)RCACHE_SIZE,
               (unsigned)RETRY_TABLE_SIZE);
-    /* TODO(gateway): initialise IP transport here.
+    /* [FUTURE-FEATURE / SAFE-STUB] TODO(gateway): initialise IP transport here.
      * Example:
      *   rivr_gateway_bridge_init();  // connect MQTT / HTTP / raw TCP
      * Application service dispatch (rivr_svc.c) is always active; the
@@ -570,7 +570,7 @@ void app_main(void)
     /* In sim mode skip full platform_init (no SPI bus, no GPIO interrupts).
      * Only initialise the ring-buffers inside the radio module so that
      * sim_inject_packets() can push frames immediately.
-     * TODO(SX1262): replace with platform_init() once hardware is connected. */
+     * [HARDWARE-TODO / SIM-ONLY] TODO(SX1262): replace with platform_init() once hardware is connected. */
     timebase_init();
     dutycycle_init(&g_dc);
     airtime_sched_init();

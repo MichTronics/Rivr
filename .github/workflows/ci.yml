@@ -70,7 +70,7 @@ jobs:
         run: |
           gcc -O2 -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG \
               firmware_core/ed25519_verify.c \
-              firmware_core/rivr_ota.c \
+              firmware_core/rivr_ota_core.c \
               tests/test_ota.c \
               -o /tmp/test_ota && timeout 60 /tmp/test_ota
 
@@ -78,7 +78,7 @@ jobs:
         run: |
           gcc -O2 -Ifirmware_core -DIRAM_ATTR="" \
               firmware_core/ed25519_verify.c \
-              firmware_core/rivr_ota.c \
+              firmware_core/rivr_ota_core.c \
               tests/test_ota.c \
               -o /tmp/test_ota_unsigned && /tmp/test_ota_unsigned
 
@@ -109,7 +109,7 @@ jobs:
           gcc -O1 -g -fsanitize=address,undefined \
               -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG \
               firmware_core/ed25519_verify.c \
-              firmware_core/rivr_ota.c \
+              firmware_core/rivr_ota_core.c \
               tests/test_ota.c \
               -o /tmp/test_ota_asan && timeout 60 /tmp/test_ota_asan
 

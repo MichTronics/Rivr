@@ -29,12 +29,12 @@ make -C tests size_check
 ```
 
 The command compares the sizes of all test binaries against the stored
-baselines in `tests/size_baselines.txt`.  Any binary that grew by more than
+baselines in `tests/baselines/host_sizes.txt`.  Any binary that grew by more than
 **512 bytes** fails the gate.  To update baselines after an intentional change:
 
 ```bash
 make -C tests update_baselines
-git add tests/size_baselines.txt
+git add tests/baselines/host_sizes.txt
 git commit -m "chore: update size baselines for vX.Y.Z"
 ```
 

@@ -3,7 +3,22 @@
 > A small reactive programming language and deterministic runtime for off-grid LoRa mesh
 > networks.  Runs on ESP32 + SX1262/SX1276 with **zero heap allocation after boot**.
 
-[![CI](https://github.com/your-org/Rivr/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/Rivr/actions/workflows/ci.yml)
+[![CI](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml)
+
+> **Note:** Replace `YOUR_ORG/YOUR_REPO` in the badge URL above with your actual GitHub repository path before publishing.
+
+---
+
+## Public Beta
+
+Rivr is currently in **public beta**. The core runtime, test suite (204 passing), and supported hardware
+configurations work reliably in lab and field testing. However:
+
+- Not yet recommended for unattended production deployments
+- Wire protocol and DSL API may change between beta releases
+- ESP32 DevKit + E22-900M30S (SX1262) is the primary tested configuration
+- LilyGo LoRa32 v2.1 (SX1276) is supported but receives less frequent hardware testing
+- When filing a bug, always attach a `@SUPPORTPACK` capture from the serial monitor
 
 ---
 
@@ -128,10 +143,12 @@ Full grammar: [docs/en/language-reference.md](docs/en/language-reference.md)
 
 ## Hardware table
 
-| Board | Radio | PA | Environments |
-|---|---|---|---|
-| ESP32 DevKit + E22-900M30S | SX1262 | +30 dBm external | `client_esp32devkit_e22_900` · `repeater_esp32devkit_e22_900` |
-| LilyGo LoRa32 v2.1 | SX1276 | +20 dBm onboard | `client_lilygo_lora32_v21` · `repeater_lilygo_lora32_v21` |
+| Board | Radio | PA | Status | Environments |
+|---|---|---|---|---|
+| ESP32 DevKit + E22-900M30S | SX1262 | +30 dBm external | **Supported** | `client_esp32devkit_e22_900` · `repeater_esp32devkit_e22_900` |
+| LilyGo LoRa32 v2.1 | SX1276 | +20 dBm onboard | **Supported** | `client_lilygo_lora32_v21` · `repeater_lilygo_lora32_v21` |
+
+Status key: **Supported** = regularly tested in CI and field; **Experimental** = compiles and boots, limited field testing.
 
 Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build-guide.md)
 
@@ -181,6 +198,7 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 
 | Topic | English | Nederlands |
 |---|---|---|
+| **Quickstart** | [quickstart.md](docs/quickstart.md) | — |
 | Overview | [en/overview.md](docs/en/overview.md) | [nl/overzicht.md](docs/nl/overzicht.md) |
 | Architecture | [en/architecture.md](docs/en/architecture.md) | [nl/architectuur.md](docs/nl/architectuur.md) |
 | Language reference | [en/language-reference.md](docs/en/language-reference.md) | [nl/taalreferentie.md](docs/nl/taalreferentie.md) |
@@ -189,6 +207,7 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 | Wire protocol | [en/protocol.md](docs/en/protocol.md) | — |
 | Application services | [en/services.md](docs/en/services.md) | — |
 | Release process | [releasing.md](docs/releasing.md) | — |
+| Beta release checklist | [beta-release-checklist.md](docs/beta-release-checklist.md) | — |
 
 ---
 

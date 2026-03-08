@@ -31,6 +31,7 @@ ACC_SRCS := \
     $(FW)/routing.c     \
     $(FW)/route_cache.c \
     $(FW)/pending_queue.c \
+    $(FW)/neighbor_table.c \
     $(FW)/rivr_metrics.c  \
     $(FW)/rivr_log.c      \
     $(FW)/airtime_sched.c \
@@ -64,6 +65,7 @@ REP_SRCS := \
     $(FW)/protocol.c    \
     $(FW)/routing.c     \
     $(FW)/route_cache.c \
+    $(FW)/neighbor_table.c \
     $(FW)/rivr_metrics.c  \
     $(FW)/rivr_log.c      \
     $(FW)/airtime_sched.c \
@@ -123,6 +125,7 @@ RETRY_SRCS := \
     $(FW)/protocol.c      \
     $(FW)/routing.c       \
     $(FW)/route_cache.c   \
+    $(FW)/neighbor_table.c \
     $(FW)/rivr_metrics.c  \
     $(FW)/rivr_log.c      \
     $(FW)/retry_table.c   \
@@ -142,7 +145,8 @@ ASAN_FLAGS := $(COMMON_FLAGS) -O1 -g -fsanitize=address,undefined \
               -fno-omit-frame-pointer
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all test acceptance recovery replay dutycycle policy ota retry asan fuzz_harness clean
+.PHONY: all test acceptance recovery replay dutycycle policy ota retry asan fuzz_harness clean \
+        size_check update_baselines determinism_check variant_check
 
 all: acceptance recovery replay dutycycle policy ota retry
 
@@ -235,6 +239,7 @@ FUZZ_SRCS := \
     $(FW)/protocol.c      \
     $(FW)/routing.c       \
     $(FW)/route_cache.c   \
+    $(FW)/neighbor_table.c \
     $(FW)/rivr_metrics.c  \
     $(FW)/rivr_log.c      \
     $(FW)/airtime_sched.c \
@@ -252,3 +257,24 @@ $(FUZZ_BIN): $(FUZZ_SRCS)
 
 clean:
 	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Release workflow utilities
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Run binary size regression against stored baseline (tolerates +5 %).
+size_check: all
+	@bash ci_size_check.sh baselines/host_sizes.txt 5
+
+# Regenerate size baseline after an intentional size change.
+update_baselines: all
+	@bash ci_size_check.sh --update baselines/host_sizes.txt
+	@echo "Baselines updated. Commit baselines/host_sizes.txt."
+
+# Compare replay_test stdout SHA-256 against the stored golden snapshot.
+determinism_check: $(REP_BIN)
+	@bash ci_determinism_check.sh golden/replay_sha256.txt
+
+# Build and run every host suite — ensures all variants compile cleanly.
+variant_check: all
+	@echo "variant_check: all host suites built and passed."

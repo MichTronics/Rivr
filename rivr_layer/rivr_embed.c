@@ -331,7 +331,7 @@ void rivr_embed_init(void)
 
 void rivr_embed_print_stats(void)
 {
-    /* TODO: call rivr_engine_print_stats() FFI when implemented */
+    /* [FUTURE-FEATURE / SAFE] TODO: call rivr_engine_print_stats() FFI when implemented */
     RIVR_LOGI(TAG, "clock[0]=%llu clock[1]=%llu",
              (unsigned long long)rivr_engine_clock_now(0),
              (unsigned long long)rivr_engine_clock_now(1));

@@ -9,7 +9,7 @@ Use this checklist for every tagged release. Complete all items before pushing t
 - [ ] `make -C tests` passes — all suites green (acceptance + recovery + replay)
   ```bash
   make -C tests
-  # Expected: PASS: 141  FAIL: 0
+  # Expected: PASS: 204  FAIL: 0
   ```
 - [ ] No new `-Wall -Wextra` warnings introduced
   ```bash

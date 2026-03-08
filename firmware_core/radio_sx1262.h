@@ -132,7 +132,7 @@ void radio_init(void);
  * Used in simulation mode (RIVR_SIM_MODE) where no hardware is present.
  * The global rf_rx_ringbuf and rf_tx_queue are ready to use after this call.
  *
- * TODO(SX1262): remove when radio_init() is confirmed working on hardware.
+ * [HARDWARE-TODO / SIM-ONLY] TODO(SX1262): remove when radio_init() is confirmed working on hardware.
  */
 void radio_init_buffers_only(void);
 
