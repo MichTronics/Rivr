@@ -57,11 +57,20 @@ static uint32_t entry_composite_score(const route_cache_entry_t   *e,
     /* 3. Linear age decay */
     score = score * (RCACHE_EXPIRY_MS - age) / RCACHE_EXPIRY_MS;
 
-    /* 4. Loss-rate penalty from standalone neighbor table */
+    /* 4. Quality penalty from standalone neighbor table.
+     * Phase 2 (RIVR_FEATURE_AIRTIME_ROUTING=1): replace linear loss-rate
+     * penalty with ETX×8 weighting — links with higher delivery ratio score
+     * proportionally better.
+     * Phase 0–1 default: classic loss-rate scaling (no behavior change).   */
     if (ntbl) {
         const rivr_neighbor_t *n = neighbor_find(ntbl, e->next_hop, now_ms);
         if (n) {
+#if RIVR_FEATURE_AIRTIME_ROUTING
+            uint32_t etx = (uint32_t)(n->etx_x8 >= 8u ? n->etx_x8 : 8u);
+            score = score * 8u / etx;
+#else
             score = score * (uint32_t)(100u - n->loss_rate) / 100u;
+#endif
         }
     }
 
@@ -341,6 +350,9 @@ bool route_cache_best_hop(route_cache_t              *cache,
         out->expires_ms = best_entry->last_seen_ms + RCACHE_EXPIRY_MS;
         g_rivr_metrics.route_cache_hit_total++;
         g_rivr_metrics.neighbor_route_used_total++;
+#if RIVR_FEATURE_AIRTIME_ROUTING
+        g_rivr_metrics.airtime_route_selected_total++;
+#endif
         return true;
     }
 
@@ -360,6 +372,9 @@ bool route_cache_best_hop(route_cache_t              *cache,
                 out->hop_count  = 2u;  /* estimate: 1 to neighbor + 1 to dst */
                 out->expires_ms = nb->last_seen_ms + NTABLE_EXPIRY_MS;
                 g_rivr_metrics.neighbor_route_used_total++;
+#if RIVR_FEATURE_AIRTIME_ROUTING
+                g_rivr_metrics.airtime_route_selected_total++;
+#endif
                 return true;
             }
         }
@@ -368,5 +383,8 @@ bool route_cache_best_hop(route_cache_t              *cache,
     /* ── Tier 3: no usable next hop ───────────────────────────────────────── */
     g_rivr_metrics.route_cache_miss_total++;
     g_rivr_metrics.neighbor_route_failed_total++;
+#if RIVR_FEATURE_AIRTIME_ROUTING
+    g_rivr_metrics.airtime_route_fallback_total++;
+#endif
     return false;
 }

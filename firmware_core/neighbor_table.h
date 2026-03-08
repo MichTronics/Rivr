@@ -237,3 +237,21 @@ void neighbor_set_flag(rivr_neighbor_table_t *tbl,
  * @return Number of entries removed.
  */
 uint8_t neighbor_table_expire(rivr_neighbor_table_t *tbl, uint32_t now_ms);
+
+/**
+ * Print the standalone neighbor table as a human-readable table.
+ *
+ * Column headers:
+ *   NodeID  RSSI  SNR  Loss%  ETX×8  AvgLen  ScoreFull  Age(s)  rx_ok  Flags
+ *
+ * The ETX×8 column shows the Phase 1 quality indicator:
+ *   8  = perfect link (100% delivery)
+ *   16 = 50% delivery (ETX = 2.0)
+ *   255 = effectively dead link
+ *
+ * Flags shown as compact characters: D=direct S=stale B=beacon
+ *
+ * @param tbl     Table to print.
+ * @param now_ms  Current monotonic timestamp in milliseconds.
+ */
+void neighbor_table_print(const rivr_neighbor_table_t *tbl, uint32_t now_ms);

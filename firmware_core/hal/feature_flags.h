@@ -231,9 +231,17 @@
  * When 0 (default): existing route_cache_best_hop() behavior unchanged.
  * When 1: composite scoring uses etx_x8 denominator; neighbor table must
  *          carry etx_x8 data (added in Phase 1).
+ *
+ * Default policy (can be overridden in any variants/<board>/config.h):
+ *   REPEATER / GATEWAY  → 1   ETX scoring active on relay hubs.
+ *   CLIENT / generic    → 0   Conservative; field-validated before enabling.
  */
 #ifndef RIVR_FEATURE_AIRTIME_ROUTING
-#  define RIVR_FEATURE_AIRTIME_ROUTING    0
+#  if RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
+#    define RIVR_FEATURE_AIRTIME_ROUTING  1
+#  else
+#    define RIVR_FEATURE_AIRTIME_ROUTING  0
+#  endif
 #endif
 
 /**

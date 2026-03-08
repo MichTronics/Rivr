@@ -237,6 +237,7 @@ static void cli_handle_line(void)
                "  neighbors             show live neighbour table with link scores\r\n"
                "  routes                show route cache with scores and ages\r\n"
                "  status                role, node ID, routing snapshot, loop-guard drops\r\n"
+               "  ntable               standalone quality table: RSSI/SNR/ETX×8/loss per peer\r\n"
                "  rtstats               routing pipeline telemetry snapshot (@RST JSON block)\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
@@ -491,6 +492,15 @@ static void cli_handle_line(void)
                (unsigned long)g_rivr_metrics.retry_fallback_total,
                (unsigned long)g_rivr_metrics.fallback_flood_total,
                (unsigned long)g_rivr_metrics.loop_detect_drop_total);
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "ntable" — standalone quality neighbor table with ETX×8 data ── */
+    if (strncmp(p, "ntable", 6u) == 0 && (p[6] == '\0' || p[6] == ' ')) {
+        printf("Quality neighbors (%u entries):\r\n",
+               (unsigned)g_ntable.count);
+        neighbor_table_print(&g_ntable, tb_millis());
         fflush(stdout);
         return;
     }

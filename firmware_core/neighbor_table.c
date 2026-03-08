@@ -8,6 +8,8 @@
 #include "neighbor_table.h"
 #include "hal/feature_flags.h"  /* RIVR_FEATURE_AIRTIME_ROUTING */
 
+#include <stdio.h>
+#include <inttypes.h>
 #include <string.h>  /* memset, memcpy */
 #include <stddef.h>
 
@@ -338,4 +340,45 @@ uint8_t neighbor_table_expire(rivr_neighbor_table_t *tbl, uint32_t now_ms)
     }
 
     return removed;
+}
+
+void neighbor_table_print(const rivr_neighbor_table_t *tbl, uint32_t now_ms)
+{
+    if (!tbl) return;
+
+    /* Column header */
+    printf("%-10s %5s %4s %5s %5s %6s %9s %6s %6s  %s\r\n",
+           "NodeID", "RSSI", "SNR", "Loss%", "ETX8",
+           "FrmLen", "ScoreFull", "Age(s)", "rx_ok", "Flags");
+
+    uint8_t shown = 0u;
+    for (uint8_t i = 0u; i < tbl->count; i++) {
+        const rivr_neighbor_t *n = &tbl->entries[i];
+        if (n->neighbor_id == 0u) continue;
+
+        uint32_t age = now_ms - n->last_seen_ms;
+        if (age >= NTABLE_EXPIRY_MS) continue;
+
+        uint8_t score = neighbor_link_score_full(n, now_ms);
+
+        /* Decode flags into a compact 3-char string: DSB */
+        char flags[4] = "---";
+        if (n->flags & NTABLE_FLAG_DIRECT) flags[0] = 'D';
+        if (n->flags & NTABLE_FLAG_STALE)  flags[1] = 'S';
+        if (n->flags & NTABLE_FLAG_BEACON) flags[2] = 'B';
+
+        printf("0x%08lX %5d %4d %5u %5u %6u %9u %6lu %6lu  %s\r\n",
+               (unsigned long)n->neighbor_id,
+               (int)n->rssi_avg,
+               (int)n->snr_avg,
+               (unsigned)n->loss_rate,
+               (unsigned)n->etx_x8,
+               (unsigned)n->avg_frame_len,
+               (unsigned)score,
+               (unsigned long)(age / 1000u),
+               (unsigned long)n->rx_ok,
+               flags);
+        shown++;
+    }
+    if (shown == 0u) printf("  (no live neighbours)\r\n");
 }
