@@ -50,6 +50,9 @@
 #  include "esp_task_wdt.h"
 #endif
 
+/* Rivr central configuration — sets safe defaults for all tuneable params. */
+#include "firmware_core/rivr_config.h"
+
 #include "firmware_core/platform_esp32.h"
 #include "firmware_core/timebase.h"
 #include "firmware_core/radio_sx1262.h"

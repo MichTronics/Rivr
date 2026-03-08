@@ -1,0 +1,467 @@
+/**
+ * @file  rivr_config.h
+ * @brief Centralized configuration and feature-flag header for Rivr firmware.
+ *
+ * This header provides safe, documented defaults for every tuneable parameter
+ * in the Rivr firmware.  All values use #ifndef guards — any flag set via:
+ *   - a variant config.h  (variants/<device>/config.h, force-included by PlatformIO)
+ *   - a -D build_flag in platformio.ini
+ *   - the project platformio.ini shared [env] section
+ *
+ * …takes precedence over the defaults here.  You never need to modify this
+ * file to change a setting: use the appropriate -D flag or variant config.h.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * QUICK REFERENCE
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ * NODE ROLE
+ *   RIVR_ROLE_CLIENT         1 = client node (send/receive chat, no relay)
+ *   RIVR_FABRIC_REPEATER     1 = repeater (relay with congestion scoring)
+ *   RIVR_BUILD_REPEATER      1 = repeater build (CLI banner, LED pattern)
+ *   RIVR_ROLE_GATEWAY        1 = gateway (future: RF→IP bridge)
+ *
+ * RADIO
+ *   RIVR_RF_FREQ_HZ          Centre frequency in Hz
+ *   RF_SPREADING_FACTOR      LoRa SF (7–12)
+ *   RF_BANDWIDTH_KHZ         LoRa BW in kHz
+ *   RF_CODING_RATE           LoRa CR denominator (5=4/5 … 8=4/8)
+ *   RF_TX_POWER_DBM          TX power at chip output (SX1262: −9…22 dBm)
+ *
+ * MESH TIMING
+ *   RIVR_BEACON_INTERVAL_MS  Beacon broadcast period (ms)
+ *   RIVR_ROUTE_TIMEOUT_MS    Route cache entry lifetime (ms)
+ *   RIVR_NEIGHBOR_TIMEOUT_MS Neighbor entry expiry (ms)
+ *   RIVR_RETRY_TIMEOUT_MS    Unicast retry window (ms)
+ *
+ * MESH SIZES  (static BSS allocation — no heap)
+ *   RIVR_MAX_NEIGHBORS       Neighbor table slots
+ *   RIVR_MAX_ROUTES          Route cache slots
+ *   RIVR_MAX_PENDING         Pending queue slots
+ *   RIVR_MAX_RETRY           Retry table slots
+ *
+ * FEATURE FLAGS
+ *   RIVR_FEATURE_CHAT        1 = PKT_CHAT origination + display enabled
+ *   RIVR_FEATURE_RELAY       1 = frame relay enabled (flood + unicast)
+ *   RIVR_FEATURE_METRICS     1 = @MET periodic metrics output enabled
+ *   RIVR_FEATURE_DISPLAY     1 = SSD1306 OLED UI enabled
+ *   RIVR_FEATURE_DEBUG_LOG   1 = verbose ESP_LOG* output (costs flash)
+ *   RIVR_FEATURE_OTA         1 = PKT_PROG_PUSH OTA reception enabled
+ *   RIVR_FEATURE_CRYPTO      1 = Ed25519 OTA sig verification
+ *
+ * SIMULATION
+ *   RIVR_SIM_MODE            1 = no SPI/radio, inject synthetic frames
+ *   RIVR_SIM_TX_PRINT        1 = print TX frames to UART (sim mode only)
+ *
+ * LOGGING
+ *   RIVR_LOG_LEVEL           Compile-time log gate (see rivr_log.h)
+ *                            0=TRACE 1=DEBUG 2=INFO 3=WARN 4=ERROR 5=SILENT
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ */
+
+#pragma once
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * NODE ROLE
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @defgroup rivr_cfg_role Node role flags
+ * @{
+ *
+ * At most ONE role flag should be 1 at build time.  The PlatformIO variant
+ * environments set the correct flag via build_flags.
+ *
+ * Default: full-relay node (safe for any hardware; listen + relay + accept
+ * incoming chat, no origination from CLI).
+ */
+
+/** 1 = client node — enables serial CLI chat origination. */
+#ifndef RIVR_ROLE_CLIENT
+#  define RIVR_ROLE_CLIENT 0
+#endif
+
+/** 1 = Rivr Fabric congestion-aware relay scoring enabled.
+ *  Set to 1 on dedicated repeater nodes. */
+#ifndef RIVR_FABRIC_REPEATER
+#  define RIVR_FABRIC_REPEATER 0
+#endif
+
+/** 1 = repeater build — adjusts boot banner and LED pattern. */
+#ifndef RIVR_BUILD_REPEATER
+#  define RIVR_BUILD_REPEATER 0
+#endif
+
+/** 1 = gateway role — RF→IP bridge (stub in current firmware). */
+#ifndef RIVR_ROLE_GATEWAY
+#  define RIVR_ROLE_GATEWAY 0
+#endif
+
+/** @} */
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * RADIO PARAMETERS
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @defgroup rivr_cfg_radio Radio air-interface parameters
+ * @{
+ *
+ * All nodes on the same mesh must use identical air parameters.
+ * Override via variant config.h or platformio.ini -D flags.
+ */
+
+/**
+ * @brief LoRa centre frequency in Hz.
+ *
+ * EU868 g3 sub-band (high-power, 10 % duty-cycle): 869.480 MHz
+ *
+ * Common overrides:
+ *   -DRIVR_RF_FREQ_HZ=868100000   EU868 channel 0
+ *   -DRIVR_RF_FREQ_HZ=915000000   AU915 / US915
+ *   -DRIVR_RF_FREQ_HZ=923000000   AS923
+ *
+ * Regulatory note: you are responsible for compliance with the radio
+ * regulations in your jurisdiction.
+ */
+#ifndef RIVR_RF_FREQ_HZ
+#  define RIVR_RF_FREQ_HZ  869480000UL
+#endif
+
+/**
+ * @brief LoRa spreading factor (7–12).
+ *
+ * Higher SF = longer range, lower data rate, higher time-on-air.
+ * SF8 is a reasonable default balancing range and throughput.
+ */
+#ifndef RF_SPREADING_FACTOR
+#  define RF_SPREADING_FACTOR  8
+#endif
+
+/**
+ * @brief LoRa bandwidth in kHz.
+ *
+ * Supported: 7, 10, 15, 20, 31, 41, 62, 125, 250, 500
+ * 125 kHz is the standard mesh setting.
+ */
+#ifndef RF_BANDWIDTH_KHZ
+#  define RF_BANDWIDTH_KHZ  125
+#endif
+
+/**
+ * @brief LoRa coding rate denominator (5=4/5 … 8=4/8).
+ *
+ * Higher value adds more forward error correction at the cost of data rate.
+ * CR 4/8 (value 8) maximises reliability for mesh control frames.
+ */
+#ifndef RF_CODING_RATE
+#  define RF_CODING_RATE  8
+#endif
+
+/**
+ * @brief TX power at the SX1262 chip output in dBm (−9 to 22).
+ *
+ * Note: EBYTE E22 modules have an external PA that adds ~8 dBm; a chip
+ * output of 5 dBm yields ~+13 dBm effective radiated power, well within
+ * EU868 limits.  The E22-900M30S can output up to +30 dBm ERP with
+ * RF_TX_POWER_DBM = 22.
+ *
+ * Override per variant or regulatory requirement.
+ */
+#ifndef RF_TX_POWER_DBM
+#  define RF_TX_POWER_DBM  5
+#endif
+
+/** @} */
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * MESH TIMING
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @defgroup rivr_cfg_timing Mesh timing parameters
+ * @{
+ */
+
+/**
+ * @brief Beacon broadcast interval in milliseconds.
+ *
+ * Beacons advertise node presence and assist neighbor discovery.
+ * 30 000 ms (30 s) is a good default for small meshes.
+ * Reduce for faster neighbor discovery; increase to save airtime budget.
+ */
+#ifndef RIVR_BEACON_INTERVAL_MS
+#  define RIVR_BEACON_INTERVAL_MS  30000U
+#endif
+
+/**
+ * @brief Route cache entry lifetime in milliseconds.
+ *
+ * A route that has not been refreshed within this window is considered
+ * stale and will be evicted on the next lookup.
+ * 300 000 ms (5 min) suits low-traffic deployments.
+ */
+#ifndef RIVR_ROUTE_TIMEOUT_MS
+#  define RIVR_ROUTE_TIMEOUT_MS  300000U
+#endif
+
+/**
+ * @brief Neighbor table entry expiry in milliseconds.
+ *
+ * A neighbor that has not been heard within this window is marked STALE
+ * and eventually removed from the table.
+ * 120 000 ms (2 min) usually spans two or more missed beacons.
+ */
+#ifndef RIVR_NEIGHBOR_TIMEOUT_MS
+#  define RIVR_NEIGHBOR_TIMEOUT_MS  120000U
+#endif
+
+/**
+ * @brief Unicast retry window in milliseconds.
+ *
+ * Maximum time a pending-queue entry waits for an ACK before the retry
+ * table attempts a retransmission.
+ */
+#ifndef RIVR_RETRY_TIMEOUT_MS
+#  define RIVR_RETRY_TIMEOUT_MS  5000U
+#endif
+
+/** @} */
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * MESH TABLE SIZES  (static BSS — no heap allocation)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @defgroup rivr_cfg_sizes Static table capacities
+ * @{
+ *
+ * All tables are allocated in BSS at build time.  Increasing these values
+ * increases RAM usage proportionally.  ESP32 has 320 kB SRAM available for
+ * the application; the default configuration uses < 20 kB for these tables.
+ */
+
+/**
+ * @brief Number of slots in the neighbor link-quality table.
+ *
+ * Each slot stores EWMA RSSI/SNR, seq-gap loss rate, and timestamps.
+ * 16 slots ≈ 1.3 kB.
+ */
+#ifndef RIVR_MAX_NEIGHBORS
+#  define RIVR_MAX_NEIGHBORS  16U
+#endif
+
+/**
+ * @brief Number of slots in the unicast route cache.
+ *
+ * Each slot stores a destination node ID, next-hop, hop count, and score.
+ * 16 slots ≈ 512 bytes.
+ */
+#ifndef RIVR_MAX_ROUTES
+#  define RIVR_MAX_ROUTES  16U
+#endif
+
+/**
+ * @brief Number of slots in the unicast pending queue.
+ *
+ * Frames awaiting ACK are held here until acknowledged or timed out.
+ * 16 slots ≈ 4 kB.
+ */
+#ifndef RIVR_MAX_PENDING
+#  define RIVR_MAX_PENDING  16U
+#endif
+
+/**
+ * @brief Number of slots in the unicast retry table.
+ *
+ * Retry entries are created when a pending frame exhausts its ACK window.
+ * 8 slots suffices for most deployments.
+ */
+#ifndef RIVR_MAX_RETRY
+#  define RIVR_MAX_RETRY  8U
+#endif
+
+/** @} */
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * FEATURE FLAGS
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @defgroup rivr_cfg_features Feature enable/disable flags
+ * @{
+ *
+ * These flags gate optional subsystems at compile time.  Zero cost when
+ * disabled — the conditional blocks compile to nothing.
+ */
+
+/**
+ * @brief Enable PKT_CHAT origination from the serial CLI.
+ *
+ * Requires RIVR_ROLE_CLIENT = 1.  When enabled the CLI exposes the
+ * "chat <message>" command and displays incoming CHAT frames.
+ * Automatically enabled when RIVR_ROLE_CLIENT is set.
+ */
+#ifndef RIVR_FEATURE_CHAT
+#  define RIVR_FEATURE_CHAT  RIVR_ROLE_CLIENT
+#endif
+
+/**
+ * @brief Enable frame relay (flood dispatch + unicast cache lookup).
+ *
+ * All production firmware should keep this enabled.
+ * Disable only for intentional leaf-only nodes.
+ */
+#ifndef RIVR_FEATURE_RELAY
+#  define RIVR_FEATURE_RELAY  1
+#endif
+
+/**
+ * @brief Enable periodic @MET JSON metrics output on the serial port.
+ *
+ * Outputs a compact JSON snapshot every RIVR_METRICS_INTERVAL_MS ms.
+ * Useful for monitoring tools (tools/rivr-monitor).
+ * Disable to reduce serial noise in production deployments.
+ */
+#ifndef RIVR_FEATURE_METRICS
+#  define RIVR_FEATURE_METRICS  1
+#endif
+
+/**
+ * @brief Enable verbose ESP_LOG* debug output.
+ *
+ * Equivalent to setting RIVR_LOG_LEVEL ≤ RIVR_LEVEL_DEBUG.
+ * Adds significant flash usage; not recommended for production.
+ */
+#ifndef RIVR_FEATURE_DEBUG_LOG
+#  define RIVR_FEATURE_DEBUG_LOG  0
+#endif
+
+/**
+ * @brief Enable SSD1306 128×64 I²C OLED status display.
+ *
+ * Requires a physical OLED wired to I²C SDA/SCL (GPIO 21/22 by default).
+ * Adds ~20 kB flash (display driver + FreeRTOS display task).
+ */
+#ifndef RIVR_FEATURE_DISPLAY
+#  ifdef FEATURE_DISPLAY
+#    define RIVR_FEATURE_DISPLAY  FEATURE_DISPLAY
+#  else
+#    define RIVR_FEATURE_DISPLAY  0
+#  endif
+#endif
+
+/**
+ * @brief Enable PKT_PROG_PUSH OTA program reception.
+ *
+ * When enabled the firmware accepts over-the-air RIVR program updates
+ * delivered via PKT_PROG_PUSH.  Requires RIVR_FEATURE_CRYPTO = 1 for
+ * Ed25519 signature verification.
+ */
+#ifndef RIVR_FEATURE_OTA
+#  define RIVR_FEATURE_OTA  1
+#endif
+
+/**
+ * @brief Enable Ed25519 OTA signature verification.
+ *
+ * When 0, all received PKT_PROG_PUSH frames are accepted without
+ * verification (insecure — development only).
+ * When 1, the firmware validates the Ed25519 signature against the
+ * public key in firmware_core/rivr_pubkey.h.
+ */
+#ifndef RIVR_FEATURE_CRYPTO
+#  ifdef RIVR_SIGNED_PROG
+#    define RIVR_FEATURE_CRYPTO  1
+#  else
+#    define RIVR_FEATURE_CRYPTO  0
+#  endif
+#endif
+
+/** @} */
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * METRICS OUTPUT INTERVAL
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @brief Period between automatic @MET JSON metric dumps in milliseconds.
+ *
+ * 60 000 ms (1 min) is a good default for remote monitoring.
+ * Reduce to 10 000 for rapid metric streaming during development.
+ * Set RIVR_FEATURE_METRICS = 0 to disable entirely.
+ */
+#ifndef RIVR_METRICS_INTERVAL_MS
+#  define RIVR_METRICS_INTERVAL_MS  60000U
+#endif
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * LOGGING LEVEL (compile-time gate — see rivr_log.h for full explanation)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @brief Compile-time log level gate.
+ *
+ * 0 = TRACE  (most verbose — all macros active)
+ * 1 = DEBUG
+ * 2 = INFO   ← default
+ * 3 = WARN
+ * 4 = ERROR
+ * 5 = SILENT (production minimal — almost no flash cost for logging)
+ *
+ * Override per environment in platformio.ini:
+ *   build_flags = -DRIVR_LOG_LEVEL=2
+ * or enable verbose debug output with RIVR_FEATURE_DEBUG_LOG:
+ *   build_flags = -DRIVR_FEATURE_DEBUG_LOG=1
+ */
+#ifndef RIVR_LOG_LEVEL
+#  if RIVR_FEATURE_DEBUG_LOG
+#    define RIVR_LOG_LEVEL  1   /* DEBUG when debug-log feature is on */
+#  else
+#    define RIVR_LOG_LEVEL  2   /* INFO — default */
+#  endif
+#endif
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * SIMULATION MODE (no real SX1262/SX1276 hardware needed)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @brief Run in software simulation mode (no SPI/radio hardware required).
+ *
+ * When 1:
+ *   - Replaces radio_init/radio_start_rx with ring-buffer stubs
+ *   - Injects synthetic SENSOR + CHAT frames before the main loop
+ *   - RIVR_SIM_TX_PRINT = 1 logs TX frames to UART instead of transmitting
+ *
+ * Useful for testing the full routing and RIVR DSL stack on a bare ESP32
+ * or in the host Rust replay harness (rivr_host).
+ */
+#ifndef RIVR_SIM_MODE
+#  define RIVR_SIM_MODE  0
+#endif
+
+/** @brief Print TX frames to UART in simulation mode (no real transmission). */
+#ifndef RIVR_SIM_TX_PRINT
+#  define RIVR_SIM_TX_PRINT  0
+#endif
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * DUTY-CYCLE (configuration guide)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The duty-cycle budget is computed in dutycycle.h from two knobs:
+ *
+ *   DC_WINDOW_MS      = sliding window length in ms (default: 3 600 000 = 1 h)
+ *   DC_DUTY_PCT_X10   = budget as 10× percent (default: 100 = 10 %)
+ *
+ * Override these in your variant platformio.ini to change the budget:
+ *
+ *   EU868 g1 (1 %)  :  -DDC_DUTY_PCT_X10=10
+ *   EU868 g3 (10 %) :  -DDC_DUTY_PCT_X10=100   ← default
+ *   EU433  (10 %)   :  -DDC_DUTY_PCT_X10=100   ← same formula
+ *
+ * See firmware_core/dutycycle.h for the complete formula.
+ */
