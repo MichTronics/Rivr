@@ -112,6 +112,9 @@ typedef struct {
     /** Phase 4: relay cancelled — neighbor heard forwarding same pkt.   */
     uint32_t opport_cancelled;
 
+    /** Phase 5: relay suppressed by fwdset quality gate.                */
+    uint32_t score_suppressed;
+
     /** tb_millis() at the time rivr_routing_stats_collect() was called. */
     uint32_t collected_ms;
 
@@ -170,6 +173,7 @@ rivr_routing_stats_collect(uint8_t rc_live, uint8_t nb_live,
     s.airtime_route_selected = g_rivr_metrics.airtime_route_selected_total;
     s.airtime_route_fallback = g_rivr_metrics.airtime_route_fallback_total;
     s.opport_cancelled       = g_rivr_metrics.flood_fwd_cancelled_opport_total;
+    s.score_suppressed       = g_rivr_metrics.flood_fwd_score_suppressed_total;
 
     s.collected_ms         = now_ms;
     return s;
@@ -220,7 +224,8 @@ static inline void rivr_routing_stats_print(const rivr_routing_stats_t *s)
            "  \"p0\":{"
              "\"at_sel\":%" PRIu32 ","
              "\"at_fb\":%" PRIu32 ","
-             "\"opc\":%" PRIu32
+             "\"opc\":%" PRIu32 ","
+             "\"scs\":%" PRIu32
            "}\r\n"
            "}\r\n",
            s->collected_ms,
@@ -253,7 +258,8 @@ static inline void rivr_routing_stats_print(const rivr_routing_stats_t *s)
            /* phase 0 placeholders */
            s->airtime_route_selected,
            s->airtime_route_fallback,
-           s->opport_cancelled);
+           s->opport_cancelled,
+           s->score_suppressed);
 }
 
 #ifdef __cplusplus

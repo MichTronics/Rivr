@@ -672,6 +672,45 @@ uint32_t sources_rf_rx_drain(void)
             }
 #endif /* RIVR_FABRIC_REPEATER */
 
+#if RIVR_FEATURE_OPPORTUNISTIC_FWD
+            /* ── Fwd-set quality gate (Phase 5) ──────────────────────────────
+             * Build a ranked forward-candidate set from the live neighbour
+             * table.  If viable neighbours exist but our own direct link is
+             * too weak to contribute meaningfully, skip relay (a better node
+             * will cover it).  Otherwise, add tiered extra hold-off so the
+             * best relay fires first; low-tier copies are cancelled by Phase 4
+             * opfwd_suppress if they are overheard during the extended window. */
+            {
+                fwd_set_t _fs = fwdset_build(&g_ntable, now_ms);
+                if (fwdset_suppress_relay(&_fs)) {
+                    g_rivr_metrics.flood_fwd_score_suppressed_total++;
+                    ESP_LOGD(TAG,
+                        "rf_rx: fwdset suppress relay src=0x%08lx "
+                        "best_direct=%u viable=%u",
+                        (unsigned long)fwd_hdr.src_id,
+                        (unsigned)_fs.best_direct_score,
+                        (unsigned)_fs.viable_count);
+#if RIVR_FABRIC_REPEATER
+                    goto skip_enqueue;
+#elif RIVR_ROLE_CLIENT
+                    goto skip_enqueue_client;
+#else
+                    goto skip_relay_policy;
+#endif
+                }
+                delay_ms += fwdset_extra_holdoff_ms(&_fs);
+                if (_fs.best_direct_score > 0u) {
+                    ESP_LOGD(TAG,
+                        "rf_rx: fwdset holdoff +%lu ms "
+                        "src=0x%08lx best_direct=%u viable=%u",
+                        (unsigned long)fwdset_extra_holdoff_ms(&_fs),
+                        (unsigned long)fwd_hdr.src_id,
+                        (unsigned)_fs.best_direct_score,
+                        (unsigned)_fs.viable_count);
+                }
+            }
+#endif /* RIVR_FEATURE_OPPORTUNISTIC_FWD */
+
             rf_tx_request_t fwd_req;
             memset(&fwd_req, 0, sizeof(fwd_req));
             int enc = protocol_encode(&fwd_hdr, payload_ptr,

@@ -98,6 +98,11 @@ typedef struct {
      *  Zero until RIVR_FEATURE_OPPORTUNISTIC_FWD=1 (Phase 4).              */
     uint32_t flood_fwd_cancelled_opport_total;
 
+    /** Relays suppressed by fwdset quality gate: viable_count > 0 but this
+     *  node's best direct score is below FWDSET_MIN_RELAY_SCORE.
+     *  Zero until RIVR_FEATURE_OPPORTUNISTIC_FWD=1 (Phase 5).              */
+    uint32_t flood_fwd_score_suppressed_total;
+
     /** Next-hop chosen by airtime-aware ETX scoring (Phase 2 path).
      *  Zero until RIVR_FEATURE_AIRTIME_ROUTING=1.                           */
     uint32_t airtime_route_selected_total;

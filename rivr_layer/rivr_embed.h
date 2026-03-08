@@ -353,6 +353,7 @@ extern neighbor_table_t g_neighbor_table;
 extern rivr_neighbor_table_t g_ntable;
 
 #include "../firmware_core/opfwd_suppress.h"
+#include "../firmware_core/fwd_set.h"
 /**
  * Opportunistic-forward suppression table (Phase 4).
  * Records (src_id, pkt_id) pairs overheard relayed by a neighbor during

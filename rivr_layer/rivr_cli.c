@@ -238,6 +238,7 @@ static void cli_handle_line(void)
                "  routes                show route cache with scores and ages\r\n"
                "  status                role, node ID, routing snapshot, loop-guard drops\r\n"
                "  ntable               standalone quality table: RSSI/SNR/ETX×8/loss per peer\r\n"
+               "  fwdset               forward-candidate set: relay quality + holdoff class\r\n"
                "  rtstats               routing pipeline telemetry snapshot (@RST JSON block)\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
@@ -501,6 +502,23 @@ static void cli_handle_line(void)
         printf("Quality neighbors (%u entries):\r\n",
                (unsigned)g_ntable.count);
         neighbor_table_print(&g_ntable, tb_millis());
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "fwdset" — Phase 5 forward-candidate set + relay quality gate ── */
+    if (strncmp(p, "fwdset", 6u) == 0 && (p[6] == '\0' || p[6] == ' ')) {
+        uint32_t now_ms = tb_millis();
+        fwd_set_t fs = fwdset_build(&g_ntable, now_ms);
+        char buf[120];
+        fwdset_sprint(&fs, buf, (uint8_t)sizeof(buf));
+        printf("Forward set: %s\r\n"
+               "  suppress=%s  extra_holdoff=%lu ms\r\n"
+               "  score_suppressed_total=%lu\r\n",
+               buf,
+               fwdset_suppress_relay(&fs) ? "YES" : "no",
+               (unsigned long)fwdset_extra_holdoff_ms(&fs),
+               (unsigned long)g_rivr_metrics.flood_fwd_score_suppressed_total);
         fflush(stdout);
         return;
     }

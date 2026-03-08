@@ -80,6 +80,7 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"nb_route_fail\":%" PRIu32 ","
            "\"fwd_att\":%" PRIu32 ","
            "\"fwd_opc\":%" PRIu32 ","
+           "\"fwd_scs\":%" PRIu32 ","
            "\"at_sel\":%" PRIu32 ","
            "\"at_fb\":%" PRIu32
            "}\n",
@@ -148,6 +149,7 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.neighbor_route_failed_total,
         g_rivr_metrics.flood_fwd_attempted_total,
         g_rivr_metrics.flood_fwd_cancelled_opport_total,
+        g_rivr_metrics.flood_fwd_score_suppressed_total,
         g_rivr_metrics.airtime_route_selected_total,
         g_rivr_metrics.airtime_route_fallback_total);
 }
