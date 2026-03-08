@@ -185,13 +185,34 @@ class _OverviewTab extends StatelessWidget {
 
             // Packet stats
             _SectionHeader('Packet stats'),
-            _InfoRow('TX total', '${latest.txTotal}'),
-            _InfoRow('RX total', '${latest.rxTotal}'),
-            _InfoRow('Decode fail', '${latest.rxDecodeFail}'),
-            _InfoRow('Dedupe drop', '${latest.rxDedupeDrop}'),
-            _InfoRow('TX queue full', '${latest.txQueueFull}'),
-            _InfoRow('Duty blocked', '${latest.dutyBlocked}'),
-            _InfoRow('Radio resets', '${latest.radioHardReset}'),
+            _InfoRow('TX total',        '${latest.txTotal}'),
+            _InfoRow('RX total',        '${latest.rxTotal}'),
+            _InfoRow('Route cache',     '${latest.routeCache} entries'),
+            _InfoRow('Cache hit / miss','${latest.routeCacheHit} / ${latest.routeCacheMiss}'),
+            const SizedBox(height: 12),
+
+            _SectionHeader('Drop counters'),
+            _InfoRow('Decode fail',     '${latest.rxDecodeFail}'),
+            _InfoRow('Dedupe drop',     '${latest.rxDedupeDrop}'),
+            _InfoRow('TTL drop',        '${latest.rxTtlDrop}'),
+            _InfoRow('Bad type',        '${latest.rxBadType}'),
+            _InfoRow('Bad hop',         '${latest.rxBadHop}'),
+            _InfoRow('No route',        '${latest.noRoute}'),
+            _InfoRow('TX queue full',   '${latest.txQueueFull}'),
+            _InfoRow('Duty blocked',    '${latest.dutyBlocked}'),
+            _InfoRow('Loop detect',     '${latest.loopDetectDrop}'),
+            const SizedBox(height: 12),
+
+            _SectionHeader('Radio hardware'),
+            _InfoRow('Hard resets',     '${latest.radioHardReset}'),
+            _InfoRow('TX failures',     '${latest.radioTxFail}'),
+            _InfoRow('CRC errors',      '${latest.radioCrcFail}'),
+            const SizedBox(height: 12),
+
+            _SectionHeader('ACK / Retry'),
+            _InfoRow('ACK TX / RX',    '${latest.ackTx} / ${latest.ackRx}'),
+            _InfoRow('Retry attempts',  '${latest.retryAttempt}'),
+            _InfoRow('Retry OK / fail', '${latest.retrySuccess} / ${latest.retryFail}'),
             const SizedBox(height: 16),
 
             if (isConnected)
