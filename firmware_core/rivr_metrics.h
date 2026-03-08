@@ -111,7 +111,33 @@ typedef struct {
 
     /** Airtime scoring had insufficient data → fell back to hop-count.
      *  Zero until RIVR_FEATURE_AIRTIME_ROUTING=1.                           */
-    uint32_t airtime_route_fallback_total;} rivr_metrics_t;
+    uint32_t airtime_route_fallback_total;
+
+    /* ── Opportunistic relay observability ─────────────────────────────────────
+     * These three counters give a complete end-to-end picture of the
+     * two-phase opportunistic relay pipeline for every role:
+     *
+     *   relay_selected (= flood_fwd_attempted_total)
+     *     Every time routing_flood_forward() returns RIVR_FWD_FORWARD and
+     *     the frame is enqueued for relay.  Includes frames later cancelled
+     *     by Phase 4/5.
+     *
+     *   relay_cancelled (= flood_fwd_cancelled_opport_total)
+     *     Relay frames dropped in tx_drain_loop() because a neighbour was
+     *     already heard forwarding the same (src_id, pkt_id) during our
+     *     jitter hold-off window (Phase 4 reactive suppression).
+     *     Note: Phase 5 proactive suppression (score-gate) prevents
+     *     enqueue entirely; those are in flood_fwd_score_suppressed_total.
+     *
+     *   relay_forwarded_total  ← the only genuinely new counter here
+     *     Relay frames that completed a successful radio_transmit() (or
+     *     sim-TX).  Satisfies:  relay_forwarded ≈ relay_selected
+     *       − flood_fwd_score_suppressed_total  (Phase 5, never enqueued)
+     *       − flood_fwd_cancelled_opport_total  (Phase 4, cancelled in TX)
+     *       − policy/fabric/txqueue drops
+     */
+    uint32_t relay_forwarded_total; /**< relay frames that completed TX      */
+} rivr_metrics_t;
 
 extern rivr_metrics_t g_rivr_metrics;
 

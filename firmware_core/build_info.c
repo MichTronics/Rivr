@@ -102,7 +102,10 @@ int build_info_write_json(char *buf, size_t buf_len)
             "\"rst_busy\":%" PRIu32 ","
             "\"rst_txtmo\":%" PRIu32 ","
             "\"rst_spurious\":%" PRIu32 ","
-            "\"rst_rxtmo\":%" PRIu32
+            "\"rst_rxtmo\":%" PRIu32 ","
+            "\"relay_sel\":%" PRIu32 ","
+            "\"relay_can\":%" PRIu32 ","
+            "\"relay_fwd\":%" PRIu32
         "}"
         "}",
         RIVR_BUILD_ENV,
@@ -154,7 +157,11 @@ int build_info_write_json(char *buf, size_t buf_len)
         g_rivr_metrics.radio_reset_busy_stuck,
         g_rivr_metrics.radio_reset_tx_timeout,
         g_rivr_metrics.radio_reset_spurious_irq,
-        g_rivr_metrics.radio_reset_rx_timeout
+        g_rivr_metrics.radio_reset_rx_timeout,
+        /* opportunistic relay */
+        g_rivr_metrics.flood_fwd_attempted_total,
+        g_rivr_metrics.flood_fwd_cancelled_opport_total,
+        g_rivr_metrics.relay_forwarded_total
     );
 
     /* snprintf returns the number of chars it *would* have written;
@@ -246,7 +253,10 @@ int build_info_write_supportpack(char    *buf,
             "\"rst_busy\":%" PRIu32 ","
             "\"rst_txtmo\":%" PRIu32 ","
             "\"rst_spurious\":%" PRIu32 ","
-            "\"rst_rxtmo\":%" PRIu32
+            "\"rst_rxtmo\":%" PRIu32 ","
+            "\"relay_sel\":%" PRIu32 ","
+            "\"relay_can\":%" PRIu32 ","
+            "\"relay_fwd\":%" PRIu32
         "}"
         "}",
         /* build identity */
@@ -303,7 +313,11 @@ int build_info_write_supportpack(char    *buf,
         g_rivr_metrics.radio_reset_busy_stuck,
         g_rivr_metrics.radio_reset_tx_timeout,
         g_rivr_metrics.radio_reset_spurious_irq,
-        g_rivr_metrics.radio_reset_rx_timeout
+        g_rivr_metrics.radio_reset_rx_timeout,
+        /* opportunistic relay */
+        g_rivr_metrics.flood_fwd_attempted_total,
+        g_rivr_metrics.flood_fwd_cancelled_opport_total,
+        g_rivr_metrics.relay_forwarded_total
     );
 
     if (n < 0) { buf[0] = '\0'; return 0; }

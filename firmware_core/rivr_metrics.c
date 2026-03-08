@@ -84,7 +84,10 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"fwd_opc\":%" PRIu32 ","
            "\"fwd_scs\":%" PRIu32 ","
            "\"at_sel\":%" PRIu32 ","
-           "\"at_fb\":%" PRIu32
+           "\"at_fb\":%" PRIu32 ","
+           "\"relay_sel\":%" PRIu32 ","
+           "\"relay_can\":%" PRIu32 ","
+           "\"relay_fwd\":%" PRIu32
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -155,5 +158,9 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.flood_fwd_cancelled_opport_total,
         g_rivr_metrics.flood_fwd_score_suppressed_total,
         g_rivr_metrics.airtime_route_selected_total,
-        g_rivr_metrics.airtime_route_fallback_total);
+        g_rivr_metrics.airtime_route_fallback_total,
+        /* opportunistic relay: selected / cancelled / forwarded */
+        g_rivr_metrics.flood_fwd_attempted_total,
+        g_rivr_metrics.flood_fwd_cancelled_opport_total,
+        g_rivr_metrics.relay_forwarded_total);
 }

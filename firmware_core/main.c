@@ -396,21 +396,35 @@ static void tx_drain_loop(void)
          * If a neighbor was heard relaying this same (src_id, pkt_id) pair *
          * during our jitter window, skip our copy — it's redundant.       *
          * Only suppresses relay frames (PKT_FLAG_RELAY set); originated   *
-         * frames are never cancelled.                                      */
+         * frames are never cancelled.                                      *
+         *                                                                  *
+         * req_is_relay is set here and consumed below to increment         *
+         * relay_forwarded_total when the frame completes TX.               */
+        bool req_is_relay = false;
 #if RIVR_FEATURE_OPPORTUNISTIC_FWD
         {
             rivr_pkt_hdr_t sup_hdr;
             const uint8_t *sup_pl = NULL;
-            if (protocol_decode(req.data, req.len, &sup_hdr, &sup_pl)
-                    && (sup_hdr.flags & PKT_FLAG_RELAY) != 0u
-                    && opfwd_suppress_check(&g_opfwd_suppress,
-                                            sup_hdr.src_id, sup_hdr.pkt_id,
-                                            now_ms)) {
-                g_rivr_metrics.flood_fwd_cancelled_opport_total++;
-                ESP_LOGD(TAG,
-                    "opfwd: suppress relay src=0x%08lx pkt_id=0x%04x",
-                    (unsigned long)sup_hdr.src_id, (unsigned)sup_hdr.pkt_id);
-                continue;
+            if (protocol_decode(req.data, req.len, &sup_hdr, &sup_pl)) {
+                req_is_relay = (sup_hdr.flags & PKT_FLAG_RELAY) != 0u;
+                if (req_is_relay
+                        && opfwd_suppress_check(&g_opfwd_suppress,
+                                                sup_hdr.src_id, sup_hdr.pkt_id,
+                                                now_ms)) {
+                    g_rivr_metrics.flood_fwd_cancelled_opport_total++;
+                    ESP_LOGD(TAG,
+                        "opfwd: suppress relay src=0x%08lx pkt_id=0x%04x",
+                        (unsigned long)sup_hdr.src_id, (unsigned)sup_hdr.pkt_id);
+                    continue;
+                }
+            }
+        }
+#else
+        {
+            /* Detect relay flag for relay_forwarded metric when OPFWD is off */
+            rivr_pkt_hdr_t _hdr; const uint8_t *_pl = NULL;
+            if (protocol_decode(req.data, req.len, &_hdr, &_pl)) {
+                req_is_relay = (_hdr.flags & PKT_FLAG_RELAY) != 0u;
             }
         }
 #endif /* RIVR_FEATURE_OPPORTUNISTIC_FWD */
@@ -480,8 +494,9 @@ static void tx_drain_loop(void)
         rivr_fabric_on_tx_enqueued(now_ms, req.toa_us);
         rivr_fabric_on_tx_ok(tb_millis(), req.toa_us);
         dutycycle_record(&g_dc, tb_millis(), req.toa_us);
+        if (req_is_relay) { g_rivr_metrics.relay_forwarded_total++; }
 #else
-        /* ── Real hardware TX path ──────────────────────────────────────── */
+        /* ── Real hardware TX path ────────────────────────────────── */
         rivr_fabric_on_tx_enqueued(now_ms, req.toa_us);
         platform_led_on();
         bool tx_ok = radio_transmit(&req);
@@ -490,6 +505,7 @@ static void tx_drain_loop(void)
         if (tx_ok) {
             dutycycle_record(&g_dc, tb_millis(), req.toa_us);
             rivr_fabric_on_tx_ok(tb_millis(), req.toa_us);
+            if (req_is_relay) { g_rivr_metrics.relay_forwarded_total++; }
             ESP_LOGD(TAG, "TX ok: %u bytes, toa=%u us", req.len, req.toa_us);
         } else {
             rivr_fabric_on_tx_fail(tb_millis(), req.toa_us);

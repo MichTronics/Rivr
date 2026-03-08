@@ -277,11 +277,15 @@
  *   CLIENT / generic    → 0   Conservative; field-validated before enabling.
  */
 #ifndef RIVR_FEATURE_OPPORTUNISTIC_FWD
-#  if RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
-#    define RIVR_FEATURE_OPPORTUNISTIC_FWD  1
-#  else
-#    define RIVR_FEATURE_OPPORTUNISTIC_FWD  0
-#  endif
+/* Enabled for ALL roles:
+ *  Repeater/Gateway: Phase 4 + 5 reduce channel collisions on relay hubs.
+ *  Client: Phase 4 prevents double-relaying control frames (BEACON,
+ *          ROUTE_*, ACK) when a repeater has already forwarded them;
+ *          Phase 5 suppresses relay when a better-positioned repeater
+ *          exists (viable_count>0 && best_direct_score<threshold).
+ *  Edge clients (no viable neighbours) are never suppressed by Phase 5
+ *  because fwdset_suppress_relay() returns false when viable_count==0. */
+#  define RIVR_FEATURE_OPPORTUNISTIC_FWD  1
 #endif
 
 /* ── Compile-time guards ─────────────────────────────────────────────────── */
