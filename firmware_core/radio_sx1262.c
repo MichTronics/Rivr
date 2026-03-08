@@ -597,20 +597,34 @@ bool radio_transmit(const rf_tx_request_t *req)
 {
     if (!req || req->len == 0) return false;
 
-    /* Guard: if BUSY is stuck before WriteBuffer, the SPI command will be
-     * silently ignored by the SX1262 — abort rather than corrupt the channel.
-     * Track consecutive stalls; if streak reaches RADIO_BUSY_STUCK_MAX trigger
-     * a guarded hard reset to recover a locked chip.
+    /* ── SX1262 TX SEQUENCE (per UM §13.1.1) ───────────────────────────────
      *
-     * Two counters updated on each stall:
-     *   radio_busy_stall          — legacy name, kept for backward compat
-     *   radio_busy_timeout_total  — canonical Step-9 name (same value) */
+     * CORRECT ORDER (enforced here):
+     *   1) BUSY low            — chip is ready for SPI
+     *   2) SetStandby(RC)      — exit continuous-RX before any data ops
+     *   3) ClearIrqStatus      — discard stale TxDone/RxDone from prior ops
+     *   4) SetPacketParams     — update payload length for this frame
+     *   5) WriteBuffer         — load payload while in Standby (not RX!)
+     *   6) RF-switch → TX      — assert TXEN / deassert RXEN
+     *   7) SetTx(timeout)      — arm PA and start transmission
+     *   8) poll TxDone / HW-timeout IRQ
+     *   9) radio_start_rx()    — return chip to RX on completion
+     *
+     * ROOT CAUSE (fixed in this commit):
+     *   The previous sequence called WriteBuffer BEFORE SetStandby.  While in
+     *   continuous-RX the SX1262 state machine is actively writing received
+     *   bytes into the RX FIFO; a concurrent WriteBuffer over SPI may silently
+     *   corrupt the TX FIFO pointer or be ignored.  The subsequent SetTx then
+     *   fired with stale or empty payload, producing no detectable RF output
+     *   while still asserting TxDone (because the chip completed the command).
+     *
+     * ── Step 1: BUSY check ─────────────────────────────────────────────── */
     if (!platform_sx1262_wait_busy(10)) {
         g_rivr_metrics.radio_busy_stall++;
         g_rivr_metrics.radio_busy_timeout_total++;
         uint32_t _n = g_rivr_metrics.radio_busy_timeout_total;
         if ((_n & (_n - 1u)) == 0u) {   /* log on 1,2,4,8,… */
-            RIVR_LOGW(TAG, "BUSY stuck before TX (total=%" PRIu32 ")", _n);
+            RIVR_LOGW(TAG, "busy_stuck before TX (total=%" PRIu32 ")", _n);
         }
         if (++s_busy_stuck_streak >= RADIO_BUSY_STUCK_MAX) {
             s_busy_stuck_streak = 0u;
@@ -620,51 +634,73 @@ bool radio_transmit(const rf_tx_request_t *req)
     }
     s_busy_stuck_streak = 0u;   /* BUSY went low – clear streak */
 
-    /* WriteBuffer: 0x0E + offset=0 + payload
-     * NOTE: WriteBuffer takes [opcode][offset][data…] with NO NOP byte
-     * between offset and data — unlike ReadBuffer which needs one.
-     * A spurious 0x00 here would prepend a null byte to every TX frame,
-     * corrupting byte[0] of the RIVR magic and causing all receivers to
-     * reject the frame as "bad magic (foreign device?)". */
-    uint8_t tx_cmd[2 + RF_MAX_PAYLOAD_LEN];
-    tx_cmd[0] = 0x0E;   /* WriteBuffer */
-    tx_cmd[1] = 0x00;   /* offset into SX1262 TX ring buffer */
-    memcpy(tx_cmd + 2, req->data, req->len);
-    platform_spi_transfer(tx_cmd, NULL, 2 + req->len);
-    platform_sx1262_wait_busy(5);
-
-    /* SetStandby before TX — chip may still be in RX mode */
+    /* ── Step 2: SetStandby(RC) — exit RX before touching the FIFO ──────── */
     {
         uint8_t stdby = 0x00;
-        sx1262_cmd(0x80, &stdby, 1);   /* 0x80 = SetStandby(RC) */
+        sx1262_cmd(0x80, &stdby, 1);   /* 0x80 = SetStandby(STDBY_RC) */
+        platform_sx1262_wait_busy(5);
+    }
+    s_in_rx = false;    /* update flag immediately; RF switch follows below */
+
+    /* ── Step 3: ClearIrqStatus(0xFFFF) — flush stale TxDone/RxDone ──────
+     * Without this a residual TxDone bit from a previously-aborted TX can
+     * cause the poll loop below to return true on the very first iteration
+     * before the PA has even fired, producing a false "tx_ok".             */
+    {
+        uint8_t clr[2] = { 0xFF, 0xFF };
+        sx1262_cmd(0x02, clr, 2);       /* 0x02 = ClearIrqStatus */
         platform_sx1262_wait_busy(5);
     }
 
-    /* Update payload length in packet params */
-    uint8_t pkt_params[6] = {
-        0x00, RF_PREAMBLE_LEN, 0x00, req->len, 0x01, 0x00
-    };
-    sx1262_cmd(0x8C, pkt_params, 6);   /* 0x8C = SetPacketParams */
-    platform_sx1262_wait_busy(5);
+    /* ── Step 4: SetPacketParams — update payload length for this frame ─── */
+    {
+        uint8_t pkt_params[6] = {
+            0x00, RF_PREAMBLE_LEN,  /* preamble MSB, LSB */
+            0x00,                   /* variable-length header */
+            req->len,               /* actual payload length */
+            0x01,                   /* CRC on */
+            0x00                    /* IQ standard */
+        };
+        sx1262_cmd(0x8C, pkt_params, 6);   /* 0x8C = SetPacketParams */
+        platform_sx1262_wait_busy(5);
+    }
 
-    /* Switch antenna to TX path (RXEN low, TXEN high) */
-    s_in_rx = false;
+    /* ── Step 5: WriteBuffer — load payload now that chip is in Standby ───
+     * WriteBuffer takes [opcode][offset][data…] with NO NOP byte between
+     * offset and data (unlike ReadBuffer which inserts one extra NOP byte).
+     * A spurious NOP here would prepend a null byte to every TX frame,
+     * corrupting byte[0] of the RIVR magic header.                         */
+    {
+        uint8_t tx_cmd[2 + RF_MAX_PAYLOAD_LEN];
+        tx_cmd[0] = 0x0E;   /* WriteBuffer */
+        tx_cmd[1] = 0x00;   /* TX FIFO base address */
+        memcpy(tx_cmd + 2, req->data, req->len);
+        platform_spi_transfer(tx_cmd, NULL, 2 + req->len);
+        platform_sx1262_wait_busy(5);
+    }
+
+    /* ── Step 6: RF-switch → TX path (RXEN low, TXEN high via DIO2) ─────── */
     platform_sx1262_set_rxen(false);
 
-    /* SetTx with timeout = ToA × 2 converted to SX1262 ticks.
-     * SX1262 timer resolution = 15.625 µs/tick → N = toa_us × 2 / 15.625
-     *   = toa_us × 2 × 64 / 1000 = toa_us × 128 / 1000 = toa_us × 16 / 125
-     * Using 2× (not 1.5×) gives 73 ms extra headroom on a 156 ms frame
-     * without risking a premature hardware-timeout interrupt.               */
+    /* ── Step 7: SetTx ───────────────────────────────────────────────────────
+     * Timeout = ToA × 2 in SX1262 ticks (15.625 µs each).
+     *   N = toa_us × 2 / 15.625 = toa_us × 128 / 1000 = toa_us × 16 / 125
+     * 2× headroom prevents premature HW-timeout IRQ on long SF12 frames.   */
     uint32_t timeout_ticks = (req->toa_us * 16u) / 125u;
-    uint8_t tx_timeout[3] = {
-        (uint8_t)(timeout_ticks >> 16),
-        (uint8_t)(timeout_ticks >>  8),
-        (uint8_t)(timeout_ticks)
-    };
-    sx1262_cmd(0x83, tx_timeout, 3);   /* 0x83 = SetTx  ← was 0x82=SetRx, the root cause */
+    {
+        uint8_t tx_timeout[3] = {
+            (uint8_t)(timeout_ticks >> 16),
+            (uint8_t)(timeout_ticks >>  8),
+            (uint8_t)(timeout_ticks)
+        };
+        sx1262_cmd(0x83, tx_timeout, 3);   /* 0x83 = SetTx */
+    }
+    ESP_LOGD(TAG, "tx_start: len=%u toa_us=%lu ticks=%lu",
+             (unsigned)req->len,
+             (unsigned long)req->toa_us,
+             (unsigned long)timeout_ticks);
 
-    /* Poll for TxDone (up to toa_us × 2 ms) */
+    /* ── Step 8: poll for TxDone (up to toa_us × 2 + 100 ms) ─────────────── */
     uint32_t t0 = tb_millis();
     uint32_t deadline_ms = t0 + req->toa_us / 1000u * 2u + 100u;
 
@@ -679,13 +715,16 @@ bool radio_transmit(const rf_tx_request_t *req)
             uint8_t clr[2] = { irq[0], irq[1] };
             sx1262_cmd(0x02, clr, 2);   /* 0x02 = ClearIrqStatus */
             s_tx_fail_streak = 0;       /* clear failure streak on success */
-            radio_start_rx();   /* return to RX */
+            ESP_LOGD(TAG, "tx_done: len=%u elapsed_ms=%lu",
+                     (unsigned)req->len,
+                     (unsigned long)(tb_millis() - t0));
+            radio_start_rx();   /* ── Step 9: return to RX */
             return true;
         }
         if (flags & 0x0200) {   /* SX1262 HW Timeout IRQ */
             g_rivr_metrics.radio_tx_fail++;       /* legacy aggregate counter */
             g_rivr_metrics.tx_timeout_total++;    /* Step-9: HW-timeout split  */
-            RIVR_LOGW(TAG, "TX HW timeout (streak %u, total_tmo=%" PRIu32 ")",
+            RIVR_LOGW(TAG, "tx_hw_timeout: streak %u total_tmo=%" PRIu32,
                       (unsigned)(s_tx_fail_streak + 1u),
                       g_rivr_metrics.tx_timeout_total);
             if (++s_tx_fail_streak >= 3u) {
@@ -699,7 +738,7 @@ bool radio_transmit(const rf_tx_request_t *req)
     /* SW poll deadline exceeded (toa_us×2 + 100 ms elapsed without TxDone) */
     g_rivr_metrics.radio_tx_fail++;        /* legacy aggregate counter */
     g_rivr_metrics.tx_deadline_total++;    /* Step-9: SW-deadline split */
-    RIVR_LOGW(TAG, "TX deadline exceeded (streak %u, total_ddl=%" PRIu32 ")",
+    RIVR_LOGW(TAG, "tx_sw_deadline: streak %u total_ddl=%" PRIu32,
               (unsigned)(s_tx_fail_streak + 1u),
               g_rivr_metrics.tx_deadline_total);
     if (++s_tx_fail_streak >= 3u) {
