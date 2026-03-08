@@ -66,7 +66,7 @@ class RivrProtocol {
       final nodeIdStr = chatMatch.group(1)!;
       final callsign = chatMatch.group(2) ?? '';
       final text = chatMatch.group(3)!.trim();
-      final nodeId = int.tryParse(nodeIdStr) ?? 0;
+      final nodeId = _parseHex(nodeIdStr) ?? 0;
       final msg = ChatMessage(
         id: '${DateTime.now().microsecondsSinceEpoch}',
         text: text,
@@ -81,7 +81,7 @@ class RivrProtocol {
     // ntable row → node update
     final nbMatch = _ntableRowPattern.firstMatch(line);
     if (nbMatch != null) {
-      final nodeId = int.parse(nbMatch.group(1)!, radix: 16);
+      final nodeId = _parseHex(nbMatch.group(1)!) ?? 0;
       final callsign = nbMatch.group(2) ?? '';
       final hops = int.tryParse(nbMatch.group(3)!) ?? 0;
       final rssi = int.tryParse(nbMatch.group(4)!) ?? -120;
@@ -101,6 +101,14 @@ class RivrProtocol {
     }
 
     return RawLineEvent(line);
+  }
+
+  // ── Hex parser: accepts '0xDEADBEEF' or 'DEADBEEF' ────────────────────────
+  static int? _parseHex(String s) {
+    final stripped = s.startsWith('0x') || s.startsWith('0X')
+        ? s.substring(2)
+        : s;
+    return int.tryParse(stripped, radix: 16);
   }
 
   // ── Parse @MET fields ─────────────────────────────────────────────────────

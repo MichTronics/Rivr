@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -295,7 +297,16 @@ class _ConnectSheetState extends ConsumerState<_ConnectSheet> {
     );
   }
 
+  StreamSubscription<RivrEvent>? _scanSub;
+
+  @override
+  void dispose() {
+    _scanSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _scan() async {
+    if (!mounted) return;
     setState(() {
       _isScanning = true;
       _scanned = [];
@@ -306,7 +317,9 @@ class _ConnectSheetState extends ConsumerState<_ConnectSheet> {
         ? BleService()
         : SerialService();
     await ref.read(connectionManagerProvider).useTransport(service);
-    ref.read(connectionManagerProvider).eventStream.listen((event) {
+    await _scanSub?.cancel();
+    _scanSub = ref.read(connectionManagerProvider).eventStream.listen((event) {
+      if (!mounted) return;
       if (event is RawLineEvent) {
         if (event.line.startsWith('BLE_SCAN:') ||
             event.line.startsWith('USB_SCAN:')) {
@@ -316,7 +329,7 @@ class _ConnectSheetState extends ConsumerState<_ConnectSheet> {
     });
     await ref.read(connectionManagerProvider).startScan();
     await Future.delayed(const Duration(seconds: 5));
-    setState(() => _isScanning = false);
+    if (mounted) setState(() => _isScanning = false);
   }
 
   Future<void> _connectTo(String id) async {
