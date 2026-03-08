@@ -421,9 +421,9 @@ impl Node {
                 let d = *delay;
                 let mut out = Vec::new();
                 // Emit any pending event whose deadline has passed.
-                if let Some((deadline, _)) = pending {
+                if let Some((deadline, _)) = pending.as_ref() {
                     if tick >= *deadline {
-                        let settled = pending.take().unwrap().1;
+                        let settled = pending.take().expect("just confirmed Some above").1;
                         out.push(settled);
                     }
                 }
@@ -641,9 +641,9 @@ impl NodeKind {
                 let tick = ev.stamp.tick;
                 let d = *delay;
                 let mut out = Vec::new();
-                if let Some((deadline, _)) = pending {
+                if let Some((deadline, _)) = pending.as_ref() {
                     if tick >= *deadline {
-                        out.push(pending.take().unwrap().1);
+                        out.push(pending.take().expect("just confirmed Some above").1);
                     }
                 }
                 *pending = Some((tick + d, ev));
