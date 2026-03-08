@@ -71,22 +71,6 @@ class RivrProtocol {
       if (event != null) return event;
     }
 
-    // [CHAT][NODEID]: text  (human-readable fallback)
-    final chatMatch = _chatRxPattern.firstMatch(line);
-    if (chatMatch != null) {
-      final nodeId = _parseHex(chatMatch.group(1)!) ?? 0;
-      final text = chatMatch.group(2)!.trim();
-      final msg = ChatMessage(
-        id: '${DateTime.now().microsecondsSinceEpoch}',
-        text: text,
-        senderNodeId: nodeId,
-        senderName: '0x${nodeId.toRadixString(16).toUpperCase().padLeft(8, '0')}',
-        timestamp: DateTime.now(),
-        origin: MessageOrigin.remote,
-      );
-      return ChatEvent(msg);
-    }
-
     // ntable row → node update
     final nbMatch = _ntableRowPattern.firstMatch(line);
     if (nbMatch != null) {

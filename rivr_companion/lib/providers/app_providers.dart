@@ -37,8 +37,13 @@ class ChatNotifier extends Notifier<List<ChatMessage>> {
     ref.listen(eventStreamProvider, (_, next) {
       next.whenData((event) {
         if (event is ChatEvent) {
-          // Enrich sender name with callsign from node table if available
           final msg = event.message;
+
+          // Drop @CHT lines where src == our own node ID (TX echo from radio)
+          final localNodeId = ref.read(metricsProvider.notifier).latest.nodeId;
+          if (localNodeId != 0 && msg.senderNodeId == localNodeId) return;
+
+          // Enrich sender name with callsign from node table if available
           final nodes = ref.read(nodesProvider);
           final node = nodes[msg.senderNodeId];
           final enriched = (node != null && node.callsign.isNotEmpty)
