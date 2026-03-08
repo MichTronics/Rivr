@@ -3,7 +3,7 @@
 ## Directory Structure
 
 ```
-e:\Projects\Rivr\
+~/Rivr/
 ├── CMakeLists.txt          ← ESP-IDF top-level project
 ├── main/
 │   └── CMakeLists.txt      ← ESP-IDF "main" component (sources + lib link)
@@ -45,28 +45,28 @@ The Rust library must be compiled **before** the C firmware.
 
 ### Debug build (recommended for development)
 
-```powershell
-cd e:\Projects\Rivr\rivr_core
+```bash
+cd ~/Rivr/rivr_core
 cargo build --features ffi
-# Library at:  target\debug\librivr_core.a
+# Library at:  target/debug/librivr_core.a
 ```
 
 ### Release build (for flashing to device)
 
-```powershell
+```bash
 cargo build --features ffi --release
-# Library at:  target\release\librivr_core.a
+# Library at:  target/release/librivr_core.a
 ```
 
 ### Cross-compile for ESP32 target (requires espup toolchain)
 
-```powershell
+```bash
 # Install Xtensa Rust toolchain once:
 espup install
 
 # Then cross-compile:
 cargo +esp build --target xtensa-esp32-espidf --features ffi --release
-# Library at:  target\xtensa-esp32-espidf\release\librivr_core.a
+# Library at:  target/xtensa-esp32-espidf/release/librivr_core.a
 ```
 
 > **Note:** `main/CMakeLists.txt` automatically finds `librivr_core.a` by searching
@@ -78,8 +78,8 @@ cargo +esp build --target xtensa-esp32-espidf --features ffi --release
 
 ### Simulation mode (no SX1262 hardware)
 
-```powershell
-cd e:\Projects\Rivr
+```bash
+cd ~/Rivr
 
 # Build simulation firmware
 pio run -e esp32_sim
@@ -114,8 +114,8 @@ I (...) MAIN: [SIM] TX type=CHAT lmp=5 len=10 payload="hello-0" toa=... us
 
 ### Hardware mode (real SX1262 connected)
 
-```powershell
-cd e:\Projects\Rivr
+```bash
+cd ~/Rivr
 
 # First build the release Rust library:
 cd rivr_core && cargo build --features ffi --release && cd ..
@@ -129,12 +129,11 @@ pio device monitor --baud 115200
 
 ## Step 2b: Build via ESP-IDF (idf.py)
 
-```powershell
+```bash
 # Activate ESP-IDF environment (run once per shell):
-. $IDF_PATH\export.ps1     # PowerShell
-# or:  . $IDF_PATH/export.sh  (Linux/Mac)
+. $IDF_PATH/export.sh
 
-cd e:\Projects\Rivr
+cd ~/Rivr
 
 # Select target (once):
 idf.py set-target esp32
@@ -145,8 +144,8 @@ idf.py build
 # For simulation mode, add the compiler flag:
 idf.py -DRIVR_SIM_MODE=1 -DRIVR_SIM_TX_PRINT=1 build
 
-# Flash + monitor:
-idf.py -p COM3 flash monitor
+# Flash + monitor (replace /dev/ttyUSB0 with your device):
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
 ---
@@ -170,11 +169,8 @@ the RIVR engine, FFI bridge, filter, and sink dispatch are all working.
 1. Wire SX1262 module to ESP32 per the pin map in `firmware_core/platform_esp32.h`
    (defaults: SCK=18, MOSI=27, MISO=19, NSS=5, BUSY=26, RESET=14, DIO1=33).
 2. Remove `-DRIVR_SIM_MODE=1` and `-DRIVR_SIM_TX_PRINT=1` from the build flags
-   (or use the `esp32_hw` PlatformIO environment).
-3. Check for `// TODO(SX1262):` comments in:
-   - `firmware_core/main.c` — `RIVR_SIM_MODE` blocks
-   - `firmware_core/radio_sx1262.c` — `radio_init_buffers_only()` (can be removed)
-4. Flash with `pio run -e esp32_hw -t upload`.
+   (or use the `esp32_hw` PlatformIO environment which already excludes them).
+3. Flash with `pio run -e esp32_hw -t upload`.
 
 ---
 
