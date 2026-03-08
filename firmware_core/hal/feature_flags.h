@@ -269,10 +269,19 @@
  * Phase 4 implementation prerequisite.
  * When 0 (default): relay frames are never cancelled after queuing.
  * When 1: if a neighbor's relay of (src_id,pkt_id) is heard during our jitter
- *          window, our queued copy is cancelled before radio_transmit().
+ *          window, our queued copy is skipped by tx_drain_loop() and the
+ *          flood_fwd_cancelled_opport_total counter is incremented.
+ *
+ * Default policy (can be overridden in any variants/<board>/config.h):
+ *   REPEATER / GATEWAY  → 1   Relay suppression active on relay hubs.
+ *   CLIENT / generic    → 0   Conservative; field-validated before enabling.
  */
 #ifndef RIVR_FEATURE_OPPORTUNISTIC_FWD
-#  define RIVR_FEATURE_OPPORTUNISTIC_FWD  0
+#  if RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
+#    define RIVR_FEATURE_OPPORTUNISTIC_FWD  1
+#  else
+#    define RIVR_FEATURE_OPPORTUNISTIC_FWD  0
+#  endif
 #endif
 
 /* ── Compile-time guards ─────────────────────────────────────────────────── */

@@ -352,6 +352,17 @@ extern neighbor_table_t g_neighbor_table;
  *  routing_next_hop_score() to gate unicast route quality. */
 extern rivr_neighbor_table_t g_ntable;
 
+#include "../firmware_core/opfwd_suppress.h"
+/**
+ * Opportunistic-forward suppression table (Phase 4).
+ * Records (src_id, pkt_id) pairs overheard relayed by a neighbor during
+ * this node's jitter window — populated by rivr_sources.c on every
+ * DEDUPE-drop of a PKT_FLAG_RELAY frame.  Checked by tx_drain_loop() in
+ * main.c before transmitting any relay copy.
+ * Zero-initialised in BSS; always valid (no explicit init needed).
+ */
+extern opfwd_suppress_t g_opfwd_suppress;
+
 #ifdef __cplusplus
 }
 #endif

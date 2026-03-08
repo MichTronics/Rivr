@@ -73,6 +73,7 @@ uint32_t        g_vm_total_cycles = 0u; /* accumulated from rivr_engine_run() */
 uint32_t        g_vm_last_error   = 0u; /* last non-OK result code */
 neighbor_table_t      g_neighbor_table;     /* updated by rivr_sources.c */
 rivr_neighbor_table_t g_ntable;             /* standalone quality tracker */
+opfwd_suppress_t      g_opfwd_suppress;     /* Phase 4: overheard-relay suppression */
 /* ── Node identity (set by main.c before rivr_embed_init) ───────────────── */
 char             g_callsign[12]           = "RIVR";
 uint16_t         g_net_id                 = 0u;

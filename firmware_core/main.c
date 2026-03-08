@@ -389,6 +389,29 @@ static void tx_drain_loop(void)
             continue;   /* skip — try next frame; revisit this one next tick  */
         }
 
+        /* ── Phase 4: Opportunistic relay suppression ──────────────────── *
+         * If a neighbor was heard relaying this same (src_id, pkt_id) pair *
+         * during our jitter window, skip our copy — it's redundant.       *
+         * Only suppresses relay frames (PKT_FLAG_RELAY set); originated   *
+         * frames are never cancelled.                                      */
+#if RIVR_FEATURE_OPPORTUNISTIC_FWD
+        {
+            rivr_pkt_hdr_t sup_hdr;
+            const uint8_t *sup_pl = NULL;
+            if (protocol_decode(req.data, req.len, &sup_hdr, &sup_pl)
+                    && (sup_hdr.flags & PKT_FLAG_RELAY) != 0u
+                    && opfwd_suppress_check(&g_opfwd_suppress,
+                                            sup_hdr.src_id, sup_hdr.pkt_id,
+                                            now_ms)) {
+                g_rivr_metrics.flood_fwd_cancelled_opport_total++;
+                ESP_LOGD(TAG,
+                    "opfwd: suppress relay src=0x%08lx pkt_id=0x%04x",
+                    (unsigned long)sup_hdr.src_id, (unsigned)sup_hdr.pkt_id);
+                continue;
+            }
+        }
+#endif /* RIVR_FEATURE_OPPORTUNISTIC_FWD */
+
         /* ── Airtime class+fairness gate ────────────────────────────────── *
          * CONTROL always passes; CHAT/METRICS/BULK are rate-limited when  *
          * the token bucket is depleted.  Per-relay-source sub-buckets     *

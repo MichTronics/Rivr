@@ -106,6 +106,16 @@ uint32_t sources_rf_rx_drain(void)
             RIVR_LOGI(TAG, "rf_rx: DEDUPE-DROP src=0x%08lx seq=%u pkt_id=%u",
                      (unsigned long)pkt_hdr.src_id,
                      (unsigned)pkt_hdr.seq, (unsigned)pkt_hdr.pkt_id);
+#if RIVR_FEATURE_OPPORTUNISTIC_FWD
+            /* A neighbor just relayed this packet — suppress our queued copy
+             * (if any).  Only triggered when PKT_FLAG_RELAY is set so that
+             * a dedupe-drop of the original originator frame (FLAG_RELAY=0)
+             * never affects our own originated TX. */
+            if ((pkt_hdr.flags & PKT_FLAG_RELAY) != 0u) {
+                opfwd_suppress_add(&g_opfwd_suppress,
+                                   pkt_hdr.src_id, pkt_hdr.pkt_id, now_ms);
+            }
+#endif /* RIVR_FEATURE_OPPORTUNISTIC_FWD */
             continue;
         }
 
