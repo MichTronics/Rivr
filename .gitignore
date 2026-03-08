@@ -38,4 +38,7 @@ desktop.ini
 
 # ─── Host acceptance-test build artefacts ─────────────────────────────────────
 tests/*.exe
+tests/*_test
+tests/*_asan
+tests/*_harness
 *.obj
