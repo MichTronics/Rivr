@@ -100,6 +100,37 @@ See [docs/en/build-guide.md](docs/en/build-guide.md) for the full toolchain setu
 ~/.platformio/penv/bin/pio run -e client_lilygo_lora32_v21 -t upload
 ```
 
+### Heltec WiFi LoRa 32 V3 (ESP32-S3, SX1262, OLED)
+
+```bash
+~/.platformio/penv/bin/pio run -e client_heltec_lora32_v3   -t upload
+~/.platformio/penv/bin/pio run -e repeater_heltec_lora32_v3 -t upload
+```
+
+### Heltec WiFi LoRa 32 V2 (ESP32, SX1276, OLED)
+
+```bash
+~/.platformio/penv/bin/pio run -e client_heltec_lora32_v2   -t upload
+~/.platformio/penv/bin/pio run -e repeater_heltec_lora32_v2 -t upload
+```
+
+### LilyGo T-Beam v1.1 SX1262 ⚠ Experimental — AXP192 PMIC support needed
+
+```bash
+~/.platformio/penv/bin/pio run -e client_lilygo_tbeam_sx1262   -t upload
+~/.platformio/penv/bin/pio run -e repeater_lilygo_tbeam_sx1262 -t upload
+```
+
+> **Note:** `platform_esp32.c` must be extended to initialise the AXP192 PMIC
+> (`RIVR_TBEAM_AXP192=1`) before the SX1262 radio will power on.
+
+### LilyGo T3-S3 (ESP32-S3, SX1262, OLED)
+
+```bash
+~/.platformio/penv/bin/pio run -e client_lilygo_t3s3   -t upload
+~/.platformio/penv/bin/pio run -e repeater_lilygo_t3s3 -t upload
+```
+
 Monitor at 115200 baud:
 
 ```bash
@@ -147,6 +178,10 @@ Full grammar: [docs/en/language-reference.md](docs/en/language-reference.md)
 |---|---|---|---|---|
 | ESP32 DevKit + E22-900M30S | SX1262 | +30 dBm external | **Supported** | `client_esp32devkit_e22_900` · `repeater_esp32devkit_e22_900` |
 | LilyGo LoRa32 v2.1 | SX1276 | +20 dBm onboard | **Supported** | `client_lilygo_lora32_v21` · `repeater_lilygo_lora32_v21` |
+| Heltec WiFi LoRa 32 V3 | SX1262 | +22 dBm onboard | **Experimental** | `client_heltec_lora32_v3` · `repeater_heltec_lora32_v3` |
+| Heltec WiFi LoRa 32 V2 | SX1276 | +20 dBm onboard | **Experimental** | `client_heltec_lora32_v2` · `repeater_heltec_lora32_v2` |
+| LilyGo T-Beam v1.1 (SX1262) | SX1262 | +22 dBm onboard | **Experimental** ⚠ AXP192 | `client_lilygo_tbeam_sx1262` · `repeater_lilygo_tbeam_sx1262` |
+| LilyGo T3-S3 | SX1262 | +22 dBm onboard | **Experimental** | `client_lilygo_t3s3` · `repeater_lilygo_t3s3` |
 
 Status key: **Supported** = regularly tested in CI and field; **Experimental** = compiles and boots, limited field testing.
 
