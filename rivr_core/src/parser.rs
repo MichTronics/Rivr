@@ -205,7 +205,7 @@ impl<'s> Parser<'s> {
                     }
                 }
             } else {
-                result.push(self.src[self.pos..].chars().next().unwrap());
+                result.push(self.src[self.pos..].chars().next().unwrap_or('\0'));
                 self.pos += 1;
             }
         }

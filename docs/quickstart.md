@@ -16,7 +16,7 @@ first in host simulation (no hardware required) and then on real hardware.
 Clone the repository:
 
 ```bash
-git clone https://github.com/YOUR_ORG/YOUR_REPO.git Rivr   # replace with your repo URL
+git clone https://github.com/MichTronics/Rivr.git Rivr
 cd Rivr
 ```
 

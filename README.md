@@ -3,8 +3,7 @@
 > A small reactive programming language and deterministic runtime for off-grid LoRa mesh
 > networks.  Runs on ESP32 + SX1262/SX1276 with **zero heap allocation after boot**.
 
-<!-- CI badge: replace YOUR_ORG/YOUR_REPO with your GitHub path -->
-<!-- [![CI](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml) -->
+[![CI](https://github.com/MichTronics/Rivr/actions/workflows/ci.yml/badge.svg)](https://github.com/MichTronics/Rivr/actions/workflows/ci.yml)
 
 ---
 

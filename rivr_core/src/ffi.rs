@@ -35,7 +35,6 @@
 // Instead of storing Rust closures (requires alloc), we call back into the
 // C-side `rivr_emit_dispatch(sink_name, value)` function pointer.
 // The C firmware registers this during rivr_embed_init().
-#![allow(static_mut_refs)]
 
 use core::ffi::{c_char, CStr};
 
