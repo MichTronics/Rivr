@@ -302,8 +302,8 @@ typedef enum {
                                             /**  (3 s = ~5% duty on SF9 BW125) */
 
 /* Hour-level airtime cap (independent of the per-minute per-type caps). */
-#define FWDBUDGET_HOUR_WINDOW_MS     3600000u  /**< 1-hour rolling window        */
-#define FWDBUDGET_MAX_HOUR_AIR_US    36000000u /**< 36 s / hour ≈ 1% duty cycle  */
+#define FWDBUDGET_HOUR_WINDOW_MS     3600000u   /**< 1-hour rolling window        */
+#define FWDBUDGET_MAX_HOUR_AIR_US    360000000u /**< 360 s / hour = 10% duty cycle */
 
 typedef struct {
     /* ── Per-minute, per-type counters ─────────────────────────────────── */
