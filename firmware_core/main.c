@@ -658,6 +658,9 @@ void app_main(void)
 #if RIVR_FABRIC_REPEATER
     uint32_t last_fabric_log_ms = 0;
 #endif
+#if RIVR_FEATURE_ADAPTIVE_FLOOD
+    uint32_t last_adapt_ms      = 0;
+#endif
     uint32_t loop_count         = 0;
     display_stats_t disp;       /* stats snapshot updated each iteration */
     memset(&disp, 0, sizeof(disp));
@@ -744,6 +747,27 @@ void app_main(void)
                 (unsigned long)rivr_fabric_get_tx_blocked());
         }
 #endif /* RIVR_FABRIC_REPEATER */
+
+        /* ─ 3b1. Adaptive flood budget — adjust max_fwd_count once per minute ─ */
+#if RIVR_FEATURE_ADAPTIVE_FLOOD
+        if (now - last_adapt_ms >= FWDBUDGET_WINDOW_MS) {
+            last_adapt_ms = now;
+            uint8_t fscore = 0u;
+#if RIVR_FABRIC_REPEATER
+            fscore = rivr_fabric_get_score();
+#endif
+            /* dc_pct: fraction of hourly duty-cycle budget consumed (0–100). */
+            uint64_t dc_rem = dutycycle_remaining_us(&g_dc);
+            uint8_t  dc_pct = ((uint64_t)DC_BUDGET_US > dc_rem)
+                              ? (uint8_t)(((uint64_t)DC_BUDGET_US - dc_rem)
+                                         * 100ULL / (uint64_t)DC_BUDGET_US)
+                              : 0u;
+            routing_fwdbudget_adapt(routing_get_fwdbudget(), fscore, dc_pct);
+            RIVR_LOGI("ADAPT", "fwdbudget adapt: load=max(%u,%u) cap=%u",
+                      (unsigned)fscore, (unsigned)dc_pct,
+                      (unsigned)routing_get_fwdbudget()->max_fwd_count);
+        }
+#endif /* RIVR_FEATURE_ADAPTIVE_FLOOD */
 
         /* ─ 3b2. Clear panic reset counter after 60 s of clean operation ─
          * Once the node has been running for a full minute without WDT/panic,

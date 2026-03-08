@@ -338,6 +338,39 @@ void routing_fwdbudget_record(forward_budget_t *fb,
     fb->hour_total_air_us    += toa_us;
 }
 
+void routing_fwdbudget_adapt(forward_budget_t *fb,
+                              uint8_t           fabric_score,
+                              uint8_t           dc_pct)
+{
+    if (!fb) return;
+#if RIVR_FEATURE_ADAPTIVE_FLOOD
+    /* Combined load signal: take the worse of fabric congestion and DC usage. */
+    uint32_t load = (fabric_score > dc_pct) ? (uint32_t)fabric_score
+                                             : (uint32_t)dc_pct;
+
+    /*
+     * Three-tier step function — mirrors rivr_fabric thresholds:
+     *   load  < 40  → full cap  (no throttle)
+     *   load 40–69  → 50 %      (moderate congestion)
+     *   load ≥ 70   → 25 %      (heavy congestion; floor 4 keeps node alive)
+     *
+     * Integer-only, no division for the common (load < 40) case.
+     */
+    uint16_t new_cap;
+    if (load < 40u) {
+        new_cap = (uint16_t)FWDBUDGET_MAX_FWD_ROLE;
+    } else if (load < 70u) {
+        new_cap = (uint16_t)(FWDBUDGET_MAX_FWD_ROLE / 2u);
+    } else {
+        new_cap = (uint16_t)(FWDBUDGET_MAX_FWD_ROLE / 4u);
+    }
+    if (new_cap < 4u) new_cap = 4u;   /* minimum floor — never fully silent */
+    fb->max_fwd_count = new_cap;
+#else
+    (void)fb; (void)fabric_score; (void)dc_pct;
+#endif /* RIVR_FEATURE_ADAPTIVE_FLOOD */
+}
+
 /* ── Strict flood forward ────────────────────────────────────────────────── */
 
 rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,

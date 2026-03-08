@@ -249,11 +249,19 @@
  * Phase 3 implementation prerequisite.
  * When 0 (default): forward_budget_t caps are static role-based constants.
  * When 1: routing_fwdbudget_adapt() adjusts caps each minute window based on
- *          rivr_fabric_get_score() and dutycycle_get_used_pct().
+ *          rivr_fabric_get_score() and dutycycle_remaining_us().
  * Meaningful only when RIVR_FABRIC_REPEATER=1.
+ *
+ * Default policy (can be overridden in any variants/<board>/config.h):
+ *   REPEATER / GATEWAY  → 1   Adaptive throttling active on relay hubs.
+ *   CLIENT / generic    → 0   Static caps; field-validated before enabling.
  */
 #ifndef RIVR_FEATURE_ADAPTIVE_FLOOD
-#  define RIVR_FEATURE_ADAPTIVE_FLOOD     0
+#  if RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
+#    define RIVR_FEATURE_ADAPTIVE_FLOOD  1
+#  else
+#    define RIVR_FEATURE_ADAPTIVE_FLOOD  0
+#  endif
 #endif
 
 /**

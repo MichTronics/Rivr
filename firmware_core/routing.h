@@ -376,6 +376,29 @@ void routing_fwdbudget_record(forward_budget_t *fb,
                                uint32_t          toa_us,
                                uint32_t          now_ms);
 
+/**
+ * @brief Adapt forward-budget caps to measured channel load (Phase 3).
+ *
+ * Call once per minute (FWDBUDGET_WINDOW_MS boundary) from the main loop.
+ * When RIVR_FEATURE_ADAPTIVE_FLOOD=0 this is a no-op (zero overhead).
+ *
+ * Scaling rule (three tiers):
+ *   load  < 40  → full cap (FWDBUDGET_MAX_FWD_ROLE)
+ *   load 40–69  → 50 % of full cap
+ *   load ≥ 70   → 25 % of full cap  (floor 4  — node never fully silenced)
+ *
+ * where load = max(fabric_score, dc_pct).
+ *
+ * @param fb            Forward budget to adapt.
+ * @param fabric_score  Congestion score 0–100 from rivr_fabric_get_score();
+ *                      pass 0 when RIVR_FABRIC_REPEATER=0.
+ * @param dc_pct        Duty-cycle used, percent 0–100 over the hour window;
+ *                      derive with dutycycle_remaining_us() / DC_BUDGET_US.
+ */
+void routing_fwdbudget_adapt(forward_budget_t *fb,
+                              uint8_t           fabric_score,
+                              uint8_t           dc_pct);
+
 /* ── Strict flood forward ────────────────────────────────────────────────── */
 
 /**
