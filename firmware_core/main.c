@@ -448,7 +448,7 @@ static void tx_drain_loop(void)
             continue;
         }
 
-#ifdef RIVR_SIM_TX_PRINT
+#if RIVR_SIM_TX_PRINT   /* 0 on all real-hardware builds (rivr_config.h default) */
         /* ── Simulation TX path ─────────────────────────────────────────── *
          * Decode the binary frame and log what would be transmitted.        *
          * [HARDWARE-TODO / SIM-ONLY] TODO(SX1262): remove #ifdef and always use radio_transmit() once  *
@@ -511,7 +511,7 @@ static void tx_drain_loop(void)
             rivr_fabric_on_tx_fail(tb_millis(), req.toa_us);
             ESP_LOGE(TAG, "TX failed");
         }
-#endif  /* RIVR_SIM_TX_PRINT */
+#endif  /* RIVR_SIM_TX_PRINT (value-checked, not ifdef) */
     }
 }
 /* ── Role-specific initialisation stubs ─────────────────────────────────────── *
