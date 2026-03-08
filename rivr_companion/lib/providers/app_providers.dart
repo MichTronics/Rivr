@@ -36,7 +36,23 @@ class ChatNotifier extends Notifier<List<ChatMessage>> {
   List<ChatMessage> build() {
     ref.listen(eventStreamProvider, (_, next) {
       next.whenData((event) {
-        if (event is ChatEvent) _add(event.message);
+        if (event is ChatEvent) {
+          // Enrich sender name with callsign from node table if available
+          final msg = event.message;
+          final nodes = ref.read(nodesProvider);
+          final node = nodes[msg.senderNodeId];
+          final enriched = (node != null && node.callsign.isNotEmpty)
+              ? ChatMessage(
+                  id: msg.id,
+                  text: msg.text,
+                  senderNodeId: msg.senderNodeId,
+                  senderName: '${node.callsign} (${msg.senderName})',
+                  timestamp: msg.timestamp,
+                  origin: msg.origin,
+                )
+              : msg;
+          _add(enriched);
+        }
       });
     });
     return [];

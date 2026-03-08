@@ -35,10 +35,14 @@ class RivrProtocol {
   // Example:  @MET {"node":3735928559,"dc":12,"qdep":0,...}
   static final _metPattern = RegExp(r'^@MET\s+(\{.+\})\s*$');
 
-  // ── PKT_CHAT line ──────────────────────────────────────────────────────────
-  // Example:  I CHAT: rx from 0x1A2B3C4D [ALICE]: hello world
+  // ── @CHT JSON (primary – always emitted by firmware) ───────────────────────
+  // Example:  @CHT {"src":"0xDEADBEEF","dst":"0xFFFFFFFF","rssi":-87,"len":5,"text":"hello"}
+  static final _chtPattern = RegExp(r'^@CHT\s+(\{.+\})\s*$');
+
+  // ── [CHAT][NODEID]: text  (human-readable fallback, client build) ─────────
+  // Example:  [CHAT][DEADBEEF]: hello world
   static final _chatRxPattern = RegExp(
-      r'CHAT.*?rx from (0x[0-9A-Fa-f]+)(?:\s+\[([^\]]+)\])?\s*:\s*(.+)',
+      r'\[CHAT\]\[([0-9A-Fa-f]+)\]:\s*(.+)',
       caseSensitive: false);
 
   // ── Beacon / node info in ntable output ───────────────────────────────────
@@ -60,18 +64,23 @@ class RivrProtocol {
       if (metrics != null) return MetricsEvent(metrics);
     }
 
-    // Chat RX
+    // @CHT JSON (primary)
+    final chtMatch = _chtPattern.firstMatch(line);
+    if (chtMatch != null) {
+      final event = _parseCht(chtMatch.group(1)!);
+      if (event != null) return event;
+    }
+
+    // [CHAT][NODEID]: text  (human-readable fallback)
     final chatMatch = _chatRxPattern.firstMatch(line);
     if (chatMatch != null) {
-      final nodeIdStr = chatMatch.group(1)!;
-      final callsign = chatMatch.group(2) ?? '';
-      final text = chatMatch.group(3)!.trim();
-      final nodeId = _parseHex(nodeIdStr) ?? 0;
+      final nodeId = _parseHex(chatMatch.group(1)!) ?? 0;
+      final text = chatMatch.group(2)!.trim();
       final msg = ChatMessage(
         id: '${DateTime.now().microsecondsSinceEpoch}',
         text: text,
         senderNodeId: nodeId,
-        senderName: callsign.isNotEmpty ? callsign : nodeIdStr,
+        senderName: '0x${nodeId.toRadixString(16).toUpperCase().padLeft(8, '0')}',
         timestamp: DateTime.now(),
         origin: MessageOrigin.remote,
       );
@@ -101,6 +110,29 @@ class RivrProtocol {
     }
 
     return RawLineEvent(line);
+  }
+
+  // ── @CHT JSON parser ─────────────────────────────────────────────────────
+  static ChatEvent? _parseCht(String json) {
+    try {
+      final m = jsonDecode(json) as Map<String, dynamic>;
+      final srcStr = (m['src'] as String? ?? '0x0');
+      final nodeId = _parseHex(srcStr) ?? 0;
+      final text = (m['text'] as String? ?? '').trim();
+      if (text.isEmpty) return null;
+      final name = '0x${nodeId.toRadixString(16).toUpperCase().padLeft(8, '0')}';
+      final msg = ChatMessage(
+        id: '${DateTime.now().microsecondsSinceEpoch}',
+        text: text,
+        senderNodeId: nodeId,
+        senderName: name,
+        timestamp: DateTime.now(),
+        origin: MessageOrigin.remote,
+      );
+      return ChatEvent(msg);
+    } catch (_) {
+      return null;
+    }
   }
 
   // ── Hex parser: accepts '0xDEADBEEF' or 'DEADBEEF' ────────────────────────
