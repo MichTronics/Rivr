@@ -32,6 +32,11 @@ final eventStreamProvider = StreamProvider<RivrEvent>((ref) {
 class ChatNotifier extends Notifier<List<ChatMessage>> {
   static const _maxMessages = 500;
 
+  /// Texts of messages we sent recently, used to suppress TX echoes when the
+  /// local node-ID is not yet known from @MET (e.g. before first metrics tick).
+  final _recentlySent = <String, DateTime>{};
+  static const _echoWindow = Duration(seconds: 15);
+
   @override
   List<ChatMessage> build() {
     ref.listen(eventStreamProvider, (_, next) {
@@ -39,9 +44,16 @@ class ChatNotifier extends Notifier<List<ChatMessage>> {
         if (event is ChatEvent) {
           final msg = event.message;
 
-          // Drop @CHT lines where src == our own node ID (TX echo from radio)
+          // Drop @CHT lines where src == our own node ID (TX echo from radio).
+          // The node ID comes from @MET; if it is not yet available we fall
+          // through to the text-based dedup below.
           final localNodeId = ref.read(metricsProvider.notifier).latest.nodeId;
           if (localNodeId != 0 && msg.senderNodeId == localNodeId) return;
+
+          // Fallback: drop echoes whose text matches a recently-sent message.
+          final sentAt = _recentlySent[msg.text];
+          if (sentAt != null &&
+              DateTime.now().difference(sentAt) < _echoWindow) return;
 
           // Enrich sender name with callsign from node table if available
           final nodes = ref.read(nodesProvider);
@@ -72,7 +84,12 @@ class ChatNotifier extends Notifier<List<ChatMessage>> {
 
   void addSystem(String text) => _add(ChatMessage.system(text));
 
-  void addLocal(ChatMessage msg) => _add(msg);
+  void addLocal(ChatMessage msg) {
+    // Record the text so we can suppress the radio echo that comes back
+    // for the same message (used when node-ID from @MET is not yet known).
+    _recentlySent[msg.text] = DateTime.now();
+    _add(msg);
+  }
 }
 
 final chatProvider =

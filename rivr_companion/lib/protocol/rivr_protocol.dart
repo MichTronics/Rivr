@@ -132,27 +132,27 @@ class RivrProtocol {
     try {
       final m = jsonDecode(json) as Map<String, dynamic>;
       return RivrMetrics(
-        nodeId: _i(m, 'node'),
-        dcPct: _i(m, 'dc'),
-        qDepth: _i(m, 'qdep'),
-        txTotal: _i(m, 'tx'),
-        rxTotal: _i(m, 'rx'),
-        routeCache: _i(m, 'rc'),
-        lnkCnt: _i(m, 'lnk_cnt'),
-        lnkBest: _i(m, 'lnk_best'),
-        lnkRssi: _i(m, 'lnk_rssi'),
-        lnkLoss: _i(m, 'lnk_loss'),
-        relaySkip: _i(m, 'relay_skip'),
-        relayDelay: _i(m, 'relay_delay'),
-        relayDensity: _i(m, 'relay_density'),
-        relayFwd: _i(m, 'relay_fwd'),
-        relaySel: _i(m, 'relay_sel'),
-        relayCan: _i(m, 'relay_can'),
-        rxDecodeFail: _i(m, 'rx_fail'),
-        rxDedupeDrop: _i(m, 'dedupe'),
-        txQueueFull: _i(m, 'txq_full'),
-        dutyBlocked: _i(m, 'dc_block'),
-        radioHardReset: _i(m, 'radio_rst'),
+        nodeId:       _i(m, 'node_id'),      // "node_id"
+        dcPct:        _i(m, 'dc_pct'),       // "dc_pct"
+        qDepth:       _i(m, 'q_depth'),      // "q_depth"
+        txTotal:      _i(m, 'tx_total'),     // "tx_total"
+        rxTotal:      _i(m, 'rx_total'),     // "rx_total"
+        routeCache:   _i(m, 'route_cache'),  // "route_cache"
+        lnkCnt:       _i(m, 'lnk_cnt'),     // "lnk_cnt"
+        lnkBest:      _i(m, 'lnk_best'),    // "lnk_best"
+        lnkRssi:      _i(m, 'lnk_rssi'),    // "lnk_rssi"
+        lnkLoss:      _i(m, 'lnk_loss'),    // "lnk_loss"
+        relaySkip:    _i(m, 'relay_skip'),   // "relay_skip"
+        relayDelay:   _i(m, 'relay_delay'),  // "relay_delay"
+        relayDensity: _i(m, 'relay_density'),// "relay_density"
+        relayFwd:     _i(m, 'relay_fwd'),    // "relay_fwd"
+        relaySel:     _i(m, 'relay_sel'),    // "relay_sel"
+        relayCan:     _i(m, 'relay_can'),    // "relay_can"
+        rxDecodeFail: _i(m, 'rx_fail'),      // "rx_fail"
+        rxDedupeDrop: _i(m, 'rx_dup'),       // "rx_dup"
+        txQueueFull:  _i(m, 'tx_full'),      // "tx_full"
+        dutyBlocked:  _i(m, 'dc_blk'),       // "dc_blk"
+        radioHardReset: _i(m, 'rad_rst'),    // "rad_rst"
         collectedAt: DateTime.now(),
       );
     } catch (_) {
