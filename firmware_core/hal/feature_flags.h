@@ -171,6 +171,19 @@
     "0000000000000000000000000000000000000000000000000000000000000000"
 #endif
 
+/* Compile-time guard: if HMAC-signed @PARAMS is enabled, the default all-zero
+ * PSK must not be used in a real build.  Override RIVR_PARAMS_PSK_HEX via a
+ * board-specific build_flags entry before releasing firmware. */
+#if RIVR_FEATURE_SIGNED_PARAMS
+_Static_assert(
+    __builtin_strcmp(RIVR_PARAMS_PSK_HEX,
+        "0000000000000000000000000000000000000000000000000000000000000000") != 0,
+    "RIVR_FEATURE_SIGNED_PARAMS is enabled but RIVR_PARAMS_PSK_HEX is still "
+    "the insecure all-zero default.  Set a secret key via -DRIVR_PARAMS_PSK_HEX "
+    "in your board's build_flags before building release firmware."
+);
+#endif
+
 /* ── Build mode flags ───────────────────────────────────────────────────── */
 
 /** Simulation / host-test mode — disables hardware peripherals. */

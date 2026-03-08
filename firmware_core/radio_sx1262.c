@@ -45,6 +45,7 @@
 #include "rivr_metrics.h"
 #include "driver/gpio.h"    /* gpio_isr_handler_add */
 #include "esp_log.h"
+#include "esp_task_wdt.h"  /* esp_task_wdt_reset — keeps WDT happy during long TX polls */
 #include "rivr_log.h"
 #include <string.h>
 #include <stdio.h>
@@ -705,6 +706,7 @@ bool radio_transmit(const rf_tx_request_t *req)
     uint32_t deadline_ms = t0 + req->toa_us / 1000u * 2u + 100u;
 
     while (tb_millis() < deadline_ms) {
+        esp_task_wdt_reset();  /* poll can take up to toa_us×2 — prevent WDT trip at high SF */
         uint8_t irq[2] = {0};
         sx1262_read_cmd(0x12, irq, 2);   /* 0x12 = GetIrqStatus */
         uint16_t flags = ((uint16_t)irq[0] << 8) | irq[1];

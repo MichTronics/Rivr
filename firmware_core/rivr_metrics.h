@@ -145,6 +145,15 @@ typedef struct {
     uint32_t relay_delay_ms_total;
 } rivr_metrics_t;
 
+/**
+ * ⚠ THREAD-SAFETY WARNING: g_rivr_metrics is NOT protected by any mutex.
+ *
+ * All writes MUST originate from the main-loop task (CPU0).
+ * Do NOT increment or modify any field from an ISR or a secondary FreeRTOS
+ * task — doing so introduces data races on 32-bit counters on Xtensa and can
+ * produce silent corruption.  For display / reporting purposes only, reads
+ * from the display task are tolerated (torn reads are harmless for gauges).
+ */
 extern rivr_metrics_t g_rivr_metrics;
 
 /**

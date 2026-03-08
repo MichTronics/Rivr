@@ -158,6 +158,13 @@ bool protocol_decode(const uint8_t    *buf,
     /* Extract payload_len from header byte [21] */
     uint8_t payload_len = buf[21];
 
+    /* Reject packets claiming a payload larger than the protocol maximum.
+     * Without this guard, payload_len >= 231 wraps the uint8_t expected_len
+     * calculation below, causing the decode to succeed on a truncated frame. */
+    if (payload_len > RIVR_PKT_MAX_PAYLOAD) {
+        return false;
+    }
+
     /* Check total length */
     uint8_t expected_len = (uint8_t)(RIVR_PKT_HDR_LEN + payload_len + RIVR_PKT_CRC_LEN);
     if (len < expected_len) return false;

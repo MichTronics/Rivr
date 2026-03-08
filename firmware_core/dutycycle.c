@@ -110,7 +110,10 @@ void dutycycle_record(dc_ctx_t *dc, uint32_t now_ms, uint32_t toa_us)
          * Evict the oldest record: subtract its airtime so used_us stays
          * consistent.  Without this the previous bug caused used_us to climb
          * permanently until reboot. */
-        dc->used_us -= dc->history[lru_idx].toa_us;
+        if (dc->used_us >= dc->history[lru_idx].toa_us)
+            dc->used_us -= dc->history[lru_idx].toa_us;
+        else
+            dc->used_us = 0;  /* saturate: never allow uint64_t underflow */
         free_idx     = lru_idx;
     }
 
