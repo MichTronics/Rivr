@@ -149,6 +149,21 @@ extern "C" {
 /** Minimum encoded frame size (0-byte payload). */
 #define RIVR_PKT_MIN_FRAME     (RIVR_PKT_HDR_LEN + RIVR_PKT_CRC_LEN)
 
+/* ── Compile-time sanity checks ──────────────────────────────────────────── *
+ * These assert that the named constants match the byte offsets documented   *
+ * in the wire-layout comment at the top of this file.  A mismatch here      *
+ * means either the comment or the constant has drifted — catch it at build  *
+ * time rather than at a customer site.                                       *
+ * ────────────────────────────────────────────────────────────────────────── */
+_Static_assert(RIVR_PKT_HDR_LEN        == 23u,
+               "RIVR_PKT_HDR_LEN must equal wire header byte count (23)");
+_Static_assert(RIVR_PKT_MIN_FRAME      == 25u,
+               "RIVR_PKT_MIN_FRAME must equal HDR_LEN(23) + CRC_LEN(2)");
+_Static_assert(PKT_TYPE_BYTE_OFFSET    ==  3u,
+               "pkt_type must be at wire byte offset 3");
+_Static_assert(LOOP_GUARD_BYTE_OFFSET  == 22u,
+               "loop_guard must be at wire byte offset 22");
+
 /* ── Default TTL ─────────────────────────────────────────────────────────── */
 
 #define RIVR_PKT_DEFAULT_TTL   7u   /**< Hops before a packet is discarded   */

@@ -24,6 +24,8 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"rx_fail\":%" PRIu32 ","
            "\"rx_dup\":%" PRIu32 ","
            "\"rx_ttl\":%" PRIu32 ","
+           "\"rx_bad_type\":%" PRIu32 ","
+           "\"rx_bad_hop\":%" PRIu32 ","
            "\"tx_full\":%" PRIu32 ","
            "\"dc_blk\":%" PRIu32 ","
            "\"fab_drop\":%" PRIu32 ","
@@ -93,6 +95,8 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.rx_decode_fail,
         g_rivr_metrics.rx_dedupe_drop,
         g_rivr_metrics.rx_ttl_drop,
+        g_rivr_metrics.rx_invalid_type,
+        g_rivr_metrics.rx_invalid_hop,
         g_rivr_metrics.tx_queue_full,
         g_rivr_metrics.duty_blocked,
         g_rivr_metrics.fabric_drop,

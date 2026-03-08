@@ -70,6 +70,8 @@ int build_info_write_json(char *buf, size_t buf_len)
             "\"rx_fail\":%" PRIu32 ","
             "\"rx_dup\":%" PRIu32 ","
             "\"rx_ttl\":%" PRIu32 ","
+            "\"rx_bad_type\":%" PRIu32 ","
+            "\"rx_bad_hop\":%" PRIu32 ","
             "\"tx_full\":%" PRIu32 ","
             "\"dc_blk\":%" PRIu32 ","
             "\"fab_drop\":%" PRIu32 ","
@@ -119,6 +121,8 @@ int build_info_write_json(char *buf, size_t buf_len)
         g_rivr_metrics.rx_decode_fail,
         g_rivr_metrics.rx_dedupe_drop,
         g_rivr_metrics.rx_ttl_drop,
+        g_rivr_metrics.rx_invalid_type,
+        g_rivr_metrics.rx_invalid_hop,
         g_rivr_metrics.tx_queue_full,
         g_rivr_metrics.duty_blocked,
         g_rivr_metrics.fabric_drop,
@@ -210,6 +214,8 @@ int build_info_write_supportpack(char    *buf,
             "\"rx_fail\":%" PRIu32 ","
             "\"rx_dup\":%" PRIu32 ","
             "\"rx_ttl\":%" PRIu32 ","
+            "\"rx_bad_type\":%" PRIu32 ","
+            "\"rx_bad_hop\":%" PRIu32 ","
             "\"tx_full\":%" PRIu32 ","
             "\"dc_blk\":%" PRIu32 ","
             "\"fab_drop\":%" PRIu32 ","
@@ -264,6 +270,8 @@ int build_info_write_supportpack(char    *buf,
         g_rivr_metrics.rx_decode_fail,
         g_rivr_metrics.rx_dedupe_drop,
         g_rivr_metrics.rx_ttl_drop,
+        g_rivr_metrics.rx_invalid_type,
+        g_rivr_metrics.rx_invalid_hop,
         g_rivr_metrics.tx_queue_full,
         g_rivr_metrics.duty_blocked,
         g_rivr_metrics.fabric_drop,

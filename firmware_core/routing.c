@@ -392,6 +392,15 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
         return RIVR_FWD_DROP_TTL;
     }
 
+    /* Step 2b — Hop count sanity: a well-formed frame must have
+     * hop < RIVR_PKT_DEFAULT_TTL (7).  A higher value means either the
+     * frame was mis-encoded, or the counter is about to wrap uint8_t on
+     * the next relay — both are corrupt and must be dropped.             */
+    if (pkt->hop >= RIVR_PKT_DEFAULT_TTL) {
+        g_rivr_metrics.rx_invalid_hop++;
+        return RIVR_FWD_DROP_TTL;
+    }
+
     /* Step 3 — Loop-guard check (skip if my_id == 0, e.g. replay/fuzz) */
     uint8_t my_h = 0u;
     if (my_id != 0u) {

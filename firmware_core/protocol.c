@@ -4,6 +4,7 @@
  */
 
 #include "protocol.h"
+#include "rivr_metrics.h"
 #include <string.h>
 
 /* ── CRC-16/CCITT ─────────────────────────────────────────────────────────── *
@@ -140,6 +141,19 @@ bool protocol_decode(const uint8_t    *buf,
     /* Check magic */
     uint16_t magic = (uint16_t)(buf[0] | ((uint16_t)buf[1] << 8));
     if (magic != RIVR_MAGIC) return false;
+
+    /* Reject unknown protocol versions — prevents silent processing of
+     * frames from future incompatible protocol revisions.               */
+    if (buf[2] != RIVR_PROTO_VER) return false;
+
+    /* Reject reserved or out-of-range packet types.  Type 0 is never     *
+     * assigned; values above PKT_ALERT (10) are undefined in v1.         *
+     * Frames with invalid types are counted separately from CRC failures  *
+     * so operators can distinguish malformed traffic from foreign devices. */
+    if (buf[3] == 0u || buf[3] > PKT_ALERT) {
+        g_rivr_metrics.rx_invalid_type++;
+        return false;
+    }
 
     /* Extract payload_len from header byte [21] */
     uint8_t payload_len = buf[21];
