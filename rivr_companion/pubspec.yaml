@@ -19,7 +19,7 @@ dependencies:
   flutter_blue_plus: ^1.33.0
 
   # USB Serial (Android + Linux + Windows via libusb)
-  usb_serial: ^0.6.1
+  usb_serial: ^0.5.2
 
   # Permissions (Android, iOS)
   permission_handler: ^11.3.1
