@@ -145,7 +145,8 @@ final metricsProvider =
 
 /// Convenience: just the most recent snapshot.
 final latestMetricsProvider = Provider<RivrMetrics>((ref) {
-  return ref.watch(metricsProvider.notifier).latest;
+  final history = ref.watch(metricsProvider); // watch state so this rebuilds on every @MET
+  return history.isNotEmpty ? history.last : RivrMetrics.empty();
 });
 
 // ── Raw log lines ─────────────────────────────────────────────────────────
