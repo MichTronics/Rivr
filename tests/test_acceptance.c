@@ -26,6 +26,16 @@
  *   Same seq, different pkt_id     → different jitter delays.
  *   seq field survives relay independently of pkt_id.
  *
+ * RUN 9 — Phase 5 fwd_set quality gate (fwdset_build / suppress / holdoff)
+ *   Empty table                    → viable=0, no suppression, holdoff=0.
+ *   Direct good link (score ≥ 70)  → viable=1, no suppress, +0 ms holdoff.
+ *   Direct mid link (40–69)        → viable=1, no suppress, +50 ms holdoff.
+ *   Direct low link (20–39)        → viable=1, no suppress, +120 ms holdoff.
+ *   Direct below threshold (< 20)  → viable=0, no suppress (edge-node safe).
+ *   Below-threshold direct +
+ *     viable indirect               → suppress=true (better relay exists).
+ *   Three neighbours               → candidates[] sorted descending by score.
+ *
  * Exit code: 0 = all checks passed, 1 = at least one check failed.
  *
  * Build (from project root):
@@ -52,10 +62,12 @@
 #include "timebase.h"       /* tb_millis() via g_mono_ms atom */
 #include "airtime_sched.h"  /* rivr_pkt_classify(), airtime_sched_check_consume() */
 #include "rivr_metrics.h"   /* g_rivr_metrics */
+#include "fwd_set.h"         /* fwdset_build, fwdset_suppress_relay, etc. */
 
 /* ── External stubs (defined in test_stubs.c) ──────────────────────────────── */
 extern void test_stubs_init(void);
 extern void test_advance_ms(uint32_t delta_ms);
+extern void test_set_ms(uint32_t abs_ms);
 extern atomic_uint_fast32_t g_mono_ms;
 
 /* ── Node IDs (same as sim demo) ─────────────────────────────────────────── */
@@ -1261,6 +1273,144 @@ static void run8_pkt_identity(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
+ * RUN 9 — Phase 5 fwd_set quality gate
+ * ══════════════════════════════════════════════════════════════════════════ */
+static void run9_fwdset(void)
+{
+    printf("\n=== RUN 9: Phase 5 fwd_set quality gate ===\n");
+
+    /* Advance clock to a safe non-zero value so age arithmetic is clean. */
+    test_set_ms(60000u);
+    uint32_t now = tb_millis();
+
+    /* Helper macro: fill a rivr_neighbor_t at slot i into ntbl */
+#define FILL_NBR(ntbl, i, id, rssi, snr, lr, fl) do {       \
+    (ntbl).entries[(i)].neighbor_id  = (id);                 \
+    (ntbl).entries[(i)].rssi_avg     = (int16_t)(rssi);      \
+    (ntbl).entries[(i)].snr_avg      = (int8_t)(snr);        \
+    (ntbl).entries[(i)].loss_rate    = (uint8_t)(lr);        \
+    (ntbl).entries[(i)].flags        = (uint8_t)(fl);        \
+    (ntbl).entries[(i)].last_seen_ms = now;                  \
+} while (0)
+
+    /* ── 9a: Empty table → no suppression, holdoff 0 ────────────────────── */
+    {
+        rivr_neighbor_table_t ntbl;
+        memset(&ntbl, 0, sizeof(ntbl));
+        fwd_set_t fs = fwdset_build(&ntbl, now);
+        CHECK(fs.count        == 0u,    "9a: empty table → count == 0");
+        CHECK(fs.viable_count == 0u,    "9a: empty table → viable_count == 0");
+        CHECK(!fwdset_suppress_relay(&fs), "9a: empty table → suppress == false");
+        CHECK(fwdset_extra_holdoff_ms(&fs) == 0u, "9a: empty table → holdoff == 0");
+    }
+
+    /* ── 9b: Direct good link (score ≥ 70) → no suppress, holdoff 0 ─────── */
+    /* rssi=-80 → rssi_part=60; snr=0 → snr_part=10; base=70; loss=0; age=0  */
+    {
+        rivr_neighbor_table_t ntbl;
+        memset(&ntbl, 0, sizeof(ntbl));
+        FILL_NBR(ntbl, 0, NODE_A, -80, 0, 0, NTABLE_FLAG_DIRECT);
+        ntbl.count = 1u;
+        fwd_set_t fs = fwdset_build(&ntbl, now);
+        CHECK(fs.count            == 1u,  "9b: 1 direct good → count == 1");
+        CHECK(fs.viable_count     >= 1u,  "9b: 1 direct good → viable_count ≥ 1");
+        CHECK(fs.best_direct_score >= 70u, "9b: 1 direct good → best_direct ≥ 70");
+        CHECK(!fwdset_suppress_relay(&fs), "9b: direct score ≥ 70 → no suppress");
+        CHECK(fwdset_extra_holdoff_ms(&fs) == 0u, "9b: score ≥ 70 → holdoff == 0");
+    }
+
+    /* ── 9c: Direct mid link (40–69) → no suppress, +50 ms holdoff ─────── */
+    /* rssi=-100 → rssi_part=40; snr=0 → snr_part=10; base=50; loss=0; age=0  */
+    {
+        rivr_neighbor_table_t ntbl;
+        memset(&ntbl, 0, sizeof(ntbl));
+        FILL_NBR(ntbl, 0, NODE_A, -100, 0, 0, NTABLE_FLAG_DIRECT);
+        ntbl.count = 1u;
+        fwd_set_t fs = fwdset_build(&ntbl, now);
+        CHECK(fs.viable_count      >= 1u,  "9c: mid link → viable_count ≥ 1");
+        CHECK(fs.best_direct_score >= 40u, "9c: mid link → best_direct ≥ 40");
+        CHECK(fs.best_direct_score  < 70u, "9c: mid link → best_direct < 70");
+        CHECK(!fwdset_suppress_relay(&fs), "9c: mid link → no suppress");
+        CHECK(fwdset_extra_holdoff_ms(&fs) == FWDSET_HOLDOFF_MID_MS,
+              "9c: mid link → holdoff == FWDSET_HOLDOFF_MID_MS");
+    }
+
+    /* ── 9d: Direct low link (20–39) → no suppress, +120 ms holdoff ─────── */
+    /* rssi=-120 → rssi_part=20; snr=-5 → snr_part=5; base=25; loss=0; age=0  */
+    {
+        rivr_neighbor_table_t ntbl;
+        memset(&ntbl, 0, sizeof(ntbl));
+        FILL_NBR(ntbl, 0, NODE_A, -120, -5, 0, NTABLE_FLAG_DIRECT);
+        ntbl.count = 1u;
+        fwd_set_t fs = fwdset_build(&ntbl, now);
+        CHECK(fs.viable_count      >= 1u,  "9d: low link → viable_count ≥ 1");
+        CHECK(fs.best_direct_score >= 20u, "9d: low link → best_direct ≥ 20");
+        CHECK(fs.best_direct_score  < 40u, "9d: low link → best_direct < 40");
+        CHECK(!fwdset_suppress_relay(&fs), "9d: low link score ≥ MIN → no suppress");
+        CHECK(fwdset_extra_holdoff_ms(&fs) == FWDSET_HOLDOFF_LOW_MS,
+              "9d: low link → holdoff == FWDSET_HOLDOFF_LOW_MS");
+    }
+
+    /* ── 9e: Direct below-threshold (< 20) → viable=0, edge-node safe ────── */
+    /* rssi=-135 → rssi_part=5; snr=-5 → snr_part=5; base=10; loss=0; age=0   */
+    {
+        rivr_neighbor_table_t ntbl;
+        memset(&ntbl, 0, sizeof(ntbl));
+        FILL_NBR(ntbl, 0, NODE_A, -135, -5, 0, NTABLE_FLAG_DIRECT);
+        ntbl.count = 1u;
+        fwd_set_t fs = fwdset_build(&ntbl, now);
+        CHECK(fs.viable_count == 0u,   "9e: score < MIN → viable_count == 0");
+        CHECK(!fwdset_suppress_relay(&fs),
+              "9e: viable=0 → no suppress (edge-node safe)");
+        CHECK(fwdset_extra_holdoff_ms(&fs) == 0u,
+              "9e: below-threshold direct → holdoff == 0");
+    }
+
+    /* ── 9f: Below-threshold direct + viable indirect → suppress ──────────── */
+    /* Direct:       rssi=-135, snr=-5 → score=10  (flags=NTABLE_FLAG_DIRECT)  */
+    /* Non-direct:   rssi=-100, snr=0  → score=50  (flags=0, hop relay)        */
+    {
+        rivr_neighbor_table_t ntbl;
+        memset(&ntbl, 0, sizeof(ntbl));
+        FILL_NBR(ntbl, 0, NODE_A, -135, -5, 0, NTABLE_FLAG_DIRECT);
+        FILL_NBR(ntbl, 1, NODE_B, -100,  0, 0, 0u);
+        ntbl.count = 2u;
+        fwd_set_t fs = fwdset_build(&ntbl, now);
+        CHECK(fs.viable_count      >= 1u,   "9f: viable indirect → viable_count ≥ 1");
+        CHECK(fs.best_direct_score  < (uint8_t)FWDSET_MIN_RELAY_SCORE,
+              "9f: direct score < MIN_RELAY_SCORE");
+        CHECK(fwdset_suppress_relay(&fs),
+              "9f: viable>0 + direct<MIN → suppress == true");
+    }
+
+    /* ── 9g: Three neighbours — candidates[] sorted descending by score ────── */
+    /* scores: NODE_A=70 (rssi=-80,snr=0), NODE_B=50 (rssi=-100,snr=0),        */
+    /*         NODE_D=25 (rssi=-120,snr=-5)                                     */
+    {
+        rivr_neighbor_table_t ntbl;
+        memset(&ntbl, 0, sizeof(ntbl));
+        /* Insert in worst-to-best order to exercise the sort */
+        FILL_NBR(ntbl, 0, NODE_D, -120, -5, 0, NTABLE_FLAG_DIRECT); /* score 25 */
+        FILL_NBR(ntbl, 1, NODE_B, -100,  0, 0, NTABLE_FLAG_DIRECT); /* score 50 */
+        FILL_NBR(ntbl, 2, NODE_A,  -80,  0, 0, NTABLE_FLAG_DIRECT); /* score 70 */
+        ntbl.count = 3u;
+        fwd_set_t fs = fwdset_build(&ntbl, now);
+        CHECK(fs.count == 3u,
+              "9g: 3 neighbours → count == 3");
+        CHECK(fs.candidates[0].score >= fs.candidates[1].score,
+              "9g: candidates[0].score ≥ candidates[1].score (sorted)");
+        CHECK(fs.candidates[1].score >= fs.candidates[2].score,
+              "9g: candidates[1].score ≥ candidates[2].score (sorted)");
+        CHECK(fs.candidates[0].score >= 70u,
+              "9g: top candidate score ≥ 70");
+        CHECK(fs.viable_count == 3u,
+              "9g: all three candidates viable (score ≥ MIN_RELAY_SCORE)");
+    }
+
+#undef FILL_NBR
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ *
  * main
  * ══════════════════════════════════════════════════════════════════════════ */
 int main(void)
@@ -1275,6 +1425,7 @@ int main(void)
     run6_route_req_reply_logic();
     run7_loop_guard();
     run8_pkt_identity();
+    run9_fwdset();
 
     printf("\n══════════════════════════════════════════\n");
     printf("  PASS: %lu   FAIL: %lu\n",
