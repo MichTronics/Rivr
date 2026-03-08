@@ -3,9 +3,8 @@
 > A small reactive programming language and deterministic runtime for off-grid LoRa mesh
 > networks.  Runs on ESP32 + SX1262/SX1276 with **zero heap allocation after boot**.
 
-[![CI](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml)
-
-> **Note:** Replace `YOUR_ORG/YOUR_REPO` in the badge URL above with your actual GitHub repository path before publishing.
+<!-- CI badge: replace YOUR_ORG/YOUR_REPO with your GitHub path -->
+<!-- [![CI](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml) -->
 
 ---
 
@@ -234,10 +233,12 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 | Topic | English | Nederlands |
 |---|---|---|
 | **Quickstart** | [quickstart.md](docs/quickstart.md) | — |
+| **Flashing guide** | [FLASHING.md](FLASHING.md) | — |
+| **Build guide** | [BUILDING.md](BUILDING.md) | [en/build-guide.md](docs/en/build-guide.md) |
+| **User config template** | [user_config_template.h](user_config_template.h) | — |
 | Overview | [en/overview.md](docs/en/overview.md) | [nl/overzicht.md](docs/nl/overzicht.md) |
 | Architecture | [en/architecture.md](docs/en/architecture.md) | [nl/architectuur.md](docs/nl/architectuur.md) |
 | Language reference | [en/language-reference.md](docs/en/language-reference.md) | [nl/taalreferentie.md](docs/nl/taalreferentie.md) |
-| Build guide | [en/build-guide.md](docs/en/build-guide.md) | [nl/bouwhandleiding.md](docs/nl/bouwhandleiding.md) |
 | Firmware integration | [en/firmware-integration.md](docs/en/firmware-integration.md) | [nl/firmware-integratie.md](docs/nl/firmware-integratie.md) |
 | Wire protocol | [en/protocol.md](docs/en/protocol.md) | — |
 | Application services | [en/services.md](docs/en/services.md) | — |

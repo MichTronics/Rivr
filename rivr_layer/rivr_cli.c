@@ -58,6 +58,9 @@
 
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "esp_system.h"        /* esp_restart()  */
+#include "freertos/FreeRTOS.h" /* vTaskDelay()   */
+#include "freertos/task.h"     /* pdMS_TO_TICKS  */
 #include "../firmware_core/rivr_log.h"
 
 #include "rivr_embed.h"
@@ -229,20 +232,24 @@ static void cli_handle_line(void)
     if (strncmp(p, "help", 4u) == 0 && (p[4] == '\0' || p[4] == ' ')) {
         printf("Commands:\r\n"
                "  chat <message>        broadcast text to the mesh\r\n"
+               "  send <message>        alias for chat\r\n"
                "  id                    print node ID, callsign and net ID\r\n"
                "  info                  print build info (env, sha, radio profile)\r\n"
+               "  status                role, node ID, routing snapshot, loop-guard drops\r\n"
+               "  neighbors             show live neighbour table with link scores\r\n"
+               "  peers                 alias for neighbors\r\n"
+               "  routes                show route cache with scores and ages\r\n"
                "  metrics               print all counters/gauges as JSON (@MET line)\r\n"
+               "  stats                 alias for metrics\r\n"
                "  policy                print current policy params + counters (@POLICY line)\r\n"
                "  supportpack           JSON dump: build info + metrics snapshot\r\n"
-               "  neighbors             show live neighbour table with link scores\r\n"
-               "  routes                show route cache with scores and ages\r\n"
-               "  status                role, node ID, routing snapshot, loop-guard drops\r\n"
                "  ntable               standalone quality table: RSSI/SNR/ETX×8/loss per peer\r\n"
                "  fwdset               forward-candidate set: relay quality + holdoff class\r\n"
                "  rtstats               routing pipeline telemetry snapshot (@RST JSON block)\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
+               "  reboot                software reset the device\r\n"
                "  help                  show this list\r\n");
         fflush(stdout);
         return;
@@ -546,6 +553,68 @@ static void cli_handle_line(void)
         rivr_routing_stats_print(&rs);
         fflush(stdout);
         return;
+    }
+
+    /* ── Aliases for convenience / discoverability ──────────────────────── */
+
+    /* "send <message>" — alias for "chat <message>" */
+    if (strncmp(p, "send", 4u) == 0 && (p[4] == ' ' || p[4] == '\0')) {
+        char *msg = p + 4;
+        while (*msg == ' ') { msg++; }
+        if (*msg == '\0') {
+            printf("ERR: usage: send <message>\r\n");
+            fflush(stdout);
+            return;
+        }
+        cli_enqueue_chat(msg, strlen(msg));
+        return;
+    }
+
+    /* "peers" — alias for "neighbors" */
+    if (strncmp(p, "peers", 5u) == 0 && (p[5] == '\0' || p[5] == ' ')) {
+        uint32_t now_ms = tb_millis();
+        uint8_t  cnt    = routing_neighbor_count(&g_neighbor_table, now_ms);
+        printf("Neighbors (%u live):\r\n", (unsigned)cnt);
+        routing_neighbor_print(&g_neighbor_table, now_ms);
+        fflush(stdout);
+        return;
+    }
+
+    /* "stats" — alias for "metrics" */
+    if (strncmp(p, "stats", 5u) == 0 && (p[5] == '\0' || p[5] == ' ')) {
+        uint32_t now_ms = tb_millis();
+        {
+            const neighbor_link_summary_t _lnk =
+                neighbor_table_link_summary(&g_ntable, now_ms);
+            const rivr_live_stats_t ls = {
+                .node_id       = g_my_node_id,
+                .dc_pct        = (uint8_t)(DC_BUDGET_US > 0u
+                                 ? ((DC_BUDGET_US - dutycycle_remaining_us(&g_dc)) * 100ULL
+                                    / DC_BUDGET_US)
+                                 : 0u),
+                .q_depth       = (uint8_t)rb_available(&rf_tx_queue),
+                .tx_total      = g_tx_frame_count,
+                .rx_total      = g_rx_frame_count,
+                .route_cache   = route_cache_count(&g_route_cache, now_ms),
+                .lnk_cnt       = _lnk.count,
+                .lnk_best      = _lnk.best_score,
+                .lnk_best_rssi = _lnk.best_rssi,
+                .lnk_avg_loss  = _lnk.avg_loss,
+                .relay_density = _lnk.count,
+            };
+            rivr_metrics_print(&ls);
+        }
+        fflush(stdout);
+        return;
+    }
+
+    /* "reboot" — software reset via esp_restart() */
+    if (strncmp(p, "reboot", 6u) == 0 && (p[6] == '\0' || p[6] == ' ')) {
+        printf("Rebooting...\r\n");
+        fflush(stdout);
+        vTaskDelay(pdMS_TO_TICKS(50));   /* allow UART TX buffer to flush */
+        esp_restart();
+        return; /* unreachable */
     }
 
     /* ── Unknown command ── */
