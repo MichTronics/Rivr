@@ -242,7 +242,7 @@ rivr_sign --key key0.pem --key-id 0 --seq 1 examples/chat_relay.rivr > payload.b
 
 ## Companion app
 
-[**Rivr Companion**](rivr_companion/) is a Flutter app for Android, Linux, and Windows.
+[**Rivr Companion**](https://github.com/MichTronics/rivr-companion) is a Flutter app for Android, Linux, and Windows.
 It connects to a node over USB serial or Bluetooth LE and provides:
 
 - Live chat view
@@ -251,10 +251,11 @@ It connects to a node over USB serial or Bluetooth LE and provides:
 - Real-time `@MET` metric dashboard and `@SUPPORTPACK` export
 
 ```bash
-cd rivr_companion && flutter pub get && flutter run
+git clone https://github.com/MichTronics/rivr-companion.git
+cd rivr-companion && flutter pub get && flutter run
 ```
 
-See [rivr_companion/README.md](rivr_companion/README.md) for platform prerequisites.
+See the [rivr-companion repository](https://github.com/MichTronics/rivr-companion) for platform prerequisites.
 
 ---
 
@@ -303,7 +304,6 @@ Rivr/
 ├── rivr_core/src/          — Rust library (no_std + alloc): parser, compiler, runtime, FFI
 ├── rivr_host/src/          — Host tooling: rivrc compiler CLI, replay engine
 ├── rivr_layer/             — RIVR ↔ C firmware glue: init, sinks, sources, service handlers
-├── rivr_companion/         — Flutter companion app (Android, Linux, Windows)
 ├── examples/               — Ready-to-use .rivr programs
 ├── tests/                  — C test suites: acceptance, recovery, replay, dutycycle, OTA, policy
 ├── tools/                  — Host utilities: rivr_decode wire decoder
@@ -312,6 +312,8 @@ Rivr/
 ├── platformio.ini          — PlatformIO build environments
 └── Cargo.toml              — Rust workspace (rivr_core + rivr_host)
 ```
+
+The companion app has moved to its own repository: [MichTronics/rivr-companion](https://github.com/MichTronics/rivr-companion).
 
 ---
 
