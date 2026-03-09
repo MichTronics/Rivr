@@ -17,37 +17,36 @@ De Rust-bibliotheek **moet** gebouwd worden vóór de C-firmware.
 
 ### Debug (ontwikkeling)
 
-```powershell
-cd e:\Projects\Rivr\rivr_core
+```bash
+cd rivr_core
 cargo build --features ffi
-# Uitvoer:  target\debug\librivr_core.a
+# Uitvoer:  target/debug/librivr_core.a
 ```
 
 ### Release (voor flashen)
 
-```powershell
+```bash
 cargo build --features ffi --release
-# Uitvoer:  target\release\librivr_core.a
+# Uitvoer:  target/release/librivr_core.a
 ```
 
 ### Cross-compilatie voor ESP32 (Xtensa LX6)
 
-```powershell
+```bash
 # Installeer de Xtensa Rust-toolchain (eenmalig):
 espup install
 
 # Cross-compileer:
 cargo +esp build --target xtensa-esp32-espidf --features ffi --release
-# Uitvoer:  target\xtensa-esp32-espidf\release\librivr_core.a
+# Uitvoer:  target/xtensa-esp32-espidf/release/librivr_core.a
 ```
 
 > `main/CMakeLists.txt` vindt de bibliotheek automatisch — eerst in
-> `target\release\`, daarna in `target\debug\`. Geen handmatig kopiëren nodig.
+> `target/release/`, daarna in `target/debug/`. Geen handmatig kopiëren nodig.
 
 ### Desktop-demo's (geen hardware)
 
-```powershell
-cd e:\Projects\Rivr\rivr_core
+```bash
 cargo run -p rivr_host
 ```
 
@@ -55,7 +54,7 @@ Voert 8 demo's uit voor elke operator-categorie plus Replay 2.0.
 
 ### `rivrc` — RIVR-broncompiler CLI
 
-```powershell
+```bash
 # Druk knoop-grafiek af
 cargo run -p rivr_host --bin rivrc -- mijn_programma.rivr
 
@@ -137,14 +136,12 @@ tekens (regelsbuffer); berichten worden gecodeerd via het standaard binaire
 
 ### Simulatiemodus (geen SX1262-hardware vereist)
 
-```powershell
-cd e:\Projects\Rivr
-
+```bash
 # Bouw simulatiefirmware
 pio run -e esp32_sim
 
 # Flash + open seriële monitor
-pio run  -e esp32_sim -t upload
+pio run -e esp32_sim -t upload
 pio device monitor -e esp32_sim --baud 115200
 ```
 
@@ -165,11 +162,8 @@ I (...) MAIN: [SIM] TX type=CHAT ...   ← tx_drain_loop uitvoer (×5)
 
 ### Hardwaremodus (SX1262 aangesloten)
 
-```powershell
-cd e:\Projects\Rivr\rivr_core
-cargo build --features ffi --release
-cd ..
-
+```bash
+cd rivr_core && cargo build --features ffi --release && cd ..
 pio run -e esp32_hw -t upload
 pio device monitor --baud 115200
 ```
@@ -178,12 +172,9 @@ pio device monitor --baud 115200
 
 ## Stap 2b — Bouwen via ESP-IDF (idf.py)
 
-```powershell
+```bash
 # Activeer ESP-IDF-omgeving (eenmalig per shell):
-. $env:IDF_PATH\export.ps1       # PowerShell
-# source $IDF_PATH/export.sh     # Linux / macOS
-
-cd e:\Projects\Rivr
+source $IDF_PATH/export.sh
 
 # Stel doel in (eenmalig per checkout):
 idf.py set-target esp32
@@ -194,8 +185,8 @@ idf.py -DRIVR_SIM_MODE=1 -DRIVR_SIM_TX_PRINT=1 build
 # Hardwarebouw (geen extra vlaggen):
 idf.py build
 
-# Flash + monitor:
-idf.py -p COM3 flash monitor
+# Flash + monitor (vervang /dev/ttyUSB0 door jouw poort):
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
 ---

@@ -24,23 +24,25 @@ over LoRa at the physical layer. Byte order is **little-endian** throughout.
 │    7    │  2   │ net_id      │ Network / channel discriminator│
 │    9    │  4   │ src_id      │ Sender node unique ID          │
 │   13    │  4   │ dst_id      │ Destination ID (0 = broadcast) │
-│   17    │  4   │ seq         │ Per-source monotonic counter   │
+│   17    │  2   │ seq         │ Per-source application counter │
+│   19    │  2   │ pkt_id      │ Per-injection forwarding ID    │
 │   21    │  1   │ payload_len │ Bytes of application payload   │
-│   22    │  N   │ payload     │ Application payload (0–231 B)  │
-│  22+N   │  2   │ crc16       │ CRC-16/CCITT over bytes[0..22+N-1]│
+│   22    │  1   │ loop_guard  │ OR-accumulating relay fingerprint│
+│   23    │  N   │ payload     │ Application payload (0–230 B)  │
+│  23+N   │  2   │ crc16       │ CRC-16/CCITT over bytes[0..23+N-1]│
 └──────────────────────────────────────────────────────────────┘
 ```
 
-- **Minimum frame size:** 24 bytes (`RIVR_PKT_MIN_FRAME` = 22 + 0 + 2)
+- **Minimum frame size:** 25 bytes (`RIVR_PKT_MIN_FRAME` = 23 + 0 + 2)
 - **Maximum frame size:** 255 bytes (LoRa payload limit)
-- **Maximum payload:** 231 bytes (`RIVR_PKT_MAX_PAYLOAD` = 255 − 22 − 2)
+- **Maximum payload:** 230 bytes (`RIVR_PKT_MAX_PAYLOAD` = 255 − 23 − 2)
 
 ### CRC Computation
 
 ```
 CRC-16/CCITT: poly=0x1021, init=0xFFFF, input/output not reflected
-Covers: all bytes from offset 0 through offset 22+N−1 (inclusive)
-Appended as two bytes, little-endian, starting at offset 22+N
+Covers: all bytes from offset 0 through offset 23+N−1 (inclusive)
+Appended as two bytes, little-endian, starting at offset 23+N
 ```
 
 ---
@@ -93,15 +95,32 @@ Destination node ID. `0x00000000` means **broadcast** (all nodes accept and
 potentially relay). A non-zero value targets a specific node; other nodes
 may still relay the packet but will not pass it to the application layer.
 
-### `seq` (bytes 17–20, u32 LE)
+### `seq` (bytes 17–18, u16 LE)
 
-Per-source monotonic sequence counter. The dedupe cache uses `(src_id, seq)`
+Per-source application sequence counter. Preserved through relay hops.
+Used for application-level message ordering and control-plane correlation.
+**Not** used for deduplication — see `pkt_id` below.
+
+### `pkt_id` (bytes 19–20, u16 LE)
+
+Per-injection forwarding identity. Unique per wire injection, including
+retransmits and fallback floods. The dedupe cache keys on `(src_id, pkt_id)`
 to suppress duplicates within `DEDUPE_EXPIRY_MS` (60 s) of first arrival.
+Jitter delay is also seeded from `pkt_id`.
+
+### `loop_guard` (byte 22, u8)
+
+OR-accumulating relay fingerprint. Set to 0 by the originator. Each relay
+computes an 8-bit fold of its own `node_id` and checks whether those bits
+are already set in `loop_guard`; if so the packet has already visited this
+node and is dropped (`loop_detect_drop` metric). Otherwise the relay sets
+those bits before forwarding. False-positive probability is < 2.5% for a
+4-hop path with distinct relays.
 
 ### `payload_len` (byte 21, u8)
 
 Number of application payload bytes immediately following the header. Valid
-range: 0–231. A `payload_len` value that would place the CRC beyond the
+range: 0–230. A `payload_len` value that would place the CRC beyond the
 received frame length causes the packet to be discarded.
 
 ---
@@ -175,8 +194,8 @@ anti-replay counter before storing the program in NVS.
 └─────────┴──────┴────────────────────────────────────────────────┘
 ```
 
-**Total header overhead:** 69 bytes (`RIVR_OTA_HDR_LEN`)  
-**Maximum program text:** 186 bytes (255 − 22 header − 2 CRC − 69 OTA hdr − minimum 1 byte payload_len byte — but actually limited by PKT_PROG_PUSH's `payload_len` u8 = max 231 − 69 = 162 bytes of program text per single packet).
+**Total header overhead:** 69 bytes (`RIVR_OTA_HDR_LEN`)
+**Maximum program text:** 161 bytes (`RIVR_PKT_MAX_PAYLOAD` − `RIVR_OTA_HDR_LEN` = 230 − 69).
 
 **Signature coverage:** `sig` covers the concatenation `(key_id ‖ seq ‖ program_text)`,
 i.e. all bytes from offset 64 to end of payload. The `key_id` byte is inside
@@ -213,7 +232,7 @@ is delivered verbatim to registered data-sink callbacks.
 
 ### 6.1 Flood Forwarding
 
-1. **Dedupe check** — if `(src_id, seq)` in the local cache and not expired
+1. **Dedupe check** — if `(src_id, pkt_id)` in the local cache and not expired
    (< 60 s), drop silently (`RIVR_FWD_DROP_DEDUPE`).
 2. **TTL check** — if `ttl == 0` on arrival, drop (`RIVR_FWD_DROP_TTL`).
 3. **Forward budget** — if the per-type airtime or rate budget would be
@@ -233,7 +252,7 @@ are discarded at the radio receive callback, before any routing logic runs.
 ### 6.3 Duplicate Cache
 
 The dedupe cache is a power-of-2 ring buffer (`DEDUPE_CACHE_SIZE = 32`)
-keyed on `(src_id, seq)`. Entries expire after `DEDUPE_EXPIRY_MS = 60000` ms
+keyed on `(src_id, pkt_id)`. Entries expire after `DEDUPE_EXPIRY_MS = 60000` ms
 to allow legitimate retransmissions after long silences.
 
 ---
@@ -244,10 +263,10 @@ to allow legitimate retransmissions after long silences.
 |-------------------------|-------|--------------------|
 | `RIVR_MAGIC`            | 0x5256 | `protocol.h`     |
 | `RIVR_PROTO_VER`        | 1      | `protocol.h`     |
-| `RIVR_PKT_HDR_LEN`      | 22     | `protocol.h`     |
+| `RIVR_PKT_HDR_LEN`      | 23     | `protocol.h`     |
 | `RIVR_PKT_CRC_LEN`      | 2      | `protocol.h`     |
-| `RIVR_PKT_MIN_FRAME`    | 24     | `protocol.h`     |
-| `RIVR_PKT_MAX_PAYLOAD`  | 231    | `protocol.h`     |
+| `RIVR_PKT_MIN_FRAME`    | 25     | `protocol.h`     |
+| `RIVR_PKT_MAX_PAYLOAD`  | 230    | `protocol.h`     |
 | `RIVR_PKT_DEFAULT_TTL`  | 7      | `protocol.h`     |
 | `RIVR_OTA_SIG_LEN`      | 64     | `rivr_ota.h`     |
 | `RIVR_OTA_KEY_LEN`      | 1      | `rivr_ota.h`     |
@@ -278,7 +297,7 @@ rivr_decode frame.bin
 # Output (one JSON object per frame):
 {"ok":true,"magic":"5256","version":1,"pkt_type":1,"type_name":"CHAT",
  "flags":0,"ttl":7,"hop":0,"net_id":0,"src_id":12345678,"dst_id":0,
- "seq":1,"payload_len":5,"payload_hex":"48656c6c6f","crc_ok":true}
+ "seq":1,"pkt_id":1,"loop_guard":0,"payload_len":5,"payload_hex":"48656c6c6f","crc_ok":true}
 ```
 
 See `tools/rivr_decode.c` for build instructions.

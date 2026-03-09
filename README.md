@@ -1,132 +1,93 @@
 # RIVR — Reactive LoRa Mesh Runtime
 
-> A small reactive programming language and deterministic runtime for off-grid LoRa mesh
-> networks.  Runs on ESP32 + SX1262/SX1276 with **zero heap allocation after boot**.
+> A reactive dataflow language and deterministic runtime for off-grid LoRa mesh networks.
+> Runs on ESP32 + SX1262/SX1276. **Zero heap allocation after boot.**
 
 [![CI](https://github.com/MichTronics/Rivr/actions/workflows/ci.yml/badge.svg)](https://github.com/MichTronics/Rivr/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform: ESP32](https://img.shields.io/badge/platform-ESP32-green.svg)
+![Status: Public Beta](https://img.shields.io/badge/status-public%20beta-orange.svg)
 
 ---
 
-## Public Beta
-
-Rivr is currently in **public beta**. The core runtime, test suite (204 passing), and supported hardware
-configurations work reliably in lab and field testing. However:
-
-- Not yet recommended for unattended production deployments
-- Wire protocol and DSL API may change between beta releases
-- ESP32 DevKit + E22-900M30S (SX1262) is the primary tested configuration
-- LilyGo LoRa32 v2.1 (SX1276) is supported but receives less frequent hardware testing
-- When filing a bug, always attach a `@SUPPORTPACK` capture from the serial monitor
+> **Public beta** — Core runtime, test suite (204 passing), and supported hardware configurations
+> are stable. Wire protocol and DSL API may change between beta releases.
+> Not yet recommended for unattended production deployments.
+> When filing a bug, always attach a [`@SUPPORTPACK`](#metrics--diagnostics) capture.
 
 ---
 
 ## What is RIVR?
 
-RIVR lets you describe a **data-flow pipeline** over radio packets in a small DSL, then compiles
-and runs that pipeline inside an ESP32 firmware — no operating system, no garbage collector.
+RIVR lets you describe a **dataflow pipeline** over radio packets in a small DSL, compile it
+on-device at boot, and evaluate it on every incoming frame with bounded worst-case latency —
+no OS, no garbage collector, no heap.
 
 ```rivr
-source rf_rx @lmp = rf;
+source rf_rx @lmp = rf;           // LoRa receive stream (Lamport clock)
 
 let chat = rf_rx
-  |> filter.pkt_type(1)             -- PKT_CHAT only
-  |> budget.toa_us(300000, 0.10, 280000)  -- EU868 g3 duty-cycle guard
-  |> throttle.ticks(1);            -- max once per Lamport tick
+  |> filter.pkt_type(1)           // PKT_CHAT only
+  |> budget.toa_us(300000, 0.10, 280000)  // EU868 g3 duty-cycle guard
+  |> throttle.ticks(1);           // deduplicate flood copies
 
 let alerts = rf_rx
-  |> filter.pkt_type(10)            -- PKT_ALERT: priority, 20 % budget
+  |> filter.pkt_type(10)          // PKT_ALERT — elevated budget
   |> budget.toa_us(300000, 0.20, 280000);
 
-emit { io.lora.tx(chat);   }      -- rebroadcast chat over LoRa
-emit { io.lora.tx(alerts); }      -- forward alerts immediately
+emit { io.lora.tx(chat);   }
+emit { io.lora.tx(alerts); }
 ```
 
-Write the pipeline once.  RIVR parses and compiles it on-device at boot; the engine
-evaluates it on every incoming frame with bounded worst-case latency.
+Write the pipeline once. RIVR handles duty-cycle compliance, flood deduplication, and
+congestion-aware relay suppression automatically.
 
 ---
 
-## Why is RIVR different?
+## Why RIVR?
 
-| | RIVR | GPIO-level C | MQTT bridge |
+|  | RIVR | Hand-rolled C | MQTT bridge |
 |---|---|---|---|
 | **Memory model** | Zero heap after boot | Static / heap mix | Heap-heavy |
 | **Duty-cycle safety** | Built-in sliding-window limiter | Hand-rolled or absent | N/A |
-| **OTA program update** | `PKT_PROG_PUSH` over mesh | Requires full reflash | Topic reconfiguration |
-| **Stream composition** | First-class `filter / window / merge` | Ad-hoc if-else chains | Broker rules engine |
+| **OTA pipeline update** | `PKT_PROG_PUSH` over the mesh | Full reflash required | Topic reconfiguration |
+| **Stream composition** | First-class `filter / window / merge / budget` | Ad-hoc if-else chains | Broker rules engine |
 | **Target** | ESP32 bare-metal (no OS) | Any MCU | Requires IP stack |
 
 ---
 
-## Quickstart — host simulation
-
-No hardware needed.
+## Quickstart — no hardware needed
 
 ```bash
-# 1. Install Rust (if not present)
+# Install Rust if needed
 curl https://sh.rustup.rs -sSf | sh
 
-# 2. Build the host tools
+# Build the host tools
 cargo build -p rivr_host
 
-# 3. Compile and inspect a RIVR program
-cargo run -p rivr_host --bin rivrc -- rivr_replay.jsonl
+# Compile a RIVR program and inspect the node graph
+cargo run -p rivr_host --bin rivrc -- examples/chat_relay.rivr
 
-# 4. Replay captured traffic through the engine
+# Replay captured mesh traffic through the engine
 cargo run -p rivr_host -- rivr_replay.jsonl
 ```
 
-See [docs/en/build-guide.md](docs/en/build-guide.md) for the full toolchain setup.
+Expected output ends with: `[REPLAY] done — 42 frames processed, 0 errors`
+
+For full toolchain setup see [docs/en/build-guide.md](docs/en/build-guide.md).
 
 ---
 
 ## Flash firmware
 
-### ESP32 DevKit + E22-900M30S (SX1262)
+### ESP32 DevKit + E22-900M30S (SX1262) — primary supported board
 
 ```bash
-# Client node (send + receive chat, no relay)
+# Client node (send + receive, no relay)
 ~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900 -t upload
 
-# Dedicated repeater (Rivr Fabric relay suppression enabled)
+# Dedicated repeater (Rivr Fabric congestion relay suppression enabled)
 ~/.platformio/penv/bin/pio run -e repeater_esp32devkit_e22_900 -t upload
-```
-
-### LilyGo LoRa32 v2.1 (SX1276, onboard OLED)
-
-```bash
-~/.platformio/penv/bin/pio run -e client_lilygo_lora32_v21 -t upload
-```
-
-### Heltec WiFi LoRa 32 V3 (ESP32-S3, SX1262, OLED)
-
-```bash
-~/.platformio/penv/bin/pio run -e client_heltec_lora32_v3   -t upload
-~/.platformio/penv/bin/pio run -e repeater_heltec_lora32_v3 -t upload
-```
-
-### Heltec WiFi LoRa 32 V2 (ESP32, SX1276, OLED)
-
-```bash
-~/.platformio/penv/bin/pio run -e client_heltec_lora32_v2   -t upload
-~/.platformio/penv/bin/pio run -e repeater_heltec_lora32_v2 -t upload
-```
-
-### LilyGo T-Beam v1.1 SX1262 ⚠ Experimental — AXP192 PMIC support needed
-
-```bash
-~/.platformio/penv/bin/pio run -e client_lilygo_tbeam_sx1262   -t upload
-~/.platformio/penv/bin/pio run -e repeater_lilygo_tbeam_sx1262 -t upload
-```
-
-> **Note:** `platform_esp32.c` must be extended to initialise the AXP192 PMIC
-> (`RIVR_TBEAM_AXP192=1`) before the SX1262 radio will power on.
-
-### LilyGo T3-S3 (ESP32-S3, SX1262, OLED)
-
-```bash
-~/.platformio/penv/bin/pio run -e client_lilygo_t3s3   -t upload
-~/.platformio/penv/bin/pio run -e repeater_lilygo_t3s3 -t upload
 ```
 
 Monitor at 115200 baud:
@@ -135,95 +96,145 @@ Monitor at 115200 baud:
 ~/.platformio/penv/bin/pio device monitor
 ```
 
-Default air parameters: **869.480 MHz · SF8 · BW 125 kHz · CR 4/8 · preamble 8**.
-Override frequency at build time: `-DRIVR_RF_FREQ_HZ=915000000`.
+Default air parameters: **869.480 MHz · SF8 · BW 125 kHz · CR 4/8 · preamble 8**
+Override at build time: `build_flags = -DRIVR_RF_FREQ_HZ=915000000`
+
+See [FLASHING.md](FLASHING.md) for all board variants and wiring tables.
 
 ---
 
-## RIVR DSL in 60 seconds
+## Hardware support
+
+| Board | Radio | PA | Status |
+|---|---|---|---|
+| ESP32 DevKit + E22-900M30S | SX1262 | +30 dBm ext. | **Supported** |
+| LilyGo LoRa32 v2.1 | SX1276 | +20 dBm onboard | **Supported** |
+| Heltec WiFi LoRa 32 V3 | SX1262 | +22 dBm onboard | Experimental |
+| Heltec WiFi LoRa 32 V2 | SX1276 | +20 dBm onboard | Experimental |
+| LilyGo T-Beam v1.1 (SX1262) | SX1262 | +22 dBm onboard | Experimental ⚠ AXP192 |
+| LilyGo T3-S3 | SX1262 | +22 dBm onboard | Experimental |
+
+**Supported** = CI-tested and field-validated.
+**Experimental** = compiles and boots; limited field testing.
+Full flash commands and pin-wiring tables: [docs/en/build-guide.md](docs/en/build-guide.md)
+
+---
+
+## DSL reference
 
 ```rivr
-// Declare sources
+// Sources
 source rf_rx   @lmp  = rf;            // LoRa receive stream (Lamport clock)
-source kbd     @mono = usb;           // USB/UART input (mono clock)
+source kbd     @mono = usb;           // USB/UART keyboard input
 source tick           = timer(30000); // fires every 30 s
 
-// Build pipelines with |>
+// Pipelines
 let filtered = rf_rx
   |> filter.kind("CHAT")
   |> map.lower()
   |> window.ticks(5);
 
-// Emit results to sinks
+// Sinks
 emit {
   io.lora.tx(filtered);       // retransmit over LoRa
-  io.usb.print(kbd);          // echo keyboard input to serial
-  io.lora.beacon(tick);       // send a BEACON packet every 30 s
+  io.usb.print(kbd);          // echo to serial monitor
+  io.lora.beacon(tick);       // periodic beacon
 }
 ```
 
-**Built-in pipe operators:** `filter.pkt_type` · `filter.kind` · `filter.nonempty` · `map.upper` · `map.lower` ·
-`map.trim` · `window.ticks` · `window.ms` · `throttle.ticks` · `delay.ticks` · `budget.toa_us` ·
-`fold.count` · `fold.sum` · `fold.last` · `merge`
+**Pipe operators:** `filter.pkt_type` · `filter.kind` · `filter.nonempty` · `map.upper` · `map.lower` · `map.trim` · `window.ticks` · `window.ms` · `throttle.ticks` · `delay.ticks` · `budget.toa_us` · `fold.count` · `fold.sum` · `fold.last` · `merge`
 
 Full grammar: [docs/en/language-reference.md](docs/en/language-reference.md)
 
 ---
 
-## Hardware table
-
-| Board | Radio | PA | Status | Environments |
-|---|---|---|---|---|
-| ESP32 DevKit + E22-900M30S | SX1262 | +30 dBm external | **Supported** | `client_esp32devkit_e22_900` · `repeater_esp32devkit_e22_900` |
-| LilyGo LoRa32 v2.1 | SX1276 | +20 dBm onboard | **Supported** | `client_lilygo_lora32_v21` · `repeater_lilygo_lora32_v21` |
-| Heltec WiFi LoRa 32 V3 | SX1262 | +22 dBm onboard | **Experimental** | `client_heltec_lora32_v3` · `repeater_heltec_lora32_v3` |
-| Heltec WiFi LoRa 32 V2 | SX1276 | +20 dBm onboard | **Experimental** | `client_heltec_lora32_v2` · `repeater_heltec_lora32_v2` |
-| LilyGo T-Beam v1.1 (SX1262) | SX1262 | +22 dBm onboard | **Experimental** ⚠ AXP192 | `client_lilygo_tbeam_sx1262` · `repeater_lilygo_tbeam_sx1262` |
-| LilyGo T3-S3 | SX1262 | +22 dBm onboard | **Experimental** | `client_lilygo_t3s3` · `repeater_lilygo_t3s3` |
-
-Status key: **Supported** = regularly tested in CI and field; **Experimental** = compiles and boots, limited field testing.
-
-Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build-guide.md)
-
----
-
-## Key features
+## Feature set
 
 | Feature | Detail |
 |---|---|
-| **Reactive DSL** | Composable `filter / window / merge / budget / emit` pipeline |
+| **Reactive DSL** | Composable `filter / window / merge / budget / emit` pipeline; compiled on-device at boot |
 | **Zero heap after boot** | All engine state in BSS; deterministic memory footprint |
-| **EU868 duty-cycle limiter** | 1-hour sliding window, 512-slot ring buffer with LRU eviction; 10 % default (g3) |
-| **Mesh routing** | Flood (TTL/hop/dedupe) + unicast (reverse-path cache) + 16-slot pending queue; three-tier next-hop selection via neighbor-quality scores (`route_cache_best_hop`) |
-| **Neighbor-quality tracking** | EWMA RSSI/SNR + seq-gap loss-rate per peer; 16-slot BSS table; `DIRECT`/`STALE`/`BEACON` flags; `neighbor_best()` score drives unicast fallback |
-| **Rivr Fabric** | Congestion-aware relay suppression for repeater nodes |
-| **Application services** | CHAT · TELEMETRY · MAILBOX · ALERT — structured service dispatch with `@CHT`/`@TEL`/`@MAIL`/`@ALERT` JSON log records; 8-entry LRU mailbox store in BSS |
-| **OTA program push** | `PKT_PROG_PUSH` delivers a new RIVR program over the mesh; Ed25519-signed, hot-reloaded from NVS |
-| **Policy engine** | `@PARAMS` over the mesh updates beacon interval, TX power, relay throttle, and node role at runtime; `@POLICY` JSON response reports current state and metrics |
-| **Signed `@PARAMS`** | Optional HMAC-SHA-256 PSK authentication of `@PARAMS` updates; `sig=<64hex>` wire field; rejected frames emit `@PARAMS REJECTED sig` |
-| **USB origination gate** | `rivr_policy_allow_origination()` blocks new chat originations when airtime budget is depleted; rejected frames emit `@DROP` |
-| **OLED UI** | SSD1306 128×64; 7 auto-rotating pages: overview, RF, routing, duty-cycle, RIVR VM, neighbours, Fabric |
-| **63 metric counters** | Emitted as `@MET` JSON; attach `@SUPPORTPACK` to every bug report |
-| **Simulation mode** | 8-round mesh simulation without SX1262 hardware (`RIVR_SIM_MODE`) |
+| **EU868 duty-cycle limiter** | 1-hour sliding window, 512-slot ring buffer, LRU eviction; 10 % default (g3 sub-band) |
+| **Mesh routing** | Flood (TTL / hop / dedupe) + unicast (reverse-path cache) + 16-slot pending queue |
+| **Neighbor-quality tracking** | EWMA RSSI/SNR + seq-gap loss-rate per peer; 16-slot BSS table; `DIRECT` / `STALE` / `BEACON` flags |
+| **Three-tier next-hop selection** | Best scored cache entry → direct-peer fallback → flood |
+| **Rivr Fabric** | Congestion-aware relay suppression for repeater nodes; 60 s sliding-window score |
+| **Application services** | CHAT · TELEMETRY · MAILBOX · ALERT with structured `@CHT` / `@TEL` / `@MAIL` / `@ALERT` JSON log records |
+| **OTA program push** | `PKT_PROG_PUSH` delivers a new RIVR program over the mesh; Ed25519-signed, anti-replay, hot-reloaded from NVS |
+| **Policy engine** | `@PARAMS` updates beacon interval, TX power, relay throttle, and node role at runtime |
+| **Signed `@PARAMS`** | Optional HMAC-SHA-256 PSK authentication; `sig=<64hex>` wire field |
+| **OLED UI** | SSD1306 128×64; 7 auto-rotating pages: overview · RF · routing · duty-cycle · VM · neighbours · Fabric |
+| **63 metric counters** | Emitted as `@MET` JSON; aggregated into `@SUPPORTPACK` for bug reports |
+| **Simulation mode** | 8-round mesh simulation without radio hardware (`RIVR_SIM_MODE`) |
 
 ---
 
-## What's shipped (post-v0.1)
+## Metrics & diagnostics
+
+Every node continuously tracks 63 counters across routing, duty-cycle, OTA, and radio layers.
+Run `supportpack` from the serial monitor to emit a self-contained JSON diagnostic block:
+
+```
+rivr> supportpack
+@SUPPORTPACK {"ver":1,"rad_rx":142,"rad_tx":38,"rad_crc":0,"dc_blk":0,"fab_drop":0,...}
+```
+
+**Attach `@SUPPORTPACK` output to every bug report.**
+Healthy baseline (10 min idle): `rad_stall=0`, `rad_crc≤2`, `dc_blk=0`, `pq_exp=0`.
+
+---
+
+## Example programs
+
+| File | Description |
+|---|---|
+| [chat_relay.rivr](examples/chat_relay.rivr) | Full mesh relay — CHAT, DATA, TELEMETRY, ALERT, MAILBOX with per-service EU868 budgets |
+| [telemetry_periodic.rivr](examples/telemetry_periodic.rivr) | Telemetry aggregation gateway — 30 s reception window, frame count, heartbeat |
+| [store_forward_mailbox.rivr](examples/store_forward_mailbox.rivr) | PKT_MAILBOX store-and-forward with windowed buffer and delayed re-flood |
+
+Push a new program over the mesh:
+
+```bash
+rivr_sign --key key0.pem --key-id 0 --seq 1 examples/chat_relay.rivr > payload.bin
+# Delivery via PKT_PROG_PUSH is handled by the mesh transport layer
+```
+
+---
+
+## Companion app
+
+[**Rivr Companion**](rivr_companion/) is a Flutter app for Android, Linux, and Windows.
+It connects to a node over USB serial or Bluetooth LE and provides:
+
+- Live chat view
+- Neighbour link-quality table (RSSI, SNR, score)
+- Mesh topology and routing table
+- Real-time `@MET` metric dashboard and `@SUPPORTPACK` export
+
+```bash
+cd rivr_companion && flutter pub get && flutter run
+```
+
+See [rivr_companion/README.md](rivr_companion/README.md) for platform prerequisites.
+
+---
+
+## What's in v0.1.0-beta
 
 - ✅ **HAL abstraction** — `hal/radio_if.h`, `hal/crypto_if.h`, `hal/feature_flags.h` unified compile-time knob table
 - ✅ **Rivr Fabric** — congestion-aware relay suppression for repeater nodes (60 s sliding-window score)
 - ✅ **Signed OTA programs** — `PKT_PROG_PUSH` payload verified with Ed25519 before NVS write; anti-replay sequence counter
-- ✅ **Policy engine** — `@PARAMS` runtime parameter updates; role-based relay throttle; USB origination gate; `@POLICY` JSON metrics; `policy` CLI command
+- ✅ **Policy engine** — `@PARAMS` runtime parameter updates; role-based relay throttle; USB origination gate; `@POLICY` JSON metrics
 - ✅ **Signed `@PARAMS`** — optional HMAC-SHA-256 PSK authentication; `sig=<64hex>` wire field; metrics: `sig_ok` / `sig_fail`
 - ✅ **OLED display** — SSD1306 128×64 seven-page rotating UI; FreeRTOS task on CPU1
-- ✅ **Application services** — `PKT_TELEMETRY` (8), `PKT_MAILBOX` (9), `PKT_ALERT` (10) with dedicated C-layer handlers (`rivr_svc.c`); structured `@TEL`/`@MAIL`/`@ALERT` JSON log records; 8-entry LRU static mailbox store
-- ✅ **Neighbor table** — `neighbor_table.h/.c`: 16-slot BSS table tracking EWMA RSSI/SNR and seq-gap loss-rate per peer; `DIRECT`/`STALE`/`BEACON` flags; `neighbor_link_score()` composite; auto-expiry; integrated into RX path via `neighbor_update()`
-- ✅ **Neighbor-aware next-hop routing** — `route_cache_best_hop()` three-tier decision: (1) best scored cache entry, (2) direct-peer fallback via `neighbor_best()`, (3) flood; `entry_composite_score()` weights RSSI+SNR, hop count, age decay, and loss rate; metrics `neighbor_route_used_total` / `neighbor_route_failed_total`
+- ✅ **Application services** — PKT_TELEMETRY (8), PKT_MAILBOX (9), PKT_ALERT (10); structured `@TEL` / `@MAIL` / `@ALERT` JSON log records; 8-entry LRU mailbox store
+- ✅ **Neighbor table** — 16-slot BSS table; EWMA RSSI/SNR; seq-gap loss-rate; `DIRECT` / `STALE` / `BEACON` flags; auto-expiry
+- ✅ **Neighbor-aware next-hop routing** — three-tier decision; composite score weights RSSI+SNR, hop count, age decay, loss rate
 
 ## Roadmap
 
 - **next** — Frequency hopping / channel rotation; multi-channel duty-cycle tracking
-- **future** — Trace system (`tag()` operator → `@TRACE` JSON log line); per-source metrics frame
+- **future** — Trace system (`tag()` operator → `@TRACE` JSON); per-source metrics frame
 
 ---
 
@@ -231,38 +242,17 @@ Full pin-wiring tables and antenna notes: [docs/en/build-guide.md](docs/en/build
 
 | Topic | English | Nederlands |
 |---|---|---|
-| **Quickstart** | [quickstart.md](docs/quickstart.md) | — |
+| **Quickstart** | [docs/quickstart.md](docs/quickstart.md) | — |
 | **Flashing guide** | [FLASHING.md](FLASHING.md) | — |
-| **Build guide** | [BUILDING.md](BUILDING.md) | [en/build-guide.md](docs/en/build-guide.md) |
-| **User config template** | [user_config_template.h](user_config_template.h) | — |
-| Overview | [en/overview.md](docs/en/overview.md) | [nl/overzicht.md](docs/nl/overzicht.md) |
-| Architecture | [en/architecture.md](docs/en/architecture.md) | [nl/architectuur.md](docs/nl/architectuur.md) |
-| Language reference | [en/language-reference.md](docs/en/language-reference.md) | [nl/taalreferentie.md](docs/nl/taalreferentie.md) |
-| Firmware integration | [en/firmware-integration.md](docs/en/firmware-integration.md) | [nl/firmware-integratie.md](docs/nl/firmware-integratie.md) |
-| Wire protocol | [en/protocol.md](docs/en/protocol.md) | — |
-| Application services | [en/services.md](docs/en/services.md) | — |
-| Release process | [releasing.md](docs/releasing.md) | — |
-| Beta release checklist | [beta-release-checklist.md](docs/beta-release-checklist.md) | — |
-
----
-
-## Example programs
-
-Ready-to-use `.rivr` programs in [`examples/`](examples/):
-
-| File | Description |
-|---|---|
-| [chat_relay.rivr](examples/chat_relay.rivr) | Full mesh relay — CHAT, DATA, TELEMETRY, ALERT, MAILBOX with per-service EU868 duty-cycle budgets |
-| [telemetry_periodic.rivr](examples/telemetry_periodic.rivr) | Telemetry aggregation gateway — relay, 30 s reception window, frame count, heartbeat |
-| [store_forward_mailbox.rivr](examples/store_forward_mailbox.rivr) | PKT_MAILBOX store-and-forward with windowed buffer and delayed re-flood; backward-compatible PKT_CHAT track |
-
-Load a program over the mesh with the OTA push mechanism:
-
-```bash
-# Sign and push (requires a signing key matching rivr_pubkey.h)
-rivr_sign --key key0.pem --key-id 0 --seq 1 examples/chat_relay.rivr > payload.bin
-# (Delivery via PKT_PROG_PUSH is handled by the mesh transport layer)
-```
+| **Build guide** | [BUILDING.md](BUILDING.md) · [docs/en/build-guide.md](docs/en/build-guide.md) | [docs/nl/bouwhandleiding.md](docs/nl/bouwhandleiding.md) |
+| **User config** | [user_config_template.h](user_config_template.h) | — |
+| Overview | [docs/en/overview.md](docs/en/overview.md) | [docs/nl/overzicht.md](docs/nl/overzicht.md) |
+| Architecture | [docs/en/architecture.md](docs/en/architecture.md) | [docs/nl/architectuur.md](docs/nl/architectuur.md) |
+| Language reference | [docs/en/language-reference.md](docs/en/language-reference.md) | [docs/nl/taalreferentie.md](docs/nl/taalreferentie.md) |
+| Firmware integration | [docs/en/firmware-integration.md](docs/en/firmware-integration.md) | [docs/nl/firmware-integratie.md](docs/nl/firmware-integratie.md) |
+| Wire protocol | [docs/en/protocol.md](docs/en/protocol.md) | — |
+| Application services | [docs/en/services.md](docs/en/services.md) | — |
+| Release process | [docs/releasing.md](docs/releasing.md) | — |
 
 ---
 
@@ -270,52 +260,40 @@ rivr_sign --key key0.pem --key-id 0 --seq 1 examples/chat_relay.rivr > payload.b
 
 ```
 Rivr/
-├── .github/workflows/ci.yml    — CI: Rust (fmt+clippy+test) + C tests
-├── CMakeLists.txt              — ESP-IDF top-level project
-├── platformio.ini              — PlatformIO build environments
-├── Cargo.toml                  — Rust workspace (rivr_core + rivr_host)
-│
-├── firmware_core/              — C hardware drivers and firmware logic
-│   ├── main.c                  — app_main(), tx_drain_loop(), sim rounds
-│   ├── radio_sx1262.c/.h       — SX1262 driver (E22)
-│   ├── radio_sx1276.c/.h       — SX1276 driver (LilyGo)
-│   ├── routing.c/.h            — flood + jitter + forward-budget caps; routing_next_hop_score()
-│   ├── route_cache.c/.h        — unicast reverse-path cache; route_cache_best_hop() three-tier next-hop
-│   ├── neighbor_table.c/.h     — 16-slot EWMA link-quality table; neighbor_update/find/best/expire
-│   ├── pending_queue.c/.h      — 16-slot pending queue
-│   ├── protocol.c/.h           — wire format + CRC-16
-│   ├── dutycycle.c/.h          — EU868 sliding-window limiter (512-slot, LRU)
-│   ├── rivr_metrics.c/.h       — 63-counter metrics + @SUPPORTPACK
-│   ├── rivr_fabric.c/.h        — Rivr Fabric congestion relay policy
-│   ├── rivr_policy.c/.h        — runtime @PARAMS policy, role enforcement, origination gate, HMAC sig
-│   ├── rivr_ota.c/.h           — signed PKT_PROG_PUSH gate (Ed25519 + anti-replay)
-│   ├── crypto/hmac_sha256.c/.h — self-contained SHA-256 + HMAC-SHA-256 (no heap)
-│   └── display/display.c/.h    — SSD1306 7-page UI (FreeRTOS task, CPU1)
-│
-├── rivr_core/src/              — Rust library (no_std + alloc)
-│   ├── parser.rs               — recursive-descent parser
-│   ├── compiler.rs             — AST → engine DAG
-│   ├── ffi.rs                  — #[no_mangle] C-ABI exports + freeze + safety contract
-│   └── runtime/                — Engine, Scheduler, Value, Stamp
-│
-├── rivr_host/src/              — Host tooling (rivrc compiler CLI, replay)
-├── rivr_layer/                 — RIVR ↔ C firmware glue (init, sinks, sources)
-│   ├── rivr_svc.c/.h           — Application service handlers (CHAT/TELEMETRY/MAILBOX/ALERT)
-│   └── rivr_programs/          — Built-in RIVR program strings
-├── variants/                   — Board-specific config headers
-├── examples/                   — Ready-to-use .rivr programs
-├── tools/                      — Host utilities (rivr_decode wire decoder)
-└── tests/                      — C test suites (acceptance, recovery, replay, dutycycle, OTA)
+├── firmware_core/          — C firmware: radio drivers, routing, duty-cycle, policy, OTA, display
+├── rivr_core/src/          — Rust library (no_std + alloc): parser, compiler, runtime, FFI
+├── rivr_host/src/          — Host tooling: rivrc compiler CLI, replay engine
+├── rivr_layer/             — RIVR ↔ C firmware glue: init, sinks, sources, service handlers
+├── rivr_companion/         — Flutter companion app (Android, Linux, Windows)
+├── examples/               — Ready-to-use .rivr programs
+├── tests/                  — C test suites: acceptance, recovery, replay, dutycycle, OTA, policy
+├── tools/                  — Host utilities: rivr_decode wire decoder
+├── variants/               — Board-specific config headers
+├── docs/                   — Documentation (English + Nederlands)
+├── platformio.ini          — PlatformIO build environments
+└── Cargo.toml              — Rust workspace (rivr_core + rivr_host)
+```
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Before opening a PR, run:
+
+```bash
+make -C tests          # all C suites must pass (PASS: 204  FAIL: 0)
+cargo test -p rivr_core --features std
+cargo clippy -p rivr_core --features std -- -D warnings
 ```
 
 ---
 
 ## License
 
-Source code: **MIT** (see `LICENSE`).
+Source code: **MIT** — see [LICENSE](LICENSE).
 
 > **Radio regulatory notice:** LoRa transmissions are subject to national radio regulations.
-> The default 869.480 MHz / +30 dBm configuration targets the EU868 g3 sub-band (duty-cycle
-> 10 %, ERP ≤ 1 W).  You are responsible for compliance with the regulations in your
-> jurisdiction before operating any radio transmitter.
-
+> The default 869.480 MHz / +30 dBm configuration targets the EU868 g3 sub-band
+> (duty-cycle ≤ 10 %, ERP ≤ 1 W). You are responsible for compliance with the regulations
+> in your jurisdiction before operating any radio transmitter.
