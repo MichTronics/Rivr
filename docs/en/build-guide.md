@@ -17,36 +17,36 @@ The Rust library **must** be built before the C firmware.
 
 ### Debug (development)
 
-```powershell
-cd e:\Projects\Rivr\rivr_core
+```bash
+cd rivr_core
 cargo build --features ffi
-# Output:  target\debug\librivr_core.a
+# Output:  target/debug/librivr_core.a
 ```
 
 ### Release (for flashing)
 
-```powershell
+```bash
 cargo build --features ffi --release
-# Output:  target\release\librivr_core.a
+# Output:  target/release/librivr_core.a
 ```
 
 ### Cross-compile for ESP32 (Xtensa LX6)
 
-```powershell
+```bash
 # Install the Xtensa Rust toolchain (once):
 espup install
 
 # Cross-compile:
 cargo +esp build --target xtensa-esp32-espidf --features ffi --release
-# Output:  target\xtensa-esp32-espidf\release\librivr_core.a
+# Output:  target/xtensa-esp32-espidf/release/librivr_core.a
 ```
 
 > `main/CMakeLists.txt` automatically finds the library — it searches
-> `target\release\` first, then `target\debug\`. No manual copy needed.
+> `target/release/` first, then `target/debug/`. No manual copy needed.
 
 ### Host demos (no hardware)
 
-```powershell
+```bash
 cargo run -p rivr_host
 ```
 
@@ -54,7 +54,7 @@ Runs 8 demos covering every operator category plus Replay 2.0.
 
 ### `rivrc` — RIVR source compiler CLI
 
-```powershell
+```bash
 # Print node graph
 cargo run -p rivr_host --bin rivrc -- my_program.rivr
 
@@ -147,14 +147,12 @@ messages are encoded using the standard `PKT_CHAT` binary wire format.
 
 ### Simulation mode (no SX1262 hardware required)
 
-```powershell
-cd e:\Projects\Rivr
-
+```bash
 # Build simulation firmware
 pio run -e esp32_sim
 
 # Flash + open serial monitor
-pio run  -e esp32_sim -t upload
+pio run -e esp32_sim -t upload
 pio device monitor -e esp32_sim --baud 115200
 ```
 
@@ -175,11 +173,8 @@ I (...) MAIN: [SIM] TX type=CHAT ...   ← tx_drain_loop output (×5)
 
 ### Hardware mode (SX1262 connected)
 
-```powershell
-cd e:\Projects\Rivr\rivr_core
-cargo build --features ffi --release
-cd ..
-
+```bash
+cd rivr_core && cargo build --features ffi --release && cd ..
 pio run -e esp32_hw -t upload
 pio device monitor --baud 115200
 ```
@@ -188,12 +183,9 @@ pio device monitor --baud 115200
 
 ## Step 2b — Build via ESP-IDF (idf.py)
 
-```powershell
+```bash
 # Activate ESP-IDF environment (once per shell):
-. $env:IDF_PATH\export.ps1       # PowerShell
-# source $IDF_PATH/export.sh     # Linux / macOS
-
-cd e:\Projects\Rivr
+source $IDF_PATH/export.sh
 
 # Set target (once per checkout):
 idf.py set-target esp32
@@ -204,8 +196,8 @@ idf.py -DRIVR_SIM_MODE=1 -DRIVR_SIM_TX_PRINT=1 build
 # Hardware build (no extra flags):
 idf.py build
 
-# Flash + monitor:
-idf.py -p COM3 flash monitor
+# Flash + monitor (replace /dev/ttyUSB0 with your port):
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
 ---
