@@ -1,6 +1,7 @@
-# RIVR — Reactive LoRa Mesh Runtime
+# Rivr — Reliable LoRa Mesh Networking for Embedded Systems
 
-> A reactive dataflow language and deterministic runtime for off-grid LoRa mesh networks.
+> A lightweight networking layer and reactive dataflow runtime for LoRa radios.
+> Enables resilient multi-hop communication on constrained embedded hardware.
 > Runs on ESP32 + SX1262/SX1276. **Zero heap allocation after boot.**
 
 [![CI](https://github.com/MichTronics/Rivr/actions/workflows/ci.yml/badge.svg)](https://github.com/MichTronics/Rivr/actions/workflows/ci.yml)
@@ -17,11 +18,17 @@
 
 ---
 
-## What is RIVR?
+## What is Rivr?
 
-RIVR lets you describe a **dataflow pipeline** over radio packets in a small DSL, compile it
-on-device at boot, and evaluate it on every incoming frame with bounded worst-case latency —
-no OS, no garbage collector, no heap.
+Rivr is a **LoRa mesh networking layer** designed for embedded devices.
+
+Instead of building a single application on top of LoRa, Rivr provides a robust communication
+substrate that other systems can build upon. Nodes form self-organizing radio networks without
+requiring gateways or central infrastructure.
+
+On top of that substrate, Rivr ships a **reactive dataflow DSL** that lets you describe packet
+processing pipelines in a few lines of code, compiled on-device at boot and evaluated on every
+incoming frame with bounded worst-case latency — no OS, no garbage collector, no heap.
 
 ```rivr
 source rf_rx @lmp = rf;           // LoRa receive stream (Lamport clock)
@@ -39,14 +46,39 @@ emit { io.lora.tx(chat);   }
 emit { io.lora.tx(alerts); }
 ```
 
-Write the pipeline once. RIVR handles duty-cycle compliance, flood deduplication, and
+Write the pipeline once. Rivr handles duty-cycle compliance, flood deduplication, and
 congestion-aware relay suppression automatically.
 
 ---
 
-## Why RIVR?
+## Design Principles
 
-|  | RIVR | Hand-rolled C | MQTT bridge |
+### Deterministic embedded behavior
+Rivr avoids dynamic memory allocation during runtime and uses fixed-size data structures
+throughout. Memory footprint is fully determined at compile time.
+
+### Airtime awareness
+LoRa networks are severely bandwidth-constrained. Rivr includes a sliding-window EU868
+duty-cycle limiter, per-service airtime budgets, and flood-deduplication to prevent unnecessary
+retransmissions.
+
+### Defensive protocol parsing
+Incoming packets are validated for length, CRC, TTL, and type before entering the routing
+pipeline. The decode path is covered by a fuzz-testing harness.
+
+### Radio robustness
+The SX1262 driver detects and automatically recovers from BUSY lockups, RX silence, SPI
+communication faults, and TX timeouts — without requiring a full reboot.
+
+### Mesh safety
+Rivr includes loop detection, TTL-based propagation limits, packet-level deduplication,
+and congestion-aware relay suppression to prevent routing storms.
+
+---
+
+## Why Rivr?
+
+|  | Rivr | Hand-rolled C | MQTT bridge |
 |---|---|---|---|
 | **Memory model** | Zero heap after boot | Static / heap mix | Heap-heavy |
 | **Duty-cycle safety** | Built-in sliding-window limiter | Hand-rolled or absent | N/A |
@@ -57,6 +89,8 @@ congestion-aware relay suppression automatically.
 ---
 
 ## Quickstart — no hardware needed
+
+No ESP32 required to explore Rivr. The host tools run entirely on Linux / macOS / Windows.
 
 ```bash
 # Install Rust if needed
@@ -122,6 +156,9 @@ Full flash commands and pin-wiring tables: [docs/en/build-guide.md](docs/en/buil
 
 ## DSL reference
 
+The Rivr DSL describes packet-processing pipelines that are compiled on-device at boot.
+All state lives in BSS; the engine evaluates the graph on every received frame.
+
 ```rivr
 // Sources
 source rf_rx   @lmp  = rf;            // LoRa receive stream (Lamport clock)
@@ -149,6 +186,8 @@ Full grammar: [docs/en/language-reference.md](docs/en/language-reference.md)
 ---
 
 ## Feature set
+
+Rivr is a full networking stack, not just a radio wrapper.
 
 | Feature | Detail |
 |---|---|
@@ -276,6 +315,22 @@ Rivr/
 
 ---
 
+## Security considerations
+
+Before deploying nodes outside a development environment:
+
+- **Set a custom PSK** — the default `RIVR_PARAMS_PSK_HEX` is all-zeros and intentionally fails
+  a compile-time `_Static_assert` when `RIVR_FEATURE_SIGNED_PARAMS=1`.
+  Generate a key: `openssl rand -hex 32`
+- **Enable signed OTA** — `RIVR_FEATURE_SIGNED_OTA=1` requires Ed25519 signature on every
+  `PKT_PROG_PUSH` frame. Unsigned pushes are silently discarded.
+- **Respect duty-cycle limits** — the default 869.480 MHz / +30 dBm target is the EU868 g3
+  sub-band (≤ 10 %, ERP ≤ 1 W). Override frequency and power for your region.
+- **Default settings are for development only** — never deploy with the all-zero PSK or without
+  reviewing `variants/<board>/config.h`.
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
@@ -287,6 +342,8 @@ cargo test -p rivr_core --features std
 cargo clippy -p rivr_core --features std -- -D warnings
 ```
 
+Feedback, bug reports, and field-testing results are highly appreciated.
+
 ---
 
 ## License
@@ -297,3 +354,18 @@ Source code: **MIT** — see [LICENSE](LICENSE).
 > The default 869.480 MHz / +30 dBm configuration targets the EU868 g3 sub-band
 > (duty-cycle ≤ 10 %, ERP ≤ 1 W). You are responsible for compliance with the regulations
 > in your jurisdiction before operating any radio transmitter.
+
+---
+
+## Acknowledgements
+
+Rivr builds upon ideas from the broader LoRa and embedded networking communities.
+Special thanks to researchers and developers exploring decentralised radio communication systems.
+
+---
+
+## Vision
+
+Rivr aims to become a reliable foundation for open radio networking — a system where embedded
+devices can form resilient mesh networks without relying on centralised infrastructure,
+operating predictably within radio regulations and hardware constraints.
