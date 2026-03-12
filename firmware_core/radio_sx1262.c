@@ -46,6 +46,7 @@
 #include "driver/gpio.h"    /* gpio_isr_handler_add */
 #include "esp_log.h"
 #include "esp_task_wdt.h"  /* esp_task_wdt_reset — keeps WDT happy during long TX polls */
+#include "freertos/FreeRTOS.h"  /* portMUX_TYPE, portENTER_CRITICAL* */
 #include "rivr_log.h"
 #include <string.h>
 #include <stdio.h>
@@ -100,6 +101,12 @@ static volatile bool s_in_rx = false;
 
 /** Set by radio_isr() when DIO1 fires; cleared by radio_service_rx(). */
 static volatile bool s_dio1_pending = false;
+
+/* Spinlock protecting s_dio1_pending against the dual-core race where
+ * the ISR on CPU1 sets the flag while the main loop on CPU0 is between
+ * the read and the clear.  On single-core builds this degenerates to a
+ * simple interrupt-disable; on dual-core it also serialises CPUs. */
+static portMUX_TYPE s_dio1_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /** Consecutive TX failures; triggers radio_hard_reset() at 3. */
 static uint8_t s_tx_fail_streak = 0;
@@ -488,7 +495,9 @@ void radio_fault_reset_state(void)
 void IRAM_ATTR radio_isr(void *arg)
 {
     (void)arg;
+    portENTER_CRITICAL_ISR(&s_dio1_mux);
     s_dio1_pending = true;
+    portEXIT_CRITICAL_ISR(&s_dio1_mux);
 }
 
 /* Called from the main loop after every rivr_tick().  Drains all pending
@@ -498,12 +507,19 @@ void radio_service_rx(void)
 #ifdef RIVR_FAULT_INJECT
     if (g_fault_rx_silence) return;
 #endif
-    if (!s_dio1_pending) return;
+    /* Atomically read and clear the flag — prevents a dual-core race where
+     * the ISR on CPU1 sets the flag after the check but before the clear. */
+    bool pending;
+    portENTER_CRITICAL(&s_dio1_mux);
+    pending        = s_dio1_pending;
+    s_dio1_pending = false;
+    portEXIT_CRITICAL(&s_dio1_mux);
+    if (!pending) return;
 #ifdef RIVR_FAULT_INJECT
-    /* Burst CRC-error injection: simulate PayloadCrcError for the next N frames. */
+    /* Burst CRC-error injection: simulate PayloadCrcError for the next N frames.
+     * s_dio1_pending was already cleared atomically above — no need to clear it again. */
     if (g_fault_crc_fail > 0u) {
         g_fault_crc_fail--;
-        s_dio1_pending = false;
         s_last_rx_event_ms = tb_millis();
         g_rivr_metrics.radio_rx_crc_fail++;
         uint32_t n = g_rivr_metrics.radio_rx_crc_fail;
@@ -513,7 +529,7 @@ void radio_service_rx(void)
         return;
     }
 #endif
-    s_dio1_pending = false;
+    /* s_dio1_pending was already cleared atomically above. */
     s_last_rx_event_ms = tb_millis();   /* reset RX-silence watchdog */
 
     /* 1. Read IRQ status */
@@ -537,7 +553,7 @@ void radio_service_rx(void)
 
     if (!(irq & 0x0002)) return;  /* Not RxDone – ignore (TxDone, Timeout, etc.) */
 
-    s_spurious_irq_streak = 0;   /* reset on valid RxDone */
+    s_spurious_irq_streak = 0;    /* reset on valid RxDone */
 
     /* PayloadCrcError (bit 6 = 0x0040): SX1262 sets this alongside RxDone
      * when the received frame fails hardware CRC.  Discard immediately —
