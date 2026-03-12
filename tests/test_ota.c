@@ -19,7 +19,7 @@
  *   payload = key.sign(seq_le + text) + seq_le + text
  *
  * Build (from project root, signed path):
- *   gcc -O2 -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG \
+ *   gcc -O2 -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG -DRIVR_PUBKEY_PRODUCTION=1 \
  *       firmware_core/ed25519_verify.c \
  *       firmware_core/rivr_ota_core.c \
  *       tests/test_ota.c \
