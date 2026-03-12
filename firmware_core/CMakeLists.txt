@@ -77,6 +77,8 @@ idf_component_register(
 set(_RIVR_ROOTS
     "${CMAKE_SOURCE_DIR}/target/xtensa-esp32-espidf/release"
     "${CMAKE_SOURCE_DIR}/target/xtensa-esp32-espidf/debug"
+    "${CMAKE_SOURCE_DIR}/target/release"
+    "${CMAKE_SOURCE_DIR}/target/debug"
     "${CMAKE_SOURCE_DIR}/rivr_core/target/release"
     "${CMAKE_SOURCE_DIR}/rivr_core/target/debug"
 )

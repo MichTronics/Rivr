@@ -243,10 +243,32 @@ pub unsafe extern "C" fn rivr_engine_init(program_src: *const c_char) -> RivrRes
         Err(_) => return RivrResult::err(RIVR_ERR_PARSE),
     };
 
-    let (engine, _warns) = match compile(&program) {
+    let (engine, warns) = match compile(&program) {
         Ok(pair) => pair,
         Err(_) => return RivrResult::err(RIVR_ERR_COMPILE),
     };
+
+    // Log any compiler warnings via EMIT_DISPATCH.
+    // This surfaces issues like unreferenced sources or shadowed bindings that
+    // would otherwise be invisible after an OTA push.
+    if !warns.is_empty() {
+        if let Some(dispatch) = EMIT_DISPATCH {
+            for w in &warns {
+                let msg = w.to_string();
+                let bytes = msg.as_bytes();
+                let copy_len = bytes.len().min(127); // CFixedStr.buf is [u8; 128]
+                // Emit as a synthetic "rivr.warn" sink event (CValTag::Str = 3).
+                let mut cv = CValue {
+                    tag: 3,
+                    _pad: [0; 3],
+                    data: CValUnion { as_str: CFixedStr { buf: [0; 128], len: copy_len as u8 } },
+                };
+                cv.data.as_str.buf[..copy_len].copy_from_slice(&bytes[..copy_len]);
+                let sink = b"rivr.warn\0";
+                dispatch(sink.as_ptr() as *const c_char, &cv);
+            }
+        }
+    }
 
     // Reject over-complex graphs: unbounded node counts are a DoS/memory risk.
     if engine.nodes.len() > RIVR_MAX_NODES {
@@ -311,7 +333,8 @@ pub unsafe extern "C" fn rivr_inject_event(
         2 /* Bool */ => Value::Bool(ev_c.v.data.as_bool),
         3 /* Str */  => {
             let s = &ev_c.v.data.as_str;
-            let len = s.len as usize;
+            // Clamp to actual buffer size — C callers must not exceed 128.
+            let len = (s.len as usize).min(s.buf.len());
             let text = core::str::from_utf8(&s.buf[..len]).unwrap_or("");
             // StrBuf = String under alloc, FixedText<64> otherwise.
             #[cfg(feature = "alloc")]
@@ -322,7 +345,8 @@ pub unsafe extern "C" fn rivr_inject_event(
         }
         4 /* Bytes */ => {
             let b = &ev_c.v.data.as_bytes;
-            let len = b.len as usize;
+            // Clamp to actual buffer size — C callers must not exceed 256.
+            let len = (b.len as usize).min(b.buf.len());
             // ByteBuf = Vec<u8> under alloc, FixedBytes<64> otherwise.
             #[cfg(feature = "alloc")]
             {

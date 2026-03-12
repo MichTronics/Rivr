@@ -24,6 +24,18 @@
 /** Number of public keys in the key ring (max 255 but practically 2). */
 #define RIVR_OTA_KEY_COUNT  2u
 
+/*
+ * Safety: refuse to compile a signed-OTA production build while placeholder
+ * dev keys are still in place.  Define RIVR_PUBKEY_PRODUCTION=1 (via
+ * platformio.ini build_flags or variant config.h) ONLY after you have
+ * replaced both keys below with real production Ed25519 public keys.
+ */
+#if RIVR_SIGNED_PROG && !defined(RIVR_PUBKEY_PRODUCTION)
+#  error "RIVR_SIGNED_PROG=1 but RIVR_PUBKEY_PRODUCTION is not set. " \
+         "Replace the placeholder dev keys in rivr_pubkey.h with real " \
+         "Ed25519 public keys, then define -DRIVR_PUBKEY_PRODUCTION=1."
+#endif
+
 /**
  * Ed25519 compressed public-key ring.
  * RIVR_OTA_KEYS[key_id] is the 32-byte public key for the given key_id.
