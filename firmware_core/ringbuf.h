@@ -37,6 +37,7 @@ extern "C" {
 #include <stdbool.h>
 #include <string.h>
 #include <stdatomic.h>
+#include <assert.h>
 
 /* ─────────────────────────────── generic ring buffer ─────────────────────── */
 
@@ -57,6 +58,8 @@ typedef struct {
 /* ─── initialiser ─── */
 static inline void rb_init(rb_t *rb, void *storage, uint32_t cap, uint32_t item_size)
 {
+    /* cap must be a power of two — the push/pop index wrap uses (x & (cap-1)). */
+    assert(cap > 0u && (cap & (cap - 1u)) == 0u);
     rb->buf       = (uint8_t *)storage;
     rb->cap       = cap;
     rb->item_size = item_size;
