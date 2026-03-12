@@ -3,13 +3,15 @@
 # Override any setting here to pin it for the project.
 
 # ── CPU + Flash ──────────────────────────────────────────────────────────────
-CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ_240=y      # 240 MHz for best LoRa throughput
+# 240 MHz for best LoRa throughput
+CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ_240=y
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
 
 # ── FreeRTOS ─────────────────────────────────────────────────────────────────
-CONFIG_FREERTOS_HZ=1000                      # 1 ms tick (matches tb_millis())
+# 1 ms tick (matches tb_millis() — vTaskDelay(1) = 1 ms)
+CONFIG_FREERTOS_HZ=1000
 CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3072
 
 # ── Main task stack ──────────────────────────────────────────────────────────
@@ -18,9 +20,12 @@ CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3072
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 
 # ── Logging ──────────────────────────────────────────────────────────────────
-CONFIG_LOG_DEFAULT_LEVEL_INFO=y              # INFO default: hides driver ESP_LOGD spam
-CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y             # Keep max at DEBUG; use esp_log_level_set for per-tag DEBUG
-CONFIG_LOG_DYNAMIC_LEVEL_CONTROL=y           # Allow runtime esp_log_level_set overrides
+# INFO default: hides driver ESP_LOGD spam
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+# Keep max at DEBUG; use esp_log_level_set for per-tag DEBUG
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+# Allow runtime esp_log_level_set overrides
+CONFIG_LOG_DYNAMIC_LEVEL_CONTROL=y
 
 # ── UART console ─────────────────────────────────────────────────────────────
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
@@ -34,7 +39,8 @@ CONFIG_PARTITION_TABLE_SINGLE_APP=y
 CONFIG_PARTITION_TABLE_OFFSET=0x9000
 
 # ── SPI ──────────────────────────────────────────────────────────────────────
-CONFIG_SPI_MASTER_IN_IRAM=y                  # SPI ISR handler in IRAM
+# SPI ISR handler in IRAM
+CONFIG_SPI_MASTER_IN_IRAM=y
 
 # ── GPIO ─────────────────────────────────────────────────────────────────────
 CONFIG_GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL=y
@@ -42,7 +48,7 @@ CONFIG_GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL=y
 # ── Disable unused stacks to save RAM ────────────────────────────────────────
 CONFIG_BT_ENABLED=n
 CONFIG_WIFI_ENABLED=n
-CONFIG_ESP32_ENABLE_COREDUMP_TO_NONE=y
+CONFIG_ESP_COREDUMP_ENABLE_TO_NONE=y
 # ── Task Watchdog (hardware WDT) ─────────────────────────────────────────────
 # Main task registers itself via esp_task_wdt_add() and feeds the WDT once per
 # main-loop iteration.  If the loop stalls, WDT fires a panic after 30 s.

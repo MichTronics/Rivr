@@ -114,7 +114,7 @@ OTA_SRCS := \
 # test_ota.c provides host stubs for the ota_platform_* and ota_storage_* interface.
 
 OTA_BIN   := ota_test
-OTA_FLAGS := $(COMMON_FLAGS) -DRIVR_SIGNED_PROG
+OTA_FLAGS := $(COMMON_FLAGS) -DRIVR_SIGNED_PROG -DRIVR_PUBKEY_PRODUCTION=1
 
 # ─────────────────────────────────────────────────────────────────────────────
 # RETRY / ACK RELIABILITY TEST
@@ -216,7 +216,7 @@ asan:
 	$(CC) $(ASAN_FLAGS) $(POL_SRCS) -o policy_asan && ./policy_asan
 	@echo
 	@echo "── ASan/UBSan: OTA (signed) ──────────────────────────────────────"
-	$(CC) $(ASAN_FLAGS) -DRIVR_SIGNED_PROG $(OTA_SRCS) -o ota_asan && timeout 60 ./ota_asan
+	$(CC) $(ASAN_FLAGS) -DRIVR_SIGNED_PROG -DRIVR_PUBKEY_PRODUCTION=1 $(OTA_SRCS) -o ota_asan && timeout 60 ./ota_asan
 	@echo
 	@echo "── ASan/UBSan: retry ─────────────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) $(RETRY_SRCS) -o retry_asan && ./retry_asan
