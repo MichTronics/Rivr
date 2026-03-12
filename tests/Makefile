@@ -136,6 +136,21 @@ RETRY_BIN   := retry_test
 RETRY_FLAGS := $(COMMON_FLAGS)
 
 # ─────────────────────────────────────────────────────────────────────────────
+# FABRIC THRESHOLD TEST
+#   Tests every decision-threshold boundary in rivr_fabric.c:
+#   SEND_NOW < 20, LIGHT_DELAY 20..49, HEAVY_DELAY 50..79, DROP 80..94,
+#   BLACKOUT_GUARD ≥ 95.  Compiled with RIVR_FABRIC_REPEATER=1.
+# ─────────────────────────────────────────────────────────────────────────────
+FABRIC_SRCS := \
+    $(FW)/rivr_fabric.c   \
+    $(FW)/rivr_metrics.c  \
+    $(FW)/rivr_log.c      \
+    test_fabric.c
+
+FABRIC_BIN   := fabric_test
+FABRIC_FLAGS := $(COMMON_FLAGS) -DRIVR_FABRIC_REPEATER=1
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ASAN / UBSAN (P3.2)
 #   Rebuilds the four main suites + P2 suites with AddressSanitizer and
 #   UndefinedBehaviourSanitizer.  Binaries are suffixed _asan so they do
@@ -145,10 +160,10 @@ ASAN_FLAGS := $(COMMON_FLAGS) -O1 -g -fsanitize=address,undefined \
               -fno-omit-frame-pointer
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all test acceptance recovery replay dutycycle policy ota retry asan fuzz_harness clean \
+.PHONY: all test acceptance recovery replay dutycycle policy ota retry fabric asan fuzz_harness clean \
         size_check update_baselines determinism_check variant_check
 
-all: acceptance recovery replay dutycycle policy ota retry
+all: acceptance recovery replay dutycycle policy ota retry fabric
 
 # `make test` is the CI-friendly single-command alias.
 test: all
@@ -199,6 +214,10 @@ retry: $(RETRY_BIN)
 	@echo "── Running ACK/retry reliability tests ─────────────────────"
 	./$(RETRY_BIN)
 	@echo
+fabric: $(FABRIC_BIN)
+	@echo "── Running fabric threshold tests ───────────────────────────"
+	./$(FABRIC_BIN)
+	@echo
 asan:
 	@echo "── ASan/UBSan: acceptance ────────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) $(ACC_SRCS) -o acceptance_asan && ./acceptance_asan
@@ -221,6 +240,9 @@ asan:
 	@echo "── ASan/UBSan: retry ─────────────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) $(RETRY_SRCS) -o retry_asan && ./retry_asan
 	@echo
+	@echo "── ASan/UBSan: fabric ────────────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) -DRIVR_FABRIC_REPEATER=1 $(FABRIC_SRCS) -o fabric_asan && ./fabric_asan
+	@echo
 $(POL_BIN): $(POL_SRCS)
 	$(CC) $(POL_FLAGS) $^ -o $@
 
@@ -229,6 +251,9 @@ $(OTA_BIN): $(OTA_SRCS)
 
 $(RETRY_BIN): $(RETRY_SRCS)
 	$(CC) $(RETRY_FLAGS) $^ -o $@
+
+$(FABRIC_BIN): $(FABRIC_SRCS)
+	$(CC) $(FABRIC_FLAGS) $^ -o $@
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FUZZ HARNESS (P3.2)
@@ -256,7 +281,7 @@ $(FUZZ_BIN): $(FUZZ_SRCS)
 	$(CC) $(FUZZ_FLAGS) $^ -o $@
 
 clean:
-	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan
+	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FABRIC_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan fabric_asan
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Release workflow utilities
