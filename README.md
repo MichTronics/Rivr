@@ -89,6 +89,7 @@ communication platform that is simple to use, powerful to experiment with, and o
 who wants to explore wireless networking.
 
 Michel van Veen (MichTronics - PD4MV)
+
 ---
 
 ## Design Principles
