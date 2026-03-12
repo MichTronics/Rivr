@@ -257,11 +257,16 @@ pub unsafe extern "C" fn rivr_engine_init(program_src: *const c_char) -> RivrRes
                 let msg = w.to_string();
                 let bytes = msg.as_bytes();
                 let copy_len = bytes.len().min(127); // CFixedStr.buf is [u8; 128]
-                // Emit as a synthetic "rivr.warn" sink event (CValTag::Str = 3).
+                                                     // Emit as a synthetic "rivr.warn" sink event (CValTag::Str = 3).
                 let mut cv = CValue {
                     tag: 3,
                     _pad: [0; 3],
-                    data: CValUnion { as_str: CFixedStr { buf: [0; 128], len: copy_len as u8 } },
+                    data: CValUnion {
+                        as_str: CFixedStr {
+                            buf: [0; 128],
+                            len: copy_len as u8,
+                        },
+                    },
                 };
                 cv.data.as_str.buf[..copy_len].copy_from_slice(&bytes[..copy_len]);
                 let sink = b"rivr.warn\0";
