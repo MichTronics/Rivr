@@ -203,10 +203,11 @@ const rivr_neighbor_t *neighbor_find(const rivr_neighbor_table_t *tbl,
         /* Expired — treat as absent. */
         if (age >= NTABLE_EXPIRY_MS) return NULL;
 
-        /* Update STALE flag as a derived/cached property.
-         * The cast-away of const is intentional: the flag is a pure
-         * function of existing data and changes no observable metric. */
-        rivr_neighbor_t *mutable_n = (rivr_neighbor_t *)(uintptr_t)n;
+        /* Update STALE flag as a cached/derived property.  Table entries
+         * live in writable BSS (never in read-only flash), so a direct
+         * non-const cast is well-defined here.  Using a direct cast rather
+         * than the (T*)(uintptr_t) round-trip to keep the intent clearer. */
+        rivr_neighbor_t *mutable_n = (rivr_neighbor_t *)n;
         if (age >= NTABLE_STALE_MS) {
             mutable_n->flags |= NTABLE_FLAG_STALE;
         } else {

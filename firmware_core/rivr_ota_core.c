@@ -58,7 +58,14 @@ bool rivr_ota_verify(const uint8_t *payload, size_t payload_len)
      * The signed message is (key_id ‖ seq_bytes ‖ program_text):
      * everything after the 64-byte signature.  key_id is inside the
      * signature coverage so an attacker cannot substitute it post-hoc.
+     *
+     * Guard explicitly before the subtraction: even though the earlier
+     * payload_len > RIVR_OTA_HDR_LEN check already ensures
+     * payload_len > 69 > 64 = RIVR_OTA_SIG_LEN, an explicit local guard
+     * keeps the invariant visible and prevents a size_t underflow if
+     * this code is ever refactored or the header length changes.
      */
+    if (payload_len < RIVR_OTA_SIG_LEN) return false;   /* underflow guard */
     uint8_t signed_msg[256];
     size_t  signed_len = payload_len - RIVR_OTA_SIG_LEN;
     if (signed_len > sizeof(signed_msg)) return false;

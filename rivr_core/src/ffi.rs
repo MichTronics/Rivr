@@ -285,6 +285,11 @@ pub unsafe extern "C" fn rivr_engine_init(program_src: *const c_char) -> RivrRes
         return RivrResult::err(RIVR_ERR_FROZEN);
     }
 
+    // Drop the previous engine before overwriting to avoid leaking the
+    // scheduler, node vec, and binding map allocated in the prior init call.
+    if ENGINE_READY.load(Ordering::Acquire) {
+        ENGINE_SLOT.assume_init_drop();
+    }
     ENGINE_SLOT.write(engine);
     ENGINE_READY.store(true, Ordering::Release);
     RivrResult::ok()

@@ -175,11 +175,11 @@ bool rivr_policy_allow_origination(uint8_t pkt_type, uint32_t now_ms)
     uint32_t *last_ms;
 
     switch (pkt_type) {
-        case 1u: /* PKT_CHAT */
+        case PKT_CHAT:
             throttle_ms = g_policy_params.chat_throttle_ms;
             last_ms     = &s_last_chat_orig_ms;
             break;
-        case 6u: /* PKT_DATA */
+        case PKT_DATA:
             throttle_ms = g_policy_params.data_throttle_ms;
             last_ms     = &s_last_data_orig_ms;
             break;
