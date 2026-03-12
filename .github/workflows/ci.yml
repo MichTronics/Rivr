@@ -68,7 +68,7 @@ jobs:
 
       - name: Build + run OTA gate tests – signed (P2)
         run: |
-          gcc -O2 -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG \
+          gcc -O2 -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG -DRIVR_PUBKEY_PRODUCTION=1 \
               firmware_core/ed25519_verify.c \
               firmware_core/rivr_ota_core.c \
               tests/test_ota.c \
@@ -107,7 +107,7 @@ jobs:
       - name: Build + run OTA under ASan/UBSan (signed)
         run: |
           gcc -O1 -g -fsanitize=address,undefined \
-              -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG \
+              -Ifirmware_core -DIRAM_ATTR="" -DRIVR_SIGNED_PROG -DRIVR_PUBKEY_PRODUCTION=1 \
               firmware_core/ed25519_verify.c \
               firmware_core/rivr_ota_core.c \
               tests/test_ota.c \
