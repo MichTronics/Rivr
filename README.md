@@ -51,6 +51,46 @@ congestion-aware relay suppression automatically.
 
 ---
 
+## The story behind Rivr
+
+Rivr started with a simple curiosity.
+
+Like many people interested in radio and wireless communication, I began experimenting with LoRa
+modules and mesh networks. Projects like Meshtastic and MeshCore showed that it was possible to
+build decentralized communication networks with very little hardware. But while experimenting with
+these systems, I kept asking myself the same question:
+
+> *What if we could push this concept much further?*
+
+Most LoRa mesh projects are designed around a fairly simple idea: packets follow a predefined
+route through the network. But real radio environments are messy. Signals fade, nodes move, links
+change, and sometimes the "best route" isn't actually the best one at all.
+
+That's where the idea for Rivr started to form.
+
+Instead of treating a network like a fixed set of roads, I began thinking about it more like a
+**river system**. Water doesn't follow a single rigid path — it flows through multiple channels,
+adapts to obstacles, and finds the best way forward dynamically.
+
+That metaphor became the foundation for the project.
+
+Rivr is designed as a flexible mesh communication layer that allows packets to flow through the
+network in a smarter way. Rather than forcing a single path, the network adapts to real-world
+radio conditions and chooses the best relay nodes dynamically.
+
+> **The name Rivr comes directly from that idea: a network where information flows like a river.**
+
+What started as small experiments with ESP32 boards and LoRa radios quickly turned into a larger
+project exploring routing algorithms, adaptive relays, and new ways to build decentralized
+communication networks.
+
+Rivr is still evolving, but the goal remains the same: to build a next-generation long-range mesh
+communication platform that is simple to use, powerful to experiment with, and open for everyone
+who wants to explore wireless networking.
+
+Michel van Veen (MichTronics - PD4MV)
+---
+
 ## Design Principles
 
 ### Deterministic embedded behavior
