@@ -106,7 +106,17 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"ble_conn\":%" PRIu32 ","
            "\"ble_rx\":%" PRIu32 ","
            "\"ble_tx\":%" PRIu32 ","
-           "\"ble_err\":%" PRIu32
+           "\"ble_err\":%" PRIu32 ","
+           /* Packet bus observability */
+           "\"bus_rx\":%" PRIu32 ","
+           "\"bus_inv\":%" PRIu32 ","
+           "\"bus_dup\":%" PRIu32 ","
+           "\"bus_fwd_lora\":%" PRIu32 ","
+           "\"bus_fwd_ble\":%" PRIu32 ","
+           "\"bus_fwd_usb\":%" PRIu32 ","
+           "\"bus_err\":%" PRIu32 ","
+           "\"lora_rx\":%" PRIu32 ","
+           "\"usb_rx\":%" PRIu32
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -201,5 +211,15 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.ble_connections,
         g_rivr_metrics.ble_rx_frames,
         g_rivr_metrics.ble_tx_frames,
-        g_rivr_metrics.ble_errors);
+        g_rivr_metrics.ble_errors,
+        /* Packet bus */
+        g_rivr_metrics.bus_rx_total,
+        g_rivr_metrics.bus_drop_invalid,
+        g_rivr_metrics.bus_drop_dup,
+        g_rivr_metrics.bus_forward_lora,
+        g_rivr_metrics.bus_forward_ble,
+        g_rivr_metrics.bus_forward_usb,
+        g_rivr_metrics.bus_errors,
+        g_rivr_metrics.lora_rx_frames,
+        g_rivr_metrics.usb_rx_frames);
 }

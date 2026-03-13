@@ -115,6 +115,15 @@ typedef struct {
                                         *   0 = unknown (real HW, hop > 0).
                                         *   In simulation: set to relay's ID.
                                         *   Used by route_cache_learn_rx().   */
+    uint8_t  iface;                    /**< Transport this frame arrived on.
+                                        *   Uses rivr_iface_t values:
+                                        *     0 = RIVR_IFACE_LORA  (default)
+                                        *     1 = RIVR_IFACE_BLE
+                                        *     2 = RIVR_IFACE_USB
+                                        *   Defaults to 0 because the SX1262
+                                        *   ISR does memset(&frame,0,…) before
+                                        *   filling fields — LoRa frames need
+                                        *   no explicit iface assignment.    */
 } rf_rx_frame_t;
 
 /* ── TX request (written by RIVR emit, consumed by main loop) ────────────── */
