@@ -54,6 +54,9 @@ idf_component_register(
         "../rivr_layer/rivr_sources.c"
         "../rivr_layer/rivr_cli.c"
         "../rivr_layer/rivr_svc.c"
+        # BLE transport (self-guards via #if RIVR_FEATURE_BLE; safe when BLE=0)
+        "ble/rivr_ble.c"
+        "ble/rivr_ble_service.c"
 
     INCLUDE_DIRS
         ".."    # project root – enables #include "firmware_core/xxx.h"
@@ -70,6 +73,14 @@ idf_component_register(
         nvs_flash  # P2: signed OTA anti-replay via NVS
         esp_system  # rivr_panic: esp_reset_reason(), RTC_DATA_ATTR
 )
+
+# BLE: link the NimBLE 'bt' component only when CONFIG_BT_ENABLED=y.
+# When CONFIG_BT_ENABLED=n (the default), the ble/*.c files compile to empty
+# translation units (all code is inside #if RIVR_FEATURE_BLE guards) and
+# the bt component is not linked, so no linker or sdkconfig errors occur.
+if(CONFIG_BT_ENABLED)
+    idf_component_optional_requires(PRIVATE bt)
+endif()
 
 # ── Link the pre-built Rust rivr_core static library ─────────────────────────
 # After idf_component_register(), the __idf_firmware_core target exists and we

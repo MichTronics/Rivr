@@ -379,6 +379,29 @@
 #  endif
 #endif
 
+/**
+ * @brief Enable BLE local edge interface (NimBLE UART-over-BLE bridge).
+ *
+ * When RIVR_FEATURE_BLE=1:
+ *   • NimBLE stack starts at boot and advertises as "RIVR-XXXX" for
+ *     BLE_BOOT_WINDOW_MS (120 s) before shutting down to save power.
+ *   • A BLE client can write binary Rivr frames to inject them into the
+ *     mesh (identical path to LoRa RX); the node notifies the client with
+ *     every valid frame it receives from the radio.
+ *   • Additional activation modes: BUTTON (5 min) and APP_REQUESTED
+ *     (indefinite, triggered by mesh command).
+ *
+ * Requires:
+ *   1. sdkconfig.ble appended to sdkconfig.defaults (see sdkconfig.ble).
+ *   2. -DRIVR_FEATURE_BLE=1 in the environment's build_flags.
+ *   3. CONFIG_BT_ENABLED=y in sdkconfig.
+ *
+ * See firmware_core/ble/rivr_ble.h for the full API.
+ */
+#ifndef RIVR_FEATURE_BLE
+#  define RIVR_FEATURE_BLE  0
+#endif
+
 /** @} */
 
 /* ══════════════════════════════════════════════════════════════════════════

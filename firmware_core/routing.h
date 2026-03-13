@@ -50,6 +50,7 @@
 #include "protocol.h"
 #include "route_cache.h"   /* route_cache_t, route_cache_lookup() */
 #include "hal/feature_flags.h"  /* RIVR_ROLE_REPEATER for budget scaling */
+#include "rivr_config.h"        /* RF_SPREADING_FACTOR, RF_BANDWIDTH_KHZ  */
 
 #ifdef __cplusplus
 extern "C" {
@@ -300,6 +301,17 @@ typedef enum {
 #  define FWDBUDGET_MAX_FWD_ROLE  FWDBUDGET_MAX_FWD  /**< sim/test: use base 30 */
 #endif
                                             /**  (3 s = ~5% duty on SF9 BW125) */
+
+/**
+ * Role-specific airtime cap — mirrors FWDBUDGET_MAX_FWD_ROLE above.
+ * In sim/test builds (no role defined) disable the airtime cap so
+ * flood-correctness tests are not sensitive to RF parameter changes.
+ */
+#if RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY || RIVR_ROLE_CLIENT
+#  define FWDBUDGET_MAX_AIR_US_ROLE  FWDBUDGET_MAX_AIR_US
+#else
+#  define FWDBUDGET_MAX_AIR_US_ROLE  UINT32_MAX  /**< sim/test: airtime uncapped */
+#endif
 
 /* Hour-level airtime cap (independent of the per-minute per-type caps). */
 #define FWDBUDGET_HOUR_WINDOW_MS     3600000u   /**< 1-hour rolling window        */

@@ -72,6 +72,7 @@
 #include "rivr_layer/rivr_sinks.h"
 #include "rivr_layer/rivr_cli.h"
 #include "firmware_core/display/display.h"
+#include "firmware_core/ble/rivr_ble.h"    /* BLE transport (stub when RIVR_FEATURE_BLE=0) */
 
 #define TAG              "MAIN"
 #define TX_DRAIN_LIMIT   2u     /**< Max TX frames sent per main-loop iteration */
@@ -683,6 +684,14 @@ void app_main(void)
 #endif
     }
 
+    /* ── BLE transport init: start NimBLE in 120 s boot-window mode ─────────── *
+     * Advertises as "RIVR-XXXX" immediately after NimBLE host sync (~200 ms).  *
+     * Auto-deactivates when the boot window expires (rivr_ble_tick in loop).   *
+     * No-op when RIVR_FEATURE_BLE=0 (stubs inline in rivr_ble.h).            */
+#if !RIVR_SIM_MODE
+    rivr_ble_init();
+#endif
+
 #if RIVR_SIM_MODE
     /* Push simulated frames AFTER engine is ready so clock state is fully
      * initialised, but BEFORE radio_start_rx (which is skipped in sim mode). */
@@ -746,6 +755,10 @@ void app_main(void)
         /* ─ 3. Periodic diagnostics ─ */
         uint32_t now = tb_millis();
         rivr_fabric_tick(now);
+        /* ─ 3a. BLE activation-window timeout ─ */
+#if !RIVR_SIM_MODE
+        rivr_ble_tick(now);
+#endif
         if (now - last_stats_ms >= STATS_INTERVAL_MS) {
             last_stats_ms = now;
             RIVR_LOGI(TAG, "── stats (loop#%lu, uptime=%lu ms) ──",
