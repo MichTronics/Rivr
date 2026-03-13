@@ -163,6 +163,10 @@ Pages auto-rotate every 5 seconds.
 | `fab_delay` | Frames deferred by Fabric gate |
 | `cls_chat` | Frames dropped by airtime token gate (chat class) |
 | `dc_blk` | Frames blocked by EU868 duty-cycle hard cap |
+| `ble_conn` | Cumulative BLE client connections (0 when `RIVR_FEATURE_BLE=0`) |
+| `ble_rx` | Frames received from BLE client and injected into mesh |
+| `ble_tx` | Frames forwarded to BLE client via TX notify |
+| `ble_err` | BLE stack errors (mbuf alloc fail, dropped writes) |
 
 ### Build & flash
 
@@ -232,6 +236,7 @@ Does the node need to relay traffic?
 | `RIVR_ROUTE_CACHE_SIZE` | role-derived | `RCACHE_SIZE` override; see capacity table above |
 | `RIVR_RETRY_TABLE_SIZE` | role-derived | `RETRY_TABLE_SIZE` override; see capacity table above |
 | `RIVR_FABRIC_REPEATER` | 0 | Enable congestion-aware relay suppression (auto on for Repeater/Gateway) |
+| `RIVR_FEATURE_BLE` | 0 | Enable NimBLE BLE transport bridge (Nordic NUS service, BOOT\_WINDOW/BUTTON/APP\_REQUESTED activation modes); requires `sdkconfig.ble` + `CONFIG_BT_ENABLED=y` |
 | `RIVR_SIM_MODE` | 0 | Software simulation — no SX1262 hardware |
 | `RIVR_RF_FREQ_HZ` | 869480000 | RF centre frequency in Hz |
 | `FEATURE_DISPLAY` | 1 | Enable SSD1306 I²C display task |

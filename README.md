@@ -11,7 +11,7 @@
 
 ---
 
-> **Public beta** — Core runtime, test suite (204 passing), and supported hardware configurations
+> **Public beta** — Core runtime, test suite (295 passing), and supported hardware configurations
 > are stable. Wire protocol and DSL API may change between beta releases.
 > Not yet recommended for unattended production deployments.
 > When filing a bug, always attach a [`@SUPPORTPACK`](#metrics--diagnostics) capture.
@@ -244,7 +244,8 @@ Rivr is a full networking stack, not just a radio wrapper.
 | **Policy engine** | `@PARAMS` updates beacon interval, TX power, relay throttle, and node role at runtime |
 | **Signed `@PARAMS`** | Optional HMAC-SHA-256 PSK authentication; `sig=<64hex>` wire field |
 | **OLED UI** | SSD1306 128×64; 7 auto-rotating pages: overview · RF · routing · duty-cycle · VM · neighbours · Fabric |
-| **63 metric counters** | Emitted as `@MET` JSON; aggregated into `@SUPPORTPACK` for bug reports |
+| **80 metric counters** | Emitted as `@MET` JSON; aggregated into `@SUPPORTPACK` for bug reports |
+| **BLE transport bridge** | Optional NimBLE edge interface (Nordic NUS UUIDs); same Rivr frames over BLE as LoRa; 3 activation modes; `RIVR_FEATURE_BLE=1` |
 | **Simulation mode** | 8-round mesh simulation without radio hardware (`RIVR_SIM_MODE`) |
 
 ---
@@ -311,6 +312,7 @@ See the [rivr-companion repository](https://github.com/MichTronics/rivr-companio
 - ✅ **Application services** — PKT_TELEMETRY (8), PKT_MAILBOX (9), PKT_ALERT (10); structured `@TEL` / `@MAIL` / `@ALERT` JSON log records; 8-entry LRU mailbox store
 - ✅ **Neighbor table** — 16-slot BSS table; EWMA RSSI/SNR; seq-gap loss-rate; `DIRECT` / `STALE` / `BEACON` flags; auto-expiry
 - ✅ **Neighbor-aware next-hop routing** — three-tier decision; composite score weights RSSI+SNR, hop count, age decay, loss rate
+- ✅ **BLE transport bridge** — NimBLE-based edge interface using Nordic NUS UUIDs (6E400001/002/003); same binary Rivr frames over BLE as over LoRa; BOOT_WINDOW (120 s) / BUTTON (5 min) / APP_REQUESTED activation modes; enabled via `RIVR_FEATURE_BLE=1` + `sdkconfig.ble`
 
 ## Roadmap
 
@@ -380,7 +382,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.
 Before opening a PR, run:
 
 ```bash
-make -C tests          # all C suites must pass (PASS: 204  FAIL: 0)
+make -C tests          # all C suites must pass (total 295 checks, 0 failures)
 cargo test -p rivr_core --features std
 cargo clippy -p rivr_core --features std -- -D warnings
 ```

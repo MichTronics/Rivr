@@ -10,7 +10,7 @@ supportpack
 ```
 
 The device prints a `@SUPPORTPACK` JSON block with firmware version, build flags,
-all 27 metric counters, and current radio parameters. Attach this output to any
+all 80 metric counters, and current radio parameters. Attach this output to any
 bug report. See [README.md](../README.md#collecting-a-supportpack) for the full procedure.
 
 ---
@@ -26,6 +26,7 @@ bug report. See [README.md](../README.md#collecting-a-supportpack) for the full 
 | Queue full / messages dropped | [§ Congestion and capacity](#congestion-and-capacity) |
 | Airtime budget exhausted | [§ Duty-cycle limit](#duty-cycle-limit) |
 | Display blank or shows garbage | [§ Display issues](#display-issues) |
+| BLE not connecting / no data over BLE | [§ BLE issues](#ble-issues) |
 | OTA program push not accepted | [§ OTA push failures](#ota-push-failures) |
 | Build / compile errors | [§ Build problems](#build-problems) |
 
@@ -230,6 +231,67 @@ At SF8/BW125: CHAT ~92 ms, BEACON ~70 ms
 2. Reduce non-essential data frames.
 3. Move to SF7 (≈ 50 ms per CHAT frame) to fit more frames in the budget.
 4. Use a second channel (`RIVR_RF_FREQ_HZ`) for a parallel repeater to split load.
+
+---
+
+## BLE Issues
+
+> BLE is only active when `RIVR_FEATURE_BLE=1` is set **and** the `sdkconfig.ble` fragment
+> is included in the build (`CONFIG_BT_ENABLED=y`).  When disabled, `ble_*` metrics
+> stay at zero and the NimBLE stack is never initialised.
+
+### Symptom: Device does not advertise after boot
+
+**Check `rivr_ble_init()` reached:**  
+Look for `I [ble] BLE init` in the boot log.  If absent, either `RIVR_FEATURE_BLE=0`
+or `RIVR_SIM_MODE=1`.
+
+**Check `CONFIG_BT_ENABLED` is set:**  
+Build with `sdkconfig.ble` fragment:  
+```ini
+; platformio.ini
+board_build.cmake_extra_args = -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ble"
+build_flags = -DRIVR_FEATURE_BLE=1
+```
+
+**Check activation window:**  
+BLE is only active during an activation window:
+- `BOOT_WINDOW`: first 120 s after boot.
+- `BUTTON`: 300 s after trigger (`rivr_ble_activate(RIVR_BLE_MODE_BUTTON)`).
+- `APP_REQUESTED`: no timeout; call `rivr_ble_deactivate()` to stop.
+
+If the boot window has expired, the device will have stopped advertising; power-cycle
+or call `rivr_ble_activate()` programmatically.
+
+### Symptom: BLE connects but no frames arrive from node
+
+**Check `ble_tx` rising:**  
+If `ble_tx` in `@MET` is not incrementing after LoRa frames arrive,
+`rivr_ble_service_notify()` is not being called. Verify `rivr_sources.c` wiring:
+check that `RIVR_FEATURE_BLE=1` is in your `build_flags`.
+
+**Check SUBSCRIBE:**  
+The companion app must subscribe to the TX characteristic (6E400003) NOTIFY before
+frames are delivered. Most BLE UART apps do this automatically on connect.
+
+### Symptom: Node receives BLE writes but frames are not injected into mesh
+
+**Check `ble_rx` vs `ble_err`:**
+
+| Metric | Meaning |
+|---|---|
+| `ble_rx` rising | Frames received and pushed to `rf_rx_ringbuf` successfully |
+| `ble_err` rising | Push to `rf_rx_ringbuf` failed — ringbuffer full |
+
+If `ble_err` is rising, the main loop is not draining `rf_rx_ringbuf` fast enough,
+or the buffer is overwhelmed by high LoRa traffic. Reduce BLE write rate.
+
+### Symptom: `ble_err` non-zero
+
+| Common cause | Diagnosis |
+|---|---|
+| `rf_rx_ringbuf` full | `ble_err` increments; reduce BLE TX rate or check main-loop stall (`loop_jitter_ms` high) |
+| NimBLE mbuf pool exhausted | Check `I [ble] notify: mbuf alloc failed` in log; CONFIG_BT_NIMBLE_MSYS1_BLOCK_COUNT too low |
 
 ---
 
