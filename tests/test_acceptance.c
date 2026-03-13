@@ -580,16 +580,26 @@ static void run5_airtime_sched(void)
     uint8_t frame[13u];
     bool    result;
 
-    /* ── 5a: CONTROL always passes even when bucket is empty ───────────── */
-    g_airtime.tokens_us      = 0u;
+    /* ── 5a: BEACON now uses global token bucket (PKTCLASS_BEACON) ──────── */
+    g_airtime.tokens_us      = 1000000u;   /* plenty of tokens */
     g_airtime.last_refill_ms = now;
+    memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
     MAKE_FRAME(frame, PKT_BEACON, 0u, 0u);
     result = airtime_sched_check_consume(frame, 13u, 500000u, now);
-    CHECK(result,  "5a: PKT_BEACON (CONTROL) passes with zero global tokens");
+    CHECK(result,  "5a: PKT_BEACON (BEACON class) passes with sufficient tokens");
+    CHECK(g_rivr_metrics.beacon_class_drop == 0u,
+          "5a: beacon_class_drop not incremented when tokens present");
+    CHECK(g_airtime.tokens_us == 500000u,
+          "5a: BEACON consumes global tokens (1000000 - 500000 = 500000)");
+    /* zero tokens → drop with beacon counter */
+    g_airtime.tokens_us = 0u;
+    memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
+    result = airtime_sched_check_consume(frame, 13u, 500000u, now);
+    CHECK(!result, "5a: PKT_BEACON dropped when bucket empty");
+    CHECK(g_rivr_metrics.beacon_class_drop == 1u,
+          "5a: beacon_class_drop incremented for empty-bucket beacon drop");
     CHECK(g_rivr_metrics.class_drops_ctrl == 0u,
-          "5a: class_drops_ctrl not incremented for CONTROL pass");
-    CHECK(g_airtime.tokens_us == 0u,
-          "5a: CONTROL does not consume global tokens");
+          "5a: class_drops_ctrl not incremented for beacon drop");
 
     /* ── 5b: CHAT passes when bucket has enough tokens ──────────────── */
     g_airtime.tokens_us      = 2000000u;
@@ -686,8 +696,8 @@ static void run5_airtime_sched(void)
     /* ── 5j: classify() returns correct classes ───────────────────── */
     CHECK(rivr_pkt_classify(PKT_CHAT)      == PKTCLASS_CHAT,
           "5j: PKT_CHAT → PKTCLASS_CHAT");
-    CHECK(rivr_pkt_classify(PKT_BEACON)    == PKTCLASS_CONTROL,
-          "5j: PKT_BEACON → PKTCLASS_CONTROL");
+    CHECK(rivr_pkt_classify(PKT_BEACON)    == PKTCLASS_BEACON,
+          "5j: PKT_BEACON → PKTCLASS_BEACON");
     CHECK(rivr_pkt_classify(PKT_ROUTE_REQ) == PKTCLASS_CONTROL,
           "5j: PKT_ROUTE_REQ → PKTCLASS_CONTROL");
     CHECK(rivr_pkt_classify(PKT_ROUTE_RPL) == PKTCLASS_CONTROL,
