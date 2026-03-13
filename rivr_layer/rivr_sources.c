@@ -26,6 +26,10 @@
 #include "../firmware_core/rivr_policy.h"
 #include "../firmware_core/retry_table.h"
 #include "rivr_svc.h"
+/* BLE transport bridge — forward received frames to connected BLE client. *
+ * stubs inline in rivr_ble.h / rivr_ble_service.h when RIVR_FEATURE_BLE=0 */
+#include "../firmware_core/ble/rivr_ble.h"
+#include "../firmware_core/ble/rivr_ble_service.h"
 
 #define TAG "RIVR_SRC"
 
@@ -92,6 +96,10 @@ uint32_t sources_rf_rx_drain(void)
         g_last_rssi_dbm = frame.rssi_dbm;
         g_last_snr_db   = frame.snr_db;
         rivr_fabric_on_rx(now_ms, frame.rssi_dbm, frame.len);
+        /* ── BLE bridge: mirror valid frame to connected BLE client ────────────── *
+         * Runs before dedupe/TTL checks so the phone sees raw mesh traffic.   *
+         * No-op when BLE is inactive, not connected, or RIVR_FEATURE_BLE=0.  */
+        rivr_ble_service_notify(rivr_ble_conn_handle(), frame.data, frame.len);
         /* ── 2. Phase-A strict flood-forward decision ── *
          * Work on a copy so the original frame bytes are preserved for RIVR. */
         rivr_pkt_hdr_t fwd_hdr = pkt_hdr;
