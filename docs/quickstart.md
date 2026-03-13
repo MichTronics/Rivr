@@ -52,7 +52,7 @@ cd tests
 make all
 ```
 
-Expected: `PASS: 204   FAIL: 0`
+Expected: 5 suites, **295 checks total, 0 failures** (acceptance · radio\_recovery · replay · dutycycle · ota/policy).
 
 ---
 
@@ -154,3 +154,4 @@ Override frequency at build time:
 | Integrate into existing firmware | [docs/en/firmware-integration.md](en/firmware-integration.md) |
 | Prepare a release | [docs/releasing.md](releasing.md) |
 | Beta release checklist | [docs/beta-release-checklist.md](beta-release-checklist.md) |
+| Enable BLE companion link | [docs/ARCHITECTURE.md#9-ble-transport-bridge](ARCHITECTURE.md#9-ble-transport-bridge) |

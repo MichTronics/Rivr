@@ -39,7 +39,8 @@ graph TD
 
         DISPLAY["display/\nSSD1306 128×64\n7-page UI (FreeRTOS CPU1)"]
         CLI["rivr_cli.c\nserial UART0 chat shell\n(client builds only)"]
-        METRICS["rivr_metrics.c\n27 counters · @MET JSON"]
+        BLE["firmware_core/ble/\nNimBLE transport bridge\n(RIVR_FEATURE_BLE)"]
+        METRICS["rivr_metrics.c\n80 counters · @MET JSON"]
 
         SX -->|IRQ| ISR
         ISR --> RXBuf
@@ -61,6 +62,8 @@ graph TD
         DRAIN --> SX
         METRICS -.->|printed / exposed| DISPLAY
         CLI --> SOURCES
+        SOURCES -.->|rivr_ble_service_notify| BLE
+        BLE -.->|write → rb_push| RXBuf
     end
 ```
 
@@ -83,12 +86,15 @@ sequenceDiagram
     NVS-->>AppMain: RIVR source or default_program.h
     AppMain->>Embed: rivr_embed_init(prog_src)
     Embed->>Embed: parse → compile → bind sources/sinks
+    AppMain->>AppMain: rivr_ble_init() [#if !RIVR_SIM_MODE]
+    Note right of AppMain: NimBLE host task started;<br/>BOOT_WINDOW active (120 s)
     AppMain->>Tick: loop forever
 
     loop Every ~1 ms
         Tick->>Radio: radio_service_rx()
         Radio-->>Tick: frame(s) → rf_rx_ringbuf
         Tick->>Embed: rivr_tick()
+        Tick->>AppMain: rivr_ble_tick() [timeout check]
         Tick->>Tick: tx_drain_loop()
     end
 ```
@@ -246,3 +252,64 @@ Incoming frame
     ▼
  rf_tx_queue → tx_drain_loop → SX1262 TX
 ```
+
+---
+
+## 9. BLE Transport Bridge
+
+The optional BLE bridge (`firmware_core/ble/`, enabled with `RIVR_FEATURE_BLE=1`) provides a
+local edge interface for the Rivr companion app using the Nordic UART Service (NUS) profile.
+It is **not** a second protocol — the same binary Rivr wire frames used over LoRa are sent and
+received over BLE.
+
+### GATT service layout (Nordic NUS)
+
+| Characteristic | UUID | Direction | Description |
+|---|---|---|---|
+| Service | `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` | — | Nordic UART Service |
+| RX (phone→node) | `6E400002-…` | WRITE / WRITE_NO_RSP | App writes outgoing Rivr frames; injected into `rf_rx_ringbuf` |
+| TX (node→phone) | `6E400003-…` | NOTIFY | Node notifies on every received LoRa frame |
+
+### Activation modes
+
+| Mode | Constant | Lifetime |
+|---|---|---|
+| Boot window | `RIVR_BLE_MODE_BOOT_WINDOW` | 120 s after boot |
+| Button | `RIVR_BLE_MODE_BUTTON` | 300 s after trigger |
+| App-requested | `RIVR_BLE_MODE_APP_REQUESTED` | Until explicitly deactivated |
+
+### BLE data flow
+
+```
+Phone app                          ESP32 (NimBLE host task, CPU0)
+
+          ─── WRITE RX char ──►  rivr_chr_access_cb()
+                                  └─ rb_try_push(&rf_rx_ringbuf, &frame)
+                                     └─ processed by main loop as if LoRa frame
+
+rivr_fabric_on_rx() ─────────────► rivr_ble_service_notify(handle, data, len)
+                                  └─ ble_gatts_notify_custom(TX char)
+                                 ─── NOTIFY TX char ──► companion app
+```
+
+### Thread safety
+
+NimBLE runs in its own FreeRTOS task (CPU0) and is the **producer** to `rf_rx_ringbuf`.
+The main loop is the **consumer**.  This is the same SPSC pattern used for the SX1262 ISR
+path — no mutex is needed.  `ble_gatts_notify_custom()` is internal-lock-safe and may be
+called from the main loop.
+
+### Enabling BLE
+
+1. Add `sdkconfig.ble` to the build: in `platformio.ini`:
+   ```ini
+   board_build.cmake_extra_args = -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ble"
+   ```
+2. Add the feature flag:
+   ```ini
+   build_flags = -DRIVR_FEATURE_BLE=1
+   ```
+3. Flash normally — `rivr_ble_init()` is called automatically at boot.
+
+RAM cost (NimBLE stack): ~4 KB task stack + ~12 KB NimBLE heap (when active).
+When `RIVR_FEATURE_BLE=0` all BLE calls compile to empty inlines; no RAM is allocated.
