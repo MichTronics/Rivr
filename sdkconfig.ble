@@ -1,0 +1,60 @@
+# sdkconfig.ble — NimBLE configuration fragment for Rivr BLE support
+#
+# USAGE
+# ─────
+# Append this file to the sdkconfig.defaults chain.  In your variant's
+# platformio.ini environment add (or create a new BLE-enabled variant):
+#
+#   board_build.cmake_extra_args =
+#       -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ble"
+#
+# And add -DRIVR_FEATURE_BLE=1 to the environment's build_flags.
+#
+# MEMORY BUDGET (approximate, ESP32 with IDF 5.x)
+# ────────────────────────────────────────────────
+#   NimBLE BSS pool       : ~40–55 KB
+#   BLE controller (BLE4) :  ~7 KB  IRAM
+#   Advertising payload   : negligible
+#
+# ── Bluetooth core ───────────────────────────────────────────────────────────
+# Override the default BT_ENABLED=n from sdkconfig.defaults
+CONFIG_BT_ENABLED=y
+
+# Use NimBLE (open-source, lower footprint) instead of legacy Bluedroid
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# Classic Bluetooth not needed — LoRa/BLE node only
+CONFIG_BT_CLASSIC_ENABLED=n
+CONFIG_BT_BLE_ENABLED=y
+
+# ── NimBLE memory optimisation ───────────────────────────────────────────────
+# Single client bridge — no need for more than 1 simultaneous connection
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+
+# Minimal bond store; bonding disabled in initial version
+CONFIG_BT_NIMBLE_MAX_BONDS=1
+
+# 128-byte ATT MTU fits one full Rivr frame (max 255 B) in two fragments.
+# Increase to 256 if you want single-fragment delivery (costs more RAM).
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=128
+
+# ── NimBLE host task stack ───────────────────────────────────────────────────
+# 4 KB is sufficient for simple GATT with no crypto path.
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=4096
+
+# ── Disable unused NimBLE features to reduce code size ───────────────────────
+CONFIG_BT_NIMBLE_MESH=n
+CONFIG_BT_NIMBLE_HCI_EVT_HI_BUF_COUNT=30
+CONFIG_BT_NIMBLE_HCI_EVT_LO_BUF_COUNT=8
+CONFIG_BT_NIMBLE_MSYS1_BLOCK_COUNT=12
+
+# ── Controller ───────────────────────────────────────────────────────────────
+# ESP32 internal BLE 4.2 controller (no BR/EDR)
+CONFIG_BT_CTRL_BLE_MAX_ACT=6
+CONFIG_BT_CTRL_HCI_MODE_VHCI=y
+
+# ── HCI ──────────────────────────────────────────────────────────────────────
+CONFIG_BT_NIMBLE_TRANSPORT_UART=n
+CONFIG_BT_NIMBLE_TRANSPORT_USB=n
+CONFIG_BT_NIMBLE_TRANSPORT_CUSTOM=n

@@ -101,7 +101,12 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"bcn_tx\":%" PRIu32 ","
            "\"bcn_start\":%" PRIu32 ","
            "\"bcn_supp\":%" PRIu32 ","
-           "\"bcn_drop\":%" PRIu32
+           "\"bcn_drop\":%" PRIu32 ","
+           /* BLE transport observability */
+           "\"ble_conn\":%" PRIu32 ","
+           "\"ble_rx\":%" PRIu32 ","
+           "\"ble_tx\":%" PRIu32 ","
+           "\"ble_err\":%" PRIu32
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -191,5 +196,10 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.beacon_tx_total,
         g_rivr_metrics.beacon_startup_tx_total,
         g_rivr_metrics.beacon_suppressed_total,
-        g_rivr_metrics.beacon_class_drop);
+        g_rivr_metrics.beacon_class_drop,
+        /* BLE transport */
+        g_rivr_metrics.ble_connections,
+        g_rivr_metrics.ble_rx_frames,
+        g_rivr_metrics.ble_tx_frames,
+        g_rivr_metrics.ble_errors);
 }

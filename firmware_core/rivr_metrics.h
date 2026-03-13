@@ -160,6 +160,21 @@ typedef struct {
     uint32_t beacon_startup_tx_total; /**< Beacon TXs during startup burst phase           */
     uint32_t beacon_suppressed_total; /**< Beacons suppressed (neighbors or interval gate) */
     uint32_t beacon_class_drop;       /**< Beacons dropped by airtime token gate           */
+
+    /* ── BLE transport observability (firmware_core/ble/) ───────────────────────
+     * All four counters are zero when RIVR_FEATURE_BLE=0 (BLE disabled).
+     * When BLE is enabled they give operators real-time visibility into
+     * the BLE bridge health alongside the LoRa counters.
+     *
+     *   ble_connections  — cumulative BLE client connections accepted
+     *   ble_rx_frames    — frames received from BLE client (injected to mesh)
+     *   ble_tx_frames    — frames forwarded to BLE client via TX-notify
+     *   ble_errors       — BLE errors: mbuf alloc fail, dropped writes, etc.
+     */
+    uint32_t ble_connections;  /**< Cumulative BLE client connects              */
+    uint32_t ble_rx_frames;    /**< Frames received from BLE client (phone→node) */
+    uint32_t ble_tx_frames;    /**< Frames notified to BLE client (node→phone)  */
+    uint32_t ble_errors;       /**< BLE stack errors (mbuf alloc fail, drops)   */
 } rivr_metrics_t;
 
 /**
