@@ -67,22 +67,33 @@ extern "C" {
 #endif
 
 /**
+ * Symbol period in microseconds for the configured SF and BW.
+ *   T_sym_us = 2^SF * 1000 / BW_kHz
+ * Uses RF_SPREADING_FACTOR and RF_BANDWIDTH_KHZ, both of which are set by
+ * the variant platformio.ini (or default to SF=8, BW=125).  Note: BW values
+ * like 62 (62.5 kHz) incur a <1% rounding error, which is acceptable.
+ */
+#define RF_TOA_T_SYM_US  ((1u << RF_SPREADING_FACTOR) * 1000u / RF_BANDWIDTH_KHZ)
+
+/**
  * Time-on-Air in microseconds for a payload of `pl` bytes.
- * Valid for SF8, BW=125kHz, CR=4/8, explicit header, CRC on, LDRO off.
- * NOTE: if you change SF or BW, update this formula accordingly.
- * Formula: SX1262 datasheet §6.1.4
+ * Parameterised by RF_SPREADING_FACTOR and RF_BANDWIDTH_KHZ so it stays
+ * correct when either is changed (e.g. BW=62 kHz for the E22-900 variant).
+ * Formula: SX1262 datasheet §6.1.4, CR=4/8, explicit header, CRC on, LDRO off.
  *
- *   T_sym      = 2^SF / BW = 2^8 / 125000 = 2048 µs
- *   t_preamble = (N_pre + 4.25) × T_sym = 12.25 × 2048 = 25088 µs
- *   n_payload  = ceil((8×PL + 12) / 32) × 8  [symbols, SF8 CR4/8 IH=0]
+ *   T_sym      = 2^SF * 1000 / BW_kHz            (= RF_TOA_T_SYM_US)
+ *   t_preamble = (N_pre + 4.25) × T_sym = 12.25 × T_sym  [49 * T_sym / 4]
+ *   n_payload  = floor((8×PL + 43) / 32) × 8     [symbols, CR4/8]
  *   t_payload  = n_payload × T_sym
  *   ToA        = t_preamble + t_payload
  *
- * Verified sample values:
+ * Verified sample values at SF8 / BW125 kHz:
  *   PL=15 → 107 ms  |  PL=20 → 123 ms  |  PL=30 → 156 ms  |  PL=50 → 238 ms
+ * At SF8 / BW62 kHz all values are approximately 2× the BW125 figures.
  */
 #define RF_TOA_APPROX_US(pl) \
-    (25088u + (((8u * (uint32_t)(pl) + 43u) / 32u) * 16384u))
+    ((49u * (uint32_t)RF_TOA_T_SYM_US / 4u) + \
+     (((8u * (uint32_t)(pl) + 43u) / 32u) * 8u * (uint32_t)RF_TOA_T_SYM_US))
 
 /* ── Frame types ─────────────────────────────────────────────────────────── */
 typedef enum {
