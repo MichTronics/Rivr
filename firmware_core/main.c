@@ -73,6 +73,8 @@
 #include "rivr_layer/rivr_cli.h"
 #include "firmware_core/display/display.h"
 #include "firmware_core/ble/rivr_ble.h"    /* BLE transport (stub when RIVR_FEATURE_BLE=0) */
+#include "firmware_core/rivr_bus/rivr_bus.h"      /* Multi-transport packet bus              */
+#include "firmware_core/iface/rivr_iface_usb.h"   /* USB-UART SLIP bridge (stub when USB=0) */
 
 #define TAG              "MAIN"
 #define TX_DRAIN_LIMIT   2u     /**< Max TX frames sent per main-loop iteration */
@@ -639,6 +641,7 @@ void app_main(void)
     rivr_policy_init();          /* load compiled-in defaults into g_policy_params */
     rivr_fabric_init();
     rivr_embed_init();
+    rivr_bus_init();     /* multi-transport packet bus: zero dup cache, log init */
 
     /* Emit single-line build identity banner (git SHA, env, radio profile). */
     build_info_print_banner();
@@ -690,6 +693,10 @@ void app_main(void)
      * No-op when RIVR_FEATURE_BLE=0 (stubs inline in rivr_ble.h).            */
 #if !RIVR_SIM_MODE
     rivr_ble_init();
+    /* ── USB-UART SLIP bridge init ────────────────────────────────────────────
+     * Installs UART driver for the USB bridge (default: UART1, GPIO16/17).    *
+     * No-op when RIVR_FEATURE_USB_BRIDGE=0 (inline stub in rivr_iface_usb.h). */
+    rivr_iface_usb_init();
 #endif
 
 #if RIVR_SIM_MODE
@@ -758,6 +765,8 @@ void app_main(void)
         /* ─ 3a. BLE activation-window timeout ─ */
 #if !RIVR_SIM_MODE
         rivr_ble_tick(now);
+        /* ─ 3b. USB-UART SLIP bridge RX drain ─ */
+        rivr_iface_usb_tick();  /* no-op when RIVR_FEATURE_USB_BRIDGE=0 */
 #endif
         if (now - last_stats_ms >= STATS_INTERVAL_MS) {
             last_stats_ms = now;

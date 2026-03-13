@@ -130,6 +130,8 @@ static int rivr_chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
         frame.snr_db     = 0;
         frame.rx_mono_ms = tb_millis();
         frame.from_id    = 0u;     /* 0 = local/BLE origin; not a relay  */
+        frame.iface      = 1u;     /* RIVR_IFACE_BLE — identifies transport
+                                    * to the bus for dispatch + dup cache  */
 
         /* Push into the shared SPSC receive ring buffer.
          * Producer = this function (NimBLE task).

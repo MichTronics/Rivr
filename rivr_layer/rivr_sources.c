@@ -26,10 +26,10 @@
 #include "../firmware_core/rivr_policy.h"
 #include "../firmware_core/retry_table.h"
 #include "rivr_svc.h"
-/* BLE transport bridge — forward received frames to connected BLE client. *
- * stubs inline in rivr_ble.h / rivr_ble_service.h when RIVR_FEATURE_BLE=0 */
-#include "../firmware_core/ble/rivr_ble.h"
-#include "../firmware_core/ble/rivr_ble_service.h"
+/* Multi-transport packet bus — registers every valid frame, dispatches mirrors
+ * to BLE/USB, and detects cross-transport duplicates before routing sees them. */
+#include "../firmware_core/rivr_bus/rivr_bus.h"
+#include "../firmware_core/rivr_bus/rivr_bus_types.h"
 
 #define TAG "RIVR_SRC"
 
@@ -96,10 +96,26 @@ uint32_t sources_rf_rx_drain(void)
         g_last_rssi_dbm = frame.rssi_dbm;
         g_last_snr_db   = frame.snr_db;
         rivr_fabric_on_rx(now_ms, frame.rssi_dbm, frame.len);
-        /* ── BLE bridge: mirror valid frame to connected BLE client ────────────── *
-         * Runs before dedupe/TTL checks so the phone sees raw mesh traffic.   *
-         * No-op when BLE is inactive, not connected, or RIVR_FEATURE_BLE=0.  */
-        rivr_ble_service_notify(rivr_ble_conn_handle(), frame.data, frame.len);
+        /* ── Packet bus: cross-iface dup check + BLE/USB mirror dispatch ───────── *
+         * rivr_bus_receive() updates per-iface RX counters, checks the bus-level  *
+         * duplicate cache (catches same frame arriving on two transports), and     *
+         * fans out app-relevant frames to BLE/USB clients.                        *
+         * Returns false only for cross-transport duplicates (bus dup cache hit).   *
+         * Normal LoRa relay dedup is still handled below by routing_flood_forward.*
+         * The iface field in rf_rx_frame_t tells the bus which transport to       *
+         * exclude from echo-back: 0=LORA (default), 1=BLE, 2=USB.               */
+        {
+            rivr_rx_meta_t _bus_meta = {
+                .iface        = (rivr_iface_t)frame.iface,
+                .rssi         = (int8_t)frame.rssi_dbm,
+                .snr          = frame.snr_db,
+                .timestamp_ms = frame.rx_mono_ms,
+                .flags        = 0u,
+            };
+            if (!rivr_bus_receive(frame.data, frame.len, &_bus_meta)) {
+                continue;  /* cross-transport dup — skip routing pipeline */
+            }
+        }
         /* ── 2. Phase-A strict flood-forward decision ── *
          * Work on a copy so the original frame bytes are preserved for RIVR. */
         rivr_pkt_hdr_t fwd_hdr = pkt_hdr;

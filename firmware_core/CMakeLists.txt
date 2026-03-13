@@ -57,6 +57,14 @@ idf_component_register(
         # BLE transport (self-guards via #if RIVR_FEATURE_BLE; safe when BLE=0)
         "ble/rivr_ble.c"
         "ble/rivr_ble_service.c"
+        # Multi-transport packet bus
+        "rivr_bus/rivr_bus.c"
+        "rivr_bus/rivr_dup_cache.c"
+        "rivr_bus/rivr_dispatch.c"
+        # Transport interface adapters
+        "iface/rivr_iface_lora.c"
+        "iface/rivr_iface_ble.c"
+        "iface/rivr_iface_usb.c"
 
     INCLUDE_DIRS
         ".."    # project root – enables #include "firmware_core/xxx.h"

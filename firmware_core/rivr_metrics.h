@@ -175,6 +175,28 @@ typedef struct {
     uint32_t ble_rx_frames;    /**< Frames received from BLE client (phone→node) */
     uint32_t ble_tx_frames;    /**< Frames notified to BLE client (node→phone)  */
     uint32_t ble_errors;       /**< BLE stack errors (mbuf alloc fail, drops)   */
+
+    /* ── Packet bus metrics (firmware_core/rivr_bus/) ────────────────────────
+     * bus_rx_total       — frames accepted by rivr_bus_receive() (all ifaces)
+     * bus_drop_invalid   — frames rejected: length or decode validation fail
+     * bus_drop_dup       — frames dropped: cross-transport duplicate cache hit
+     * bus_forward_lora   — frames dispatched to LoRa TX queue by bus
+     * bus_forward_ble    — frames mirrored to BLE client by bus
+     * bus_forward_usb    — frames mirrored to USB bridge by bus
+     * bus_errors         — dispatch errors (iface send failures)
+     * lora_rx_frames     — LoRa-sourced frames entering the bus
+     * usb_rx_frames      — USB-sourced frames entering the bus
+     *                      (ble_rx_frames above covers BLE-sourced frames)
+     */
+    uint32_t bus_rx_total;     /**< Total frames accepted by bus (all ifaces)  */
+    uint32_t bus_drop_invalid; /**< Frames dropped: validation failure          */
+    uint32_t bus_drop_dup;     /**< Frames dropped: cross-transport dup cache   */
+    uint32_t bus_forward_lora; /**< Frames dispatched to LoRa by bus            */
+    uint32_t bus_forward_ble;  /**< Frames mirrored to BLE by bus               */
+    uint32_t bus_forward_usb;  /**< Frames mirrored to USB by bus               */
+    uint32_t bus_errors;       /**< Bus dispatch errors                         */
+    uint32_t lora_rx_frames;   /**< LoRa-sourced frames entering bus            */
+    uint32_t usb_rx_frames;    /**< USB-sourced frames entering bus             */
 } rivr_metrics_t;
 
 /**
