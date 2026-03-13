@@ -492,16 +492,23 @@ uint32_t routing_forward_delay_ms(uint32_t src_id, uint16_t pkt_id, uint8_t pkt_
 /**
  * @brief Rough Time-on-Air estimate in microseconds (no radio_sx1262.h dependency).
  *
- * Uses the same approximation as RF_TOA_APPROX_US: SF8, BW125kHz, CR4/8.
+ * Parameterised by RF_SPREADING_FACTOR and RF_BANDWIDTH_KHZ to match
+ * RF_TOA_APPROX_US across all variants (e.g. BW=62 kHz for the E22-900).
  * Used by the forward budget without pulling in the radio driver header.
+ *
+ *   T_sym_us   = 2^SF * 1000 / BW_kHz
+ *   t_preamble = 49 * T_sym_us / 4   (= 12.25 × T_sym)
+ *   n_payload  = floor((8×PL + 43) / 32) × 8   [CR4/8]
+ *   ToA        = t_preamble + n_payload × T_sym_us
  *
  * @param payload_len  Wire-encoded payload length in bytes.
  * @return             Approximate ToA in microseconds.
  */
 static inline uint32_t routing_toa_estimate_us(uint8_t payload_len)
 {
-    return (uint32_t)(2048u + 2048u *
-        (((uint32_t)(payload_len) * 8u + 28u + 32u) / (4u * (8u - 2u))));
+    const uint32_t t_sym = (1u << RF_SPREADING_FACTOR) * 1000u / RF_BANDWIDTH_KHZ;
+    return (49u * t_sym / 4u) +
+           (((8u * (uint32_t)payload_len + 43u) / 32u) * 8u * t_sym);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
