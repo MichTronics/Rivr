@@ -6,10 +6,10 @@ Use this checklist for every tagged release. Complete all items before pushing t
 
 ## 1. Code Quality
 
-- [ ] `make -C tests` passes — all suites green (acceptance + recovery + replay)
+- [ ] `make -C tests` passes — all suites green (acceptance + recovery + replay + beacon)
   ```bash
   make -C tests
-  # Expected: PASS: 204  FAIL: 0
+  # Expected: acceptance PASS: 207  FAIL: 0; beacon 26 passed, 0 failed
   ```
 - [ ] No new `-Wall -Wextra` warnings introduced
   ```bash
