@@ -5,8 +5,10 @@
  */
 
 #include "rivr_policy.h"
+#include "protocol.h"                         /* PKT_CHAT, PKT_DATA, et al.         */
 #include "hal/feature_flags.h"               /* RIVR_FEATURE_SIGNED_PARAMS et al.  */
 #include "rivr_programs/default_program.h"   /* RIVR_PARAM_* compiled-in defaults */
+#include "beacon_sched.h"                     /* BEACON_POLL_MS                     */
 #include "rivr_log.h"
 #include "timebase.h"                         /* tb_millis() */
 #include "crypto/hmac_sha256.h"               /* rivr_hmac_sha256()                */
@@ -52,24 +54,27 @@ static void s_psk_init(void)
 void rivr_policy_init(void)
 {
     g_policy_params.beacon_interval_ms = RIVR_PARAM_BEACON_INTERVAL_MS;
+    g_policy_params.beacon_jitter_ms   = RIVR_PARAM_BEACON_JITTER_MS;
     g_policy_params.chat_throttle_ms   = RIVR_PARAM_CHAT_THROTTLE_MS;
     g_policy_params.data_throttle_ms   = RIVR_PARAM_DATA_THROTTLE_MS;
     g_policy_params.duty_percent       = RIVR_PARAM_DUTY_PERCENT;
     g_policy_params.role               = (uint8_t)RIVR_NODE_ROLE_CLIENT;
     /* Zero all metrics counters on (re)init. */
-    s_policy_metrics.params_update_count       = 0u;
+    s_policy_metrics.params_update_count          = 0u;
     s_policy_metrics.last_params_update_uptime_ms = 0u;
-    s_policy_metrics.policy_rebuild_count      = 0u;
-    s_policy_metrics.policy_reload_count       = 0u;
-    s_policy_metrics.duty_blocked_count        = 0u;
-    s_policy_metrics.origination_drop_count    = 0u;
-    s_policy_metrics.params_sig_ok_count       = 0u;
-    s_policy_metrics.params_sig_fail_count     = 0u;
+    s_policy_metrics.policy_rebuild_count         = 0u;
+    s_policy_metrics.policy_reload_count          = 0u;
+    s_policy_metrics.duty_blocked_count           = 0u;
+    s_policy_metrics.origination_drop_count       = 0u;
+    s_policy_metrics.params_sig_ok_count          = 0u;
+    s_policy_metrics.params_sig_fail_count        = 0u;
+    s_policy_metrics.beacon_config_rejected_total = 0u;
     s_last_chat_orig_ms = 0u;
     s_last_data_orig_ms = 0u;
     s_psk_init();   /* decode RIVR_PARAMS_PSK_HEX once */
-    RIVR_LOGI(TAG, "policy init: beacon=%lums chat=%lums data=%lums duty=%u%%",
+    RIVR_LOGI(TAG, "policy init: beacon=%lums jitter=%lums chat=%lums data=%lums duty=%u%%",
               (unsigned long)g_policy_params.beacon_interval_ms,
+              (unsigned long)g_policy_params.beacon_jitter_ms,
               (unsigned long)g_policy_params.chat_throttle_ms,
               (unsigned long)g_policy_params.data_throttle_ms,
               (unsigned)g_policy_params.duty_percent);
@@ -79,13 +84,37 @@ void rivr_policy_set_param(uint8_t param_id, uint32_t value)
 {
     switch ((rivr_param_id_t)param_id) {
         case RIVR_PARAM_ID_BEACON_INTERVAL:
-            if (value < 1000u) {
-                RIVR_LOGW(TAG, "beacon_interval_ms=%lu too small (min 1000), ignored",
-                          (unsigned long)value);
+            /* Hard minimum: 60 000 ms (1 minute).
+             * Values below this create unsustainable beacon rates in dense
+             * EU868 networks and are REJECTED; the previous valid value is
+             * preserved.  beacon_config_rejected_total is incremented so
+             * operators can detect misconfiguration via @POLICY output. */
+            if (value < 60000u) {
+                s_policy_metrics.beacon_config_rejected_total++;
+                RIVR_LOGW(TAG,
+                          "beacon_interval_ms=%lu rejected: below hard minimum 60000 ms"
+                          " (EU868 safety floor); previous value %lu ms kept",
+                          (unsigned long)value,
+                          (unsigned long)g_policy_params.beacon_interval_ms);
                 return;
             }
             g_policy_params.beacon_interval_ms = value;
             RIVR_LOGI(TAG, "param update: beacon_interval_ms=%lu", (unsigned long)value);
+            s_policy_metrics.params_update_count++;
+            s_policy_metrics.last_params_update_uptime_ms = tb_millis();
+            break;
+
+        case RIVR_PARAM_ID_BEACON_JITTER:
+            /* Max 600 000 ms (10 min) — jitter larger than the minimum
+             * interval makes no practical sense and is rejected. */
+            if (value > 600000u) {
+                RIVR_LOGW(TAG,
+                          "beacon_jitter_ms=%lu too large (max 600000), ignored",
+                          (unsigned long)value);
+                return;
+            }
+            g_policy_params.beacon_jitter_ms = value;
+            RIVR_LOGI(TAG, "param update: beacon_jitter_ms=%lu", (unsigned long)value);
             s_policy_metrics.params_update_count++;
             s_policy_metrics.last_params_update_uptime_ms = tb_millis();
             break;
@@ -343,7 +372,7 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
         "  |> throttle.ms(%lu);\n"
         "\n"
         "emit { io.lora.beacon(beacon_tick); }\n",
-        (unsigned long)g_policy_params.beacon_interval_ms,
+        (unsigned long)BEACON_POLL_MS,   /* always 60 000 ms poll; C gate controls TX rate */
         (unsigned)g_policy_params.duty_percent,
         (unsigned long)eff_chat,
         (unsigned long)eff_data);
@@ -395,6 +424,7 @@ void rivr_policy_print(void)
 {
     printf("@POLICY {"
            "\"beacon\":%lu,"
+           "\"jitter\":%lu,"
            "\"chat\":%lu,"
            "\"data\":%lu,"
            "\"duty\":%u,"
@@ -406,9 +436,11 @@ void rivr_policy_print(void)
            "\"duty_blocked\":%lu,"
            "\"orig_drops\":%lu,"
            "\"sig_ok\":%lu,"
-           "\"sig_fail\":%lu"
+           "\"sig_fail\":%lu,"
+           "\"bcn_rejected\":%lu"
            "}\r\n",
            (unsigned long)g_policy_params.beacon_interval_ms,
+           (unsigned long)g_policy_params.beacon_jitter_ms,
            (unsigned long)g_policy_params.chat_throttle_ms,
            (unsigned long)g_policy_params.data_throttle_ms,
            (unsigned)g_policy_params.duty_percent,
@@ -420,7 +452,8 @@ void rivr_policy_print(void)
            (unsigned long)s_policy_metrics.duty_blocked_count,
            (unsigned long)s_policy_metrics.origination_drop_count,
            (unsigned long)s_policy_metrics.params_sig_ok_count,
-           (unsigned long)s_policy_metrics.params_sig_fail_count);
+           (unsigned long)s_policy_metrics.params_sig_fail_count,
+           (unsigned long)s_policy_metrics.beacon_config_rejected_total);
     fflush(stdout);
 }
 
@@ -437,49 +470,66 @@ void rivr_policy_selftest(void)
     /* Valid beacon interval → counter increments. */
     rivr_policy_set_param(RIVR_PARAM_ID_BEACON_INTERVAL, 60000u);
     assert(m->params_update_count == 1u);
+    assert(m->beacon_config_rejected_total == 0u);
 
-    /* Invalid beacon interval (below minimum) → counter must NOT increment. */
+    /* Invalid beacon interval: below hard minimum 60 000 ms → must NOT increment,
+     * but beacon_config_rejected_total MUST increment. */
+    rivr_policy_set_param(RIVR_PARAM_ID_BEACON_INTERVAL, 59999u);
+    assert(m->params_update_count == 1u);
+    assert(m->beacon_config_rejected_total == 1u);
     rivr_policy_set_param(RIVR_PARAM_ID_BEACON_INTERVAL, 500u);
     assert(m->params_update_count == 1u);
+    assert(m->beacon_config_rejected_total == 2u);
+
+    /* Valid jitter param (0 → no jitter) → increments. */
+    rivr_policy_set_param(RIVR_PARAM_ID_BEACON_JITTER, 0u);
+    assert(m->params_update_count == 2u);
+    /* Invalid jitter (> 600 000) → no increment. */
+    rivr_policy_set_param(RIVR_PARAM_ID_BEACON_JITTER, 600001u);
+    assert(m->params_update_count == 2u);
+    /* Valid jitter → increments. */
+    rivr_policy_set_param(RIVR_PARAM_ID_BEACON_JITTER, 120000u);
+    assert(m->params_update_count == 3u);
+    assert(g_policy_params.beacon_jitter_ms == 120000u);
 
     /* Valid chat throttle → increments. */
     rivr_policy_set_param(RIVR_PARAM_ID_CHAT_THROTTLE, 500u);
-    assert(m->params_update_count == 2u);
+    assert(m->params_update_count == 4u);
 
     /* Invalid chat throttle (below 100 ms) → no increment. */
     rivr_policy_set_param(RIVR_PARAM_ID_CHAT_THROTTLE, 50u);
-    assert(m->params_update_count == 2u);
+    assert(m->params_update_count == 4u);
 
     /* Valid data throttle → increments. */
     rivr_policy_set_param(RIVR_PARAM_ID_DATA_THROTTLE, 1000u);
-    assert(m->params_update_count == 3u);
+    assert(m->params_update_count == 5u);
 
     /* Valid duty percent → increments. */
     rivr_policy_set_param(RIVR_PARAM_ID_DUTY_PERCENT, 5u);
-    assert(m->params_update_count == 4u);
+    assert(m->params_update_count == 6u);
 
     /* Invalid duty (out of [1..10]) → no increment. */
     rivr_policy_set_param(RIVR_PARAM_ID_DUTY_PERCENT, 11u);
-    assert(m->params_update_count == 4u);
+    assert(m->params_update_count == 6u);
     rivr_policy_set_param(RIVR_PARAM_ID_DUTY_PERCENT, 0u);
-    assert(m->params_update_count == 4u);
+    assert(m->params_update_count == 6u);
 
     /* Unknown param_id → no increment. */
     rivr_policy_set_param(99u, 1000u);
-    assert(m->params_update_count == 4u);
+    assert(m->params_update_count == 6u);
 
     /* ── Role parameter tests ── */
 
     /* Valid role (repeater) → increments. */
     rivr_policy_set_param(RIVR_PARAM_ID_ROLE, (uint32_t)RIVR_NODE_ROLE_REPEATER);
-    assert(m->params_update_count == 5u);
+    assert(m->params_update_count == 7u);
     assert(g_policy_params.role == (uint8_t)RIVR_NODE_ROLE_REPEATER);
 
     /* Invalid role (out of [1..3]) → no increment. */
     rivr_policy_set_param(RIVR_PARAM_ID_ROLE, 99u);
-    assert(m->params_update_count == 5u);
+    assert(m->params_update_count == 7u);
     rivr_policy_set_param(RIVR_PARAM_ID_ROLE, 0u);
-    assert(m->params_update_count == 5u);
+    assert(m->params_update_count == 7u);
 
     /* Role-based program generation: repeater throttle < client throttle */
     {
@@ -591,7 +641,7 @@ void rivr_policy_selftest(void)
         const rivr_policy_metrics_t *sm = rivr_policy_metrics_get();
 
         /* Build a params string, sign it with the compiled-in PSK. */
-        const char *test_content = "@PARAMS beacon=30000 chat=2000";
+        const char *test_content = "@PARAMS beacon=300000 chat=2000";
         uint8_t test_mac[32];
         rivr_hmac_sha256(s_params_psk, sizeof(s_params_psk),
                          (const uint8_t *)test_content, strlen(test_content),
@@ -633,7 +683,7 @@ void rivr_policy_selftest(void)
 #endif
 
         /* Unsigned @PARAMS: accepted or rejected based on ALLOW_UNSIGNED. */
-        const char *unsigned_params = "@PARAMS beacon=60000";
+        const char *unsigned_params = "@PARAMS beacon=600000";
 #if RIVR_FEATURE_SIGNED_PARAMS && !RIVR_FEATURE_ALLOW_UNSIGNED_PARAMS
         assert(rivr_verify_params_sig(unsigned_params,
                                       strlen(unsigned_params)) == false);

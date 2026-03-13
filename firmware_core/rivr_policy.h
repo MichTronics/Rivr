@@ -49,11 +49,12 @@ typedef enum {
  * Updated via rivr_policy_set_param(); read by rivr_policy_build_program().
  */
 typedef struct {
-    uint32_t beacon_interval_ms;   /**< Beacon timer period, ms (min 1000)  */
-    uint32_t chat_throttle_ms;     /**< PKT_CHAT stream throttle window, ms */
-    uint32_t data_throttle_ms;     /**< PKT_DATA stream throttle window, ms */
-    uint8_t  duty_percent;         /**< TX duty-cycle limit 1–10 %          */
-    uint8_t  role;                 /**< Node role (rivr_node_role_t)        */
+    uint32_t beacon_interval_ms;   /**< Min inter-beacon gap, ms (min 60000)      */
+    uint32_t beacon_jitter_ms;     /**< Max random jitter added to interval, ms   */
+    uint32_t chat_throttle_ms;     /**< PKT_CHAT stream throttle window, ms       */
+    uint32_t data_throttle_ms;     /**< PKT_DATA stream throttle window, ms       */
+    uint8_t  duty_percent;         /**< TX duty-cycle limit 1–10 %               */
+    uint8_t  role;                 /**< Node role (rivr_node_role_t)             */
 } rivr_policy_params_t;
 
 /** Param IDs used with rivr_policy_set_param(). */
@@ -62,7 +63,8 @@ typedef enum {
     RIVR_PARAM_ID_CHAT_THROTTLE   = 2,
     RIVR_PARAM_ID_DATA_THROTTLE   = 3,
     RIVR_PARAM_ID_DUTY_PERCENT    = 4,
-    RIVR_PARAM_ID_ROLE            = 5,  /**< Node role (rivr_node_role_t value) */
+    RIVR_PARAM_ID_ROLE            = 5,  /**< Node role (rivr_node_role_t value)              */
+    RIVR_PARAM_ID_BEACON_JITTER   = 6,  /**< Max beacon jitter, ms (0 = no jitter, max 600000) */
 } rivr_param_id_t;
 
 /** Global policy parameter state — read-only outside rivr_policy.c. */
@@ -76,14 +78,15 @@ extern rivr_policy_params_t g_policy_params;
  * Read-only via rivr_policy_metrics_get(); never expose the global directly.
  */
 typedef struct {
-    uint32_t params_update_count;       /**< Successful rivr_policy_set_param() calls      */
-    uint32_t last_params_update_uptime_ms; /**< tb_millis() at last successful param update */
-    uint32_t policy_rebuild_count;      /**< rivr_policy_build_program() successes          */
-    uint32_t policy_reload_count;       /**< Engine hot-reloads triggered by policy change  */
-    uint32_t duty_blocked_count;        /**< Reserved — set to 0 (use g_dc.blocked_count)      */
-    uint32_t origination_drop_count;    /**< Frames dropped by rivr_policy_allow_origination() */
-    uint32_t params_sig_ok_count;       /**< @PARAMS accepted with valid HMAC signature         */
-    uint32_t params_sig_fail_count;     /**< @PARAMS rejected: invalid or missing signature     */
+    uint32_t params_update_count;          /**< Successful rivr_policy_set_param() calls           */
+    uint32_t last_params_update_uptime_ms; /**< tb_millis() at last successful param update         */
+    uint32_t policy_rebuild_count;         /**< rivr_policy_build_program() successes               */
+    uint32_t policy_reload_count;          /**< Engine hot-reloads triggered by policy change       */
+    uint32_t duty_blocked_count;           /**< Reserved — set to 0 (use g_dc.blocked_count)        */
+    uint32_t origination_drop_count;       /**< Frames dropped by rivr_policy_allow_origination()   */
+    uint32_t params_sig_ok_count;          /**< @PARAMS accepted with valid HMAC signature          */
+    uint32_t params_sig_fail_count;        /**< @PARAMS rejected: invalid or missing signature      */
+    uint32_t beacon_config_rejected_total; /**< Beacon interval values rejected (below 60 000 ms)  */
 } rivr_policy_metrics_t;
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
@@ -98,8 +101,10 @@ void rivr_policy_init(void);
 /**
  * Validate and apply a single parameter update to g_policy_params.
  *
- * Bounds enforced (invalid values are silently ignored — no crash):
- *   beacon_interval_ms  >= 1000
+ * Bounds enforced (invalid values are REJECTED with a log warning; the
+ * previous valid value is preserved):
+ *   beacon_interval_ms  >= 60000  (1-minute absolute hard minimum)
+ *   beacon_jitter_ms    in [0..600000]  (0 = no jitter)
  *   chat_throttle_ms    >= 100
  *   data_throttle_ms    >= 100
  *   duty_percent        in [1..10]

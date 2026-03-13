@@ -95,7 +95,14 @@
 #define RIVR_TOA_US_SF8_50B   280000UL   /**< µs per 50-byte packet at SF8   */
 #define RIVR_WINDOW_MS        280000UL   /**< ~4.7-minute sliding window     */
 #define RIVR_DUTY_PCT_STR     "0.10"     /**< 10% duty cycle (as string)     */
-#define RIVR_BEACON_TIMER_MS  30000UL    /**< 30-second periodic beacon interval */
+
+/**
+ * Beacon timer poll granularity — how often beacon_sink_cb is called.
+ * The C-layer beacon scheduler (beacon_sched.c) decides whether to
+ * actually transmit on each invocation based on interval + jitter +
+ * adaptive suppression.  60 s gives 1-minute resolution without overhead.
+ */
+#define RIVR_BEACON_TIMER_MS  60000UL    /**< beacon timer poll interval (NOT TX interval) */
 
 /* ── Runtime-adjustable policy parameters (OTA via PKT_PROG_PUSH @PARAMS) ── *
  *
@@ -105,7 +112,30 @@
  * program string from g_policy_params (used instead of the static macros
  * below when a param-update OTA has been applied).
  * ────────────────────────────────────────────────────────────────────────── */
-#define RIVR_PARAM_BEACON_INTERVAL_MS   30000UL  /**< Beacon period, ms (OTA-adjustable) */
+/**
+ * Role-aware beacon interval defaults.
+ *
+ * Repeaters and gateways beacon somewhat more often (they anchor the mesh)
+ * but still conservatively.  Clients beacon least often (they initiate
+ * conversations; mesh partners will hear them when active).
+ *
+ * These are the compiled-in defaults.  Operators may adjust at runtime
+ * via @PARAMS beacon=<ms> (minimum 60000 ms enforced by rivr_policy.c).
+ *
+ * Requires hal/feature_flags.h to be included before this header so that
+ * RIVR_ROLE_REPEATER / RIVR_ROLE_GATEWAY are already defined.  In test
+ * builds without those flags, defaults to client (600 000 ms).
+ */
+#if (defined(RIVR_ROLE_REPEATER) && RIVR_ROLE_REPEATER) || \
+    (defined(RIVR_ROLE_GATEWAY)  && RIVR_ROLE_GATEWAY)
+#  define RIVR_PARAM_BEACON_INTERVAL_MS   300000UL /**< Repeater/gateway: 5 min  */
+#  define RIVR_PARAM_BEACON_JITTER_MS      60000UL /**< Repeater jitter: ±1 min  */
+#else
+/** Client or unset: conservative 10-minute interval. */
+#  define RIVR_PARAM_BEACON_INTERVAL_MS   600000UL /**< Client: 10 min            */
+#  define RIVR_PARAM_BEACON_JITTER_MS     120000UL /**< Client jitter: ±2 min     */
+#endif
+
 #define RIVR_PARAM_CHAT_THROTTLE_MS      2000UL  /**< PKT_CHAT throttle window, ms       */
 #define RIVR_PARAM_DATA_THROTTLE_MS      2000UL  /**< PKT_DATA throttle window, ms       */
 #define RIVR_PARAM_DUTY_PERCENT             10u  /**< TX duty-cycle limit 1–10 %         */
@@ -118,9 +148,11 @@
 /**
  * Standalone beacon-only program fragment.
  * Can be used on nodes that ONLY announce themselves without relaying.
+ * Timer fires every 60 s (RIVR_BEACON_TIMER_MS); the C-layer beacon
+ * scheduler controls actual TX cadence and suppression.
  */
 #define RIVR_BEACON_PROGRAM                                     \
-    "source beacon_tick = timer(30000);\n"                      \
+    "source beacon_tick = timer(60000);\n"                      \
     "emit { io.lora.beacon(beacon_tick); }\n"
 
 /**
@@ -143,7 +175,7 @@
  */
 #define RIVR_DEFAULT_PROGRAM                                    \
     "source rf_rx @lmp = rf;\n"                                 \
-    "source beacon_tick = timer(30000);\n"                      \
+    "source beacon_tick = timer(60000);\n"                      \
     "\n"                                                        \
     "let chat = rf_rx\n"                                        \
     "  |> filter.pkt_type(1)\n"                                 \
@@ -188,7 +220,7 @@
  * ────────────────────────────────────────────────────────────────────────── */
 #define RIVR_MESH_PROGRAM                                       \
     "source rf_rx @lmp = rf;\n"                                \
-    "source beacon_tick = timer(30000);\n"                     \
+    "source beacon_tick = timer(60000);\n"                     \
     "\n"                                                        \
     "let chat = rf_rx\n"                                       \
     "  |> filter.pkt_type(1)\n"                                \
