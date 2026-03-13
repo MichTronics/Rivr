@@ -161,6 +161,11 @@ channel even before any application traffic is sent.  The beacon scheduler
 A hard minimum of **60 000 ms (1 min)** is enforced in the policy layer;
 values below this are rejected and counted in `beacon_config_rejected_total`.
 
+> **Role-change caveat:** sending `@PARAMS role=2` at runtime updates the
+> node role but does **not** automatically adjust the beacon interval — the
+> previous value (or compile-time default) is preserved.  To get the
+> repeater default interval, also send `@PARAMS beacon=300000`.
+
 ### 2. RIVR timer as poll tick, not TX trigger
 
 The RIVR program sets `source beacon_tick = timer(60000)` — a 60-second *poll
