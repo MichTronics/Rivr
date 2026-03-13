@@ -7,7 +7,7 @@ All items must be ✅ before pushing the tag.
 
 ## 1. Test suite
 
-- [ ] `make -C tests all` passes: `PASS: 204   FAIL: 0`
+- [ ] `make -C tests all` passes — acceptance `PASS: 207   FAIL: 0`, beacon suite `26 passed, 0 failed`, all other suites green
 - [ ] `make -C tests asan` passes (ASan + UBSan — no memory errors or UB)
 - [ ] `cargo test -p rivr_core` passes — all Rust unit tests green
 - [ ] `cargo test -p rivr_host` passes — replay + compiler CLI tests green

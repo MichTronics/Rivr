@@ -374,7 +374,7 @@ static void do_beacon_tx(void)
     int enc = protocol_encode(&hdr, payload, BEACON_PAYLOAD_LEN,
                                req.data, sizeof(req.data));
     if (enc <= 0) {
-        ESP_LOGW(TAG, "beacon: encode failed");
+        RIVR_LOGW(TAG, "beacon: encode failed");
         return;
     }
     req.len    = (uint8_t)enc;
@@ -386,7 +386,7 @@ static void do_beacon_tx(void)
                  (unsigned long)g_my_node_id, g_callsign);
         g_tx_frame_count++;
     } else {
-        ESP_LOGW(TAG, "beacon: tx queue full");
+        RIVR_LOGW(TAG, "beacon: tx queue full");
     }
 }
 

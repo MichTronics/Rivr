@@ -60,7 +60,7 @@ source NAME [@CLOCK] = KIND;
 source rf_rx @lmp  = rf;          // LoRa receive → Lamport clock
 source usb   @mono = usb;         // USB stream   → mono clock
 source sensor      = programmatic; // clock 0 by default
-source beacon_tick = timer(30000); // fires every 30 s, clock 0
+source beacon_tick = timer(60000); // 60-second poll tick — C layer applies interval+jitter gate
 ```
 
 ---
@@ -199,7 +199,7 @@ emit {
 | Sink | C callback | Behaviour |
 |---|---|---|
 | `io.lora.tx` | `rf_tx_sink_cb` | Encode and push to `rf_tx_queue` |
-| `io.lora.beacon` | `beacon_sink_cb` | Build `PKT_BEACON` (callsign + hop_count) and push to `rf_tx_queue` |
+| `io.lora.beacon` | `beacon_sink_cb` | Invoke the beacon scheduler; if approved, build `PKT_BEACON` (callsign + hop_count) and push to `rf_tx_queue`. See [Beacon strategy](../routing.md#beacon-strategy). |
 | `io.usb.print` | `usb_print_sink_cb` | `printf` to UART stdout |
 | `io.debug.dump` | `log_sink_cb` | ESP-IDF `ESP_LOGI` |
 
@@ -220,7 +220,7 @@ emit {
 
 ```rivr
 source rf_rx @lmp = rf;
-source beacon_tick = timer(30000);
+source beacon_tick = timer(60000); // poll tick — C layer gates actual TX
 
 let chat = rf_rx
   |> filter.pkt_type(1)
@@ -231,11 +231,16 @@ emit { io.lora.tx(chat); }
 emit { io.lora.beacon(beacon_tick); }
 ```
 
+> **Note:** `timer(60000)` is a 60-second *poll tick*. The C layer
+> (`beacon_sink_cb`) decides whether to actually transmit based on the
+> configured interval, jitter, and live neighbor count. Tightening the
+> timer value does **not** increase the on-air beacon rate.
+
 ### Multi-type mesh routing (extended mesh program)
 
 ```rivr
 source rf_rx @lmp = rf;
-source beacon_tick = timer(30000);
+source beacon_tick = timer(60000); // poll tick — C layer gates actual TX
 
 let chat = rf_rx
   |> filter.pkt_type(1)
