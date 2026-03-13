@@ -32,7 +32,7 @@
 //   echo "$(cat examples/chat_relay.rivr)" | rivr_push --target <NODE_ID>
 
 source rf_rx       @lmp = rf;           // LoRa receive stream (Lamport clock)
-source beacon_tick      = timer(30000); // 30-second periodic beacon
+source beacon_tick      = timer(60000); // 60-second poll tick — C layer applies interval+jitter gate
 
 // ── CHAT relay ──────────────────────────────────────────────────────────────
 // Rate-limited to 10 % EU868 g3 duty cycle over a 5-minute sliding window.

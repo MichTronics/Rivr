@@ -24,6 +24,7 @@ idf_component_register(
         "timebase.c"
         "dutycycle.c"
         "airtime_sched.c"
+        "beacon_sched.c"
         "protocol.c"
         "routing.c"
         "route_cache.c"

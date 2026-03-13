@@ -96,7 +96,12 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            /* adaptive relay observability */
            "\"relay_skip\":%" PRIu32 ","
            "\"relay_delay\":%" PRIu32 ","
-           "\"relay_density\":%" PRIu8
+           "\"relay_density\":%" PRIu8 ","
+           /* beacon observability */
+           "\"bcn_tx\":%" PRIu32 ","
+           "\"bcn_start\":%" PRIu32 ","
+           "\"bcn_supp\":%" PRIu32 ","
+           "\"bcn_drop\":%" PRIu32
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -181,5 +186,10 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.flood_fwd_cancelled_opport_total
             + g_rivr_metrics.flood_fwd_score_suppressed_total,
         g_rivr_metrics.relay_delay_ms_total,
-        live->relay_density);
+        live->relay_density,
+        /* beacon observability */
+        g_rivr_metrics.beacon_tx_total,
+        g_rivr_metrics.beacon_startup_tx_total,
+        g_rivr_metrics.beacon_suppressed_total,
+        g_rivr_metrics.beacon_class_drop);
 }

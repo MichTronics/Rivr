@@ -29,7 +29,7 @@
 //   Heartbeat:       ~50 ms every 5 min → < 0.01 % daily
 
 source rf_rx       @lmp  = rf;           // LoRa receive stream (Lamport clock)
-source beacon_tick       = timer(30000); // 30-second periodic beacon
+source beacon_tick       = timer(60000); // 60-second poll tick — C layer applies interval+jitter gate
 source heartbeat_tick    = timer(300000);// 5-minute uptime heartbeat
 
 // ── Incoming TELEMETRY relay ─────────────────────────────────────────────────

@@ -24,6 +24,8 @@
 #include "../firmware_core/route_cache.h"
 #include "../firmware_core/routing.h"
 #include "../firmware_core/pending_queue.h"
+#include "../firmware_core/beacon_sched.h"   /* beacon scheduling state machine */
+#include "../firmware_core/rivr_policy.h"    /* rivr_policy_params_get()        */
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
@@ -332,11 +334,18 @@ void usb_print_sink_cb(const rivr_value_t *v, void *user_ctx)
 
 /* ── beacon sink ─────────────────────────────────────────────────────────────── */
 
-void beacon_sink_cb(const rivr_value_t *v, void *user_ctx)
-{
-    (void)v;         /* beacon fires on any event; value is irrelevant */
-    (void)user_ctx;
+/** Beacon scheduling state — BSS, no heap. */
+static beacon_sched_t s_beacon_sched = {0};
 
+/**
+ * Build and queue one PKT_BEACON frame.
+ *
+ * Called by both the boot-time immediate beacon (rivr_sinks_init) and by
+ * beacon_sink_cb() after the scheduler approves a TX.  Callers are
+ * responsible for incrementing beacon_tx_total / beacon_startup_tx_total.
+ */
+static void do_beacon_tx(void)
+{
     /* Build PKT_BEACON payload: callsign[10] + hop_count[1] */
     uint8_t payload[BEACON_PAYLOAD_LEN];
     memset(payload, 0, sizeof(payload));
@@ -381,6 +390,63 @@ void beacon_sink_cb(const rivr_value_t *v, void *user_ctx)
     }
 }
 
+void beacon_sink_cb(const rivr_value_t *v, void *user_ctx)
+{
+    (void)v;         /* beacon fires on any event; value is irrelevant */
+    (void)user_ctx;
+
+    uint32_t now_ms = tb_millis();
+    const rivr_policy_params_t *p = rivr_policy_params_get();
+
+    /* Compute live neighbor count for adaptive suppression.
+     * neighbor_table_link_summary() is an O(16) inline; negligible overhead. */
+    neighbor_link_summary_t lnk = neighbor_table_link_summary(&g_ntable, now_ms);
+
+    /* Mix node ID, sequence counter, and time for per-TX entropy.
+     * node_id contributes a stable per-node bias so different nodes get
+     * different offsets and do not all fire simultaneously after a shared
+     * power cycle.  seq and now_ms add per-call variation. */
+    uint32_t entropy = g_my_node_id ^ (uint32_t)g_ctrl_seq ^ now_ms;
+
+    beacon_sched_result_t result = beacon_sched_tick(
+        &s_beacon_sched,
+        now_ms,
+        p->beacon_interval_ms,
+        p->beacon_jitter_ms,
+        lnk.count,
+        entropy);
+
+    switch (result) {
+        case BEACON_TX_STARTUP:
+            do_beacon_tx();
+            g_rivr_metrics.beacon_tx_total++;
+            g_rivr_metrics.beacon_startup_tx_total++;
+            RIVR_LOGI(TAG, "beacon TX (startup burst #%u of %u)",
+                     (unsigned)s_beacon_sched.startup_count,
+                     (unsigned)BEACON_STARTUP_COUNT);
+            break;
+
+        case BEACON_TX_SCHEDULED:
+            do_beacon_tx();
+            g_rivr_metrics.beacon_tx_total++;
+            RIVR_LOGI(TAG, "beacon TX (keepalive) interval=%lums next_min=%lums",
+                     (unsigned long)p->beacon_interval_ms,
+                     (unsigned long)s_beacon_sched.next_min_tx_ms);
+            break;
+
+        case BEACON_SUPPRESS_NEIGHBORS:
+            g_rivr_metrics.beacon_suppressed_total++;
+            RIVR_LOGD(TAG, "beacon suppressed: live_neighbors=%u >= threshold %u",
+                     (unsigned)lnk.count, (unsigned)BEACON_SUPPRESS_MIN_NEIGHBORS);
+            break;
+
+        case BEACON_SUPPRESS_INTERVAL:
+            g_rivr_metrics.beacon_suppressed_total++;
+            RIVR_LOGD(TAG, "beacon suppressed: interval/jitter not elapsed");
+            break;
+    }
+}
+
 /* ── Init ──────────────────────────────────────────────────────────────────── */
 
 void rivr_sinks_init(void)
@@ -398,4 +464,17 @@ void rivr_sinks_init(void)
     rivr_register_sink("log",            log_sink_cb,     (void *)"log");
 
     RIVR_LOGI("RIVR_SINK", "sinks registered: rf_tx, beacon, usb_print, log");
+    /* ── Immediate startup beacon ─────────────────────────────────────────
+     * Announce presence once at boot before any timer fires.  This seeds     *
+     * the scheduler's last_tx_ms so the first periodic timer check has a     *
+     * valid reference point, and ensures neighboring nodes learn about us    *
+     * even if the long-interval timer has not yet fired.                     */
+    {
+        uint32_t now_ms = tb_millis();
+        beacon_sched_set_initial_tx(&s_beacon_sched, now_ms);
+        do_beacon_tx();
+        g_rivr_metrics.beacon_tx_total++;
+        g_rivr_metrics.beacon_startup_tx_total++;
+        RIVR_LOGI("RIVR_SINK", "beacon TX (boot, immediate)");
+    }
 }

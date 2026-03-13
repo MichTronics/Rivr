@@ -7,8 +7,12 @@
  * provides a SOFTER, class-aware fairness gate that fires first.
  *
  * Packet classes (priority order):
- *   PKTCLASS_CONTROL  – BEACON, ROUTE_REQ, ROUTE_RPL, ACK, PROG_PUSH
+ *   PKTCLASS_CONTROL  – ROUTE_REQ, ROUTE_RPL, ACK, PROG_PUSH
  *                       Always passes: never rate-limited.
+ *   PKTCLASS_BEACON   – PKT_BEACON
+ *                       Uses global token bucket (not free); beacon_class_drop
+ *                       metric is incremented on drops.  ACKs and routing
+ *                       control frames remain CONTROL to stay lightweight.
  *   PKTCLASS_CHAT     – PKT_CHAT (user messages)
  *   PKTCLASS_METRICS  – PKT_DATA (sensor / telemetry payloads)
  *   PKTCLASS_BULK     – all unrecognised types (future)
@@ -70,6 +74,11 @@ typedef enum {
     PKTCLASS_CHAT    = 1,  /**< User messages — rate-limited under congestion */
     PKTCLASS_METRICS = 2,  /**< Sensor / telemetry data                       */
     PKTCLASS_BULK    = 3,  /**< Unrecognised / future bulk application data   */
+    PKTCLASS_BEACON  = 4,  /**< Presence advertisements — uses global token    *
+                            *   bucket (not free); separate drop counter so   *
+                            *   operators can detect airtime-related beacon   *
+                            *   drops.  ACK / ROUTE_REQ / ROUTE_RPL remain   *
+                            *   CONTROL (always pass).                        */
 } rivr_pkt_class_t;
 
 /* ── Per-neighbour sub-bucket ────────────────────────────────────────────── */

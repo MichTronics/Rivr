@@ -30,7 +30,7 @@
 // the PKT_MAILBOX service yet (backward-compatible transition period).
 
 source rf_rx @lmp = rf;            // LoRa receive stream (Lamport clock)
-source beacon_tick = timer(30000); // 30 s beacon so we show up in neighbour lists
+source beacon_tick = timer(60000); // 60-second poll tick — C layer applies interval+jitter gate
 
 // ── PKT_MAILBOX buffer (primary) ─────────────────────────────────────────────
 // New dedicated store-and-forward service: collect up to 8 frames per window,
@@ -102,7 +102,7 @@ emit { io.lora.beacon(beacon_tick); }   // periodic presence advertisement
 //   - Replace budget.toa_us parameters to match your sub-band limits.
 
 source rf_rx @lmp = rf;           // LoRa receive stream (Lamport clock)
-source beacon_tick = timer(30000); // 30 s beacon so we show up in neighbour lists
+source beacon_tick = timer(60000); // 60-second poll tick — C layer applies interval+jitter gate
 
 // ── Message buffer ──────────────────────────────────────────────────────────
 // 1. Filter to only PKT_CHAT frames.

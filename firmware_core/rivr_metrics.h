@@ -143,6 +143,23 @@ typedef struct {
      *  is added to a relay's due_ms.  Lets operators quantify airtime saved
      *  by adaptive relay delay (density + quality tiers combined).          */
     uint32_t relay_delay_ms_total;
+
+    /* ── Beacon observability (beacon_sched.c + beacon_sink_cb) ─────────────
+     * These four counters give operators full visibility into whether the
+     * adaptive beacon strategy is working correctly:
+     *
+     *   beacon_tx_total          — all successful beacon transmissions (TX queued)
+     *   beacon_startup_tx_total  — beacons sent during the startup burst phase
+     *   beacon_suppressed_total  — beacons skipped by suppression (neighbors
+     *                             present or interval/jitter not yet elapsed)
+     *   beacon_class_drop        — beacons dropped by the airtime token gate
+     *                             (PKT_BEACON now in PKTCLASS_BEACON; this
+     *                             should stay near zero with sane intervals)
+     */
+    uint32_t beacon_tx_total;         /**< All beacon TXs (startup + scheduled)           */
+    uint32_t beacon_startup_tx_total; /**< Beacon TXs during startup burst phase           */
+    uint32_t beacon_suppressed_total; /**< Beacons suppressed (neighbors or interval gate) */
+    uint32_t beacon_class_drop;       /**< Beacons dropped by airtime token gate           */
 } rivr_metrics_t;
 
 /**

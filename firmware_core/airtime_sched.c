@@ -29,12 +29,17 @@ void airtime_sched_init(void)
 rivr_pkt_class_t rivr_pkt_classify(uint8_t pkt_type)
 {
     switch (pkt_type) {
-    case PKT_BEACON:     /* 2 – periodic presence advertisement           */
+    /* Critical control traffic: always passes, never budgeted. */
     case PKT_ROUTE_REQ:  /* 3 – route discovery                           */
     case PKT_ROUTE_RPL:  /* 4 – route reply                               */
     case PKT_ACK:        /* 5 – acknowledgement                           */
     case PKT_PROG_PUSH:  /* 7 – OTA program push                          */
         return PKTCLASS_CONTROL;
+
+    /* Beacon: presence advertisement – counted against global budget
+     * so dense deployments can observe and limit beacon airtime.       */
+    case PKT_BEACON:     /* 2 – periodic presence advertisement           */
+        return PKTCLASS_BEACON;
 
     case PKT_CHAT:       /* 1 – user message                              */
         return PKTCLASS_CHAT;
@@ -119,6 +124,7 @@ static void record_class_drop(rivr_pkt_class_t cls)
 {
     switch (cls) {
     case PKTCLASS_CONTROL: g_rivr_metrics.class_drops_ctrl++;    break;
+    case PKTCLASS_BEACON:  g_rivr_metrics.beacon_class_drop++;   break;
     case PKTCLASS_CHAT:    g_rivr_metrics.class_drops_chat++;    break;
     case PKTCLASS_METRICS: g_rivr_metrics.class_drops_metrics++; break;
     case PKTCLASS_BULK:    g_rivr_metrics.class_drops_bulk++;    break;

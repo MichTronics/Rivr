@@ -143,6 +143,57 @@ incremented.  The CLI `metrics` command shows the current duty-cycle usage.
 
 ---
 
+## Beacon strategy
+
+PKT_BEACON frames allow a node to announce its presence to neighbors that have
+not yet received any unicast traffic from it.  In dense EU868 environments
+(many nodes on the same channel) uncoordinated beaconing can saturate the
+channel even before any application traffic is sent.  The beacon scheduler
+(`firmware_core/beacon_sched.c`) reduces this risk through four mechanisms:
+
+### 1. Long default interval
+
+| Role | Default interval | Default jitter |
+|---|---|---|
+| Client (unset) | 600 000 ms (10 min) | ± 120 000 ms (2 min) |
+| Repeater / Gateway | 300 000 ms (5 min) | ± 60 000 ms (1 min) |
+
+A hard minimum of **60 000 ms (1 min)** is enforced in the policy layer;
+values below this are rejected and counted in `beacon_config_rejected_total`.
+
+### 2. RIVR timer as poll tick, not TX trigger
+
+The RIVR program sets `source beacon_tick = timer(60000)` — a 60-second *poll
+tick*.  The C layer (`beacon_sink_cb`) then decides whether to actually
+transmit based on elapsed time and neighbor state.  This means tightening
+the timer value at the RIVR layer **does not** increase beacon rate.
+
+### 3. Startup burst
+
+At boot the node immediately sends one PKT_BEACON so neighbors are learned
+quickly without waiting up to 10 minutes.  Up to `BEACON_STARTUP_COUNT` (2)
+further startup beacons are sent when the timer fires within the first
+`BEACON_STARTUP_WINDOW_MS` (300 000 ms / 5 min) of uptime — bypassing the
+long interval for that brief window only.
+
+### 4. Adaptive neighbor suppression
+
+If `live_neighbor_count ≥ BEACON_SUPPRESS_MIN_NEIGHBORS` (2) the scheduled
+beacon is silently skipped and `beacon_suppressed_total` is incremented.
+A node that can already see two or more live neighbors does not need to beacon
+further to make itself discoverable; keeping quiet reduces channel load in
+the exact scenarios where it matters most (dense deployments).
+
+### Airtime accounting
+
+PKT_BEACON frames are no longer classified as `PKTCLASS_CONTROL` (always
+free).  They now fall under `PKTCLASS_BEACON`, which draws from the global
+airtime token bucket.  On a saturated channel a flood of beacons from
+mis-configured nodes will drain their own budget before touching the budgets
+of application-traffic classes.
+
+---
+
 ## Routing metrics
 
 Key counters from `rivr> metrics` (or `@MET` JSON lines):
@@ -159,6 +210,10 @@ Key counters from `rivr> metrics` (or `@MET` JSON lines):
 | `neighbor_route_used_total` | Next-hop selected via neighbor score |
 | `duty_blocked` | TX blocked by duty-cycle gate |
 | `fabric_drop` | Fabric relay suppression drops |
+| `bcn_tx` | Beacon frames transmitted |
+| `bcn_start` | Beacon startup-burst frames transmitted |
+| `bcn_supp` | Beacon TX suppressed (neighbor or interval) |
+| `bcn_drop` | Beacon frames dropped by airtime gate |
 
 ---
 
