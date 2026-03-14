@@ -301,9 +301,32 @@ called from the main loop.
 
 ### Enabling BLE
 
+**Fastest path — use a pre-built BLE environment:**
+
+```bash
+# Replace <board> with your board variant name, e.g. esp32devkit_e22_900
+pio run -e client_<board>_ble -t upload
+```
+
+All six supported boards have a `client_<board>_ble` environment in their
+`variants/<board>/platformio.ini` that already sets both required options:
+
+| Pre-built environment | Board |
+|---|---|
+| `client_esp32devkit_e22_900_ble` | ESP32 DevKit + E22-900M30S |
+| `client_lilygo_lora32_v21_ble` | LilyGo LoRa32 v2.1 (SX1276) |
+| `client_heltec_lora32_v2_ble` | Heltec WiFi LoRa 32 V2 (SX1276) |
+| `client_heltec_lora32_v3_ble` | Heltec WiFi LoRa 32 V3 (ESP32-S3) |
+| `client_lilygo_t3s3_ble` | LilyGo T3-S3 (ESP32-S3) |
+| `client_lilygo_tbeam_sx1262_ble` | LilyGo T-Beam v1.1 (SX1262) |
+
+**Manual / custom-board setup:**
+
 1. Add `sdkconfig.ble` to the build: in `platformio.ini`:
    ```ini
-   board_build.cmake_extra_args = -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ble"
+   board_build.cmake_extra_args =
+       -DRIVR_CORE_EXPLICIT=1
+       "-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.ble"
    ```
 2. Add the feature flag:
    ```ini

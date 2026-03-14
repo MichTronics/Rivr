@@ -88,8 +88,11 @@ ID    NAME                      KIND / PARAMS
 |---|---|---|
 | `esp32_sim` | Simulation — no SX1262 required | `RIVR_SIM_MODE=1`, `RIVR_SIM_TX_PRINT=1` |
 | `esp32_hw` | Standard hardware node | `FEATURE_DISPLAY=1` |
-| `repeater_esp32devkit_e22_900` | Dedicated relay with Rivr Fabric | `RIVR_FABRIC_REPEATER=1`, `RIVR_BUILD_REPEATER=1`, `FEATURE_DISPLAY=1` |
-| `client_esp32devkit_e22_900` | Chat/data receiver; no relay | `RIVR_ROLE_CLIENT=1`, `FEATURE_DISPLAY=1` |
+| `repeater_<board>` | Dedicated relay with Rivr Fabric | `RIVR_FABRIC_REPEATER=1`, `FEATURE_DISPLAY=1` |
+| `client_<board>` | Chat/data receiver; no relay | `RIVR_ROLE_CLIENT=1`, `FEATURE_DISPLAY=1` |
+| `client_<board>_ble` | Client + NimBLE BLE bridge | `RIVR_ROLE_CLIENT=1`, `RIVR_FEATURE_BLE=1`, `sdkconfig.ble` |
+
+Supported boards: `esp32devkit_e22_900`, `lilygo_lora32_v21`, `heltec_lora32_v2`, `heltec_lora32_v3`, `lilygo_t3s3`, `lilygo_tbeam_sx1262`.
 
 The repeater and client environments include a board-specific variant header via `-include`:  
 `variants/esp32devkit_e22_900_repeater/config.h` and  

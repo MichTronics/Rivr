@@ -159,10 +159,13 @@ For full toolchain setup see [docs/en/build-guide.md](docs/en/build-guide.md).
 
 ```bash
 # Client node (send + receive, no relay)
-~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900     -t upload
+
+# Client + NimBLE BLE bridge (append _ble to any client_* env)
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900_ble -t upload
 
 # Dedicated repeater (Rivr Fabric congestion relay suppression enabled)
-~/.platformio/penv/bin/pio run -e repeater_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio run -e repeater_esp32devkit_e22_900   -t upload
 ```
 
 Monitor at 115200 baud:
