@@ -338,6 +338,7 @@ See the [rivr-companion repository](https://github.com/MichTronics/rivr-companio
 | Firmware integration | [docs/en/firmware-integration.md](docs/en/firmware-integration.md) | [docs/nl/firmware-integratie.md](docs/nl/firmware-integratie.md) |
 | Wire protocol | [docs/en/protocol.md](docs/en/protocol.md) | — |
 | Application services | [docs/en/services.md](docs/en/services.md) | — |
+| **Companion app BLE** | [docs/en/companion-ble-integration.md](docs/en/companion-ble-integration.md) | — |
 | Release process | [docs/releasing.md](docs/releasing.md) | — |
 
 ---
