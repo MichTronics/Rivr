@@ -9,11 +9,12 @@ if none is set (valid only for test/sim builds).
 
 ## Role overview
 
-| Role                  | Flag                  | Typical hardware           | Purpose                          |
-|-----------------------|-----------------------|----------------------------|----------------------------------|
-| **CLIENT**            | `RIVR_ROLE_CLIENT=1`  | ESP32 DevKit + E22 (client env) | End-user node — originates chat/data, limited relay |
-| **REPEATER**          | `RIVR_ROLE_REPEATER=1`| ESP32 DevKit + E22 (repeater env) | Infrastructure node — relay hub |
-| **GATEWAY** *(stub)*  | `RIVR_ROLE_GATEWAY=1` | Any ESP32 board            | Future IP-bridge — stub only     |
+| Role                   | Flag                   | Typical env                         | Purpose                          |
+|------------------------|------------------------|-------------------------------------|---------------------------------|
+| **CLIENT**             | `RIVR_ROLE_CLIENT=1`   | `client_<board>`                    | End-user node — originates chat/data, limited relay |
+| **CLIENT + BLE**       | `RIVR_ROLE_CLIENT=1` + `RIVR_FEATURE_BLE=1` | `client_<board>_ble` | Same as CLIENT plus NimBLE BLE bridge |
+| **REPEATER**           | `RIVR_ROLE_REPEATER=1` | `repeater_<board>`                  | Infrastructure node — relay hub |
+| **GATEWAY** *(stub)*   | `RIVR_ROLE_GATEWAY=1`  | Any ESP32 board                     | Future IP-bridge — stub only     |
 
 ---
 
@@ -33,6 +34,7 @@ when a route is resolved.
 | Congestion fabric (`RIVR_FABRIC_REPEATER`) | ❌ | Fabric scoring is a repeater-only feature |
 | Route cache | ✅ | Used to hold resolved routes |
 | Pending queue | ✅ | Queues outgoing frames until route is resolved |
+| BLE bridge (`RIVR_FEATURE_BLE`) | ✅ in `_ble` envs | NimBLE Nordic NUS GATT bridge; disabled by default |
 
 ### Forward budget
 ```

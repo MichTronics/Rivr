@@ -14,8 +14,9 @@ mode with mid-range defaults; no role-specific init function runs.
 
 | Role | Build flag | PlatformIO env | Relay CHAT/DATA? | Fabric | CLI |
 |---|---|---|---|---|---|
-| **Client** | `RIVR_ROLE_CLIENT=1` | `client_esp32devkit_e22_900` / `client_lilygo_lora32_v21` | ❌ | ❌ | ✅ UART0 |
-| **Repeater** | `RIVR_ROLE_REPEATER=1` | `repeater_esp32devkit_e22_900` / `repeater_lilygo_lora32_v21` | ✅ flood + fabric | ✅ | ❌ |
+| **Client** | `RIVR_ROLE_CLIENT=1` | `client_<board>` | ❌ | ❌ | ✅ UART0 |
+| **Client + BLE** | `RIVR_ROLE_CLIENT=1` + `RIVR_FEATURE_BLE=1` | `client_<board>_ble` | ❌ | ❌ | ✅ UART0 + BLE |
+| **Repeater** | `RIVR_ROLE_REPEATER=1` | `repeater_<board>` | ✅ flood + fabric | ✅ | ❌ |
 | **Gateway** | `RIVR_ROLE_GATEWAY=1` | custom (see below) | ✅ all types | optional | USB bridge |
 
 ---
@@ -117,8 +118,13 @@ Loop guard:
 ### Build & flash
 
 ```bash
-~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900 -t upload
+# Without BLE
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900     -t upload
 ~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900
+
+# With NimBLE BLE bridge (_ble variant available for every supported board)
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900_ble -t upload
+~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900_ble
 ```
 
 ---

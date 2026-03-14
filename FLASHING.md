@@ -54,14 +54,24 @@ cargo +esp build -p rivr_core --target xtensa-esp32s3-espidf --features ffi --re
 
 Pick the command for your board. All environments flash at 921600 baud.
 
+> **BLE client variants** — every board has a `client_<board>_ble` environment that enables
+> the NimBLE BLE bridge in addition to the standard LoRa client firmware. The node advertises
+> as `RIVR-XXXX` and accepts GATT writes using Nordic NUS UUIDs. Replace any `client_*`
+> environment below with its `_ble` counterpart to flash the BLE-enabled build.
+
+---
+
 ### ESP32 DevKit V1 + EBYTE E22-900M30S — **primary supported board**
 
 ```bash
 # Client node (send/receive, serial CLI, no relay)
-pio run -e client_esp32devkit_e22_900  -t upload
+pio run -e client_esp32devkit_e22_900     -t upload
+
+# Client + NimBLE BLE bridge (advertises as "RIVR-XXXX" over BLE)
+pio run -e client_esp32devkit_e22_900_ble -t upload
 
 # Dedicated repeater (relay with congestion scoring, no CLI chat)
-pio run -e repeater_esp32devkit_e22_900 -t upload
+pio run -e repeater_esp32devkit_e22_900   -t upload
 ```
 
 Pin wiring for this board is in `variants/esp32devkit_e22_900/config.h`.
@@ -71,8 +81,9 @@ Pin wiring for this board is in `variants/esp32devkit_e22_900/config.h`.
 ### LilyGo LoRa32 v2.1 — SX1276, built-in OLED
 
 ```bash
-pio run -e client_lilygo_lora32_v21    -t upload
-pio run -e repeater_lilygo_lora32_v21  -t upload
+pio run -e client_lilygo_lora32_v21       -t upload
+pio run -e client_lilygo_lora32_v21_ble   -t upload
+pio run -e repeater_lilygo_lora32_v21     -t upload
 ```
 
 ---
@@ -80,8 +91,9 @@ pio run -e repeater_lilygo_lora32_v21  -t upload
 ### Heltec WiFi LoRa 32 V3 — ESP32-S3, SX1262, OLED
 
 ```bash
-pio run -e client_heltec_lora32_v3     -t upload
-pio run -e repeater_heltec_lora32_v3   -t upload
+pio run -e client_heltec_lora32_v3        -t upload
+pio run -e client_heltec_lora32_v3_ble    -t upload
+pio run -e repeater_heltec_lora32_v3      -t upload
 ```
 
 > Use the `xtensa-esp32s3-espidf` Rust target for this board.
@@ -91,8 +103,9 @@ pio run -e repeater_heltec_lora32_v3   -t upload
 ### Heltec WiFi LoRa 32 V2 — ESP32, SX1276, OLED
 
 ```bash
-pio run -e client_heltec_lora32_v2     -t upload
-pio run -e repeater_heltec_lora32_v2   -t upload
+pio run -e client_heltec_lora32_v2        -t upload
+pio run -e client_heltec_lora32_v2_ble    -t upload
+pio run -e repeater_heltec_lora32_v2      -t upload
 ```
 
 ---
@@ -100,8 +113,9 @@ pio run -e repeater_heltec_lora32_v2   -t upload
 ### LilyGo T-Beam v1.1 (SX1262) — ⚠ Experimental
 
 ```bash
-pio run -e client_lilygo_tbeam_sx1262  -t upload
-pio run -e repeater_lilygo_tbeam_sx1262 -t upload
+pio run -e client_lilygo_tbeam_sx1262     -t upload
+pio run -e client_lilygo_tbeam_sx1262_ble -t upload
+pio run -e repeater_lilygo_tbeam_sx1262   -t upload
 ```
 
 > ⚠ The AXP192 PMIC must be initialised before the radio powers on.
@@ -112,8 +126,9 @@ pio run -e repeater_lilygo_tbeam_sx1262 -t upload
 ### LilyGo T3-S3 — ESP32-S3, SX1262, OLED
 
 ```bash
-pio run -e client_lilygo_t3s3          -t upload
-pio run -e repeater_lilygo_t3s3        -t upload
+pio run -e client_lilygo_t3s3             -t upload
+pio run -e client_lilygo_t3s3_ble         -t upload
+pio run -e repeater_lilygo_t3s3           -t upload
 ```
 
 ---
@@ -183,6 +198,7 @@ All nodes in the same mesh **must** use the same frequency, SF, BW, and CR.
 | No output in serial monitor | Wrong baud rate (must be 115200) or wrong port |
 | Radio silent (no neighbours ever appear) | Frequency/SF/BW mismatch between nodes; check `id` and `status` |
 | Node does not relay | This is a client node — use a `repeater_*` environment for relay |
+| BLE not advertising | Build did not use a `client_*_ble` environment; check `RIVR_FEATURE_BLE` and `sdkconfig.ble` |
 | AXP192 / T-Beam hangs at boot | PMIC init stub required — see T-Beam note above |
 
 > **Bug reports:** always attach the output of `supportpack` from the serial monitor.
