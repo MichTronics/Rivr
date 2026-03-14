@@ -76,8 +76,11 @@ rivrc mijn_programma.rivr
 |---|---|---|
 | `esp32_sim` | Simulatie — geen SX1262 vereist | `RIVR_SIM_MODE=1`, `RIVR_SIM_TX_PRINT=1` |
 | `esp32_hw` | Standaard hardwareknoop | `FEATURE_DISPLAY=1` |
-| `repeater_esp32devkit_e22_900` | Dedicated relay met Rivr Fabric | `RIVR_FABRIC_REPEATER=1`, `RIVR_BUILD_REPEATER=1`, `FEATURE_DISPLAY=1` |
-| `client_esp32devkit_e22_900` | Chat-/data-ontvanger; geen relay | `RIVR_ROLE_CLIENT=1`, `FEATURE_DISPLAY=1` |
+| `repeater_<board>` | Dedicated relay met Rivr Fabric | `RIVR_FABRIC_REPEATER=1`, `FEATURE_DISPLAY=1` |
+| `client_<board>` | Chat-/data-ontvanger; geen relay | `RIVR_ROLE_CLIENT=1`, `FEATURE_DISPLAY=1` |
+| `client_<board>_ble` | Client + NimBLE BLE-brug | `RIVR_ROLE_CLIENT=1`, `RIVR_FEATURE_BLE=1`, `sdkconfig.ble` |
+
+Ondersteunde boards: `esp32devkit_e22_900`, `lilygo_lora32_v21`, `heltec_lora32_v2`, `heltec_lora32_v3`, `lilygo_t3s3`, `lilygo_tbeam_sx1262`.
 
 De repeater- en cliënt-omgevingen bevatten via `-include` een boardspecifieke variantheader:  
 `variants/esp32devkit_e22_900_repeater/config.h` respectievelijk  

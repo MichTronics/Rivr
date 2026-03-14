@@ -62,16 +62,24 @@ Expected: 5 suites, **295 checks total, 0 failures** (acceptance · radio\_recov
 
 ```bash
 # Flash a client node (send + receive, no relay)
-~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900     -t upload
+
+# Flash the same client with NimBLE BLE bridge enabled
+~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900_ble -t upload
 
 # Flash a dedicated repeater node
-~/.platformio/penv/bin/pio run -e repeater_esp32devkit_e22_900 -t upload
+~/.platformio/penv/bin/pio run -e repeater_esp32devkit_e22_900   -t upload
 ```
+
+> **BLE variants** — every board has a `client_<board>_ble` environment.
+> The BLE client advertises as `RIVR-XXXX` and accepts GATT writes (Nordic NUS UUIDs).
+> See [FLASHING.md](../FLASHING.md) for all board BLE commands.
 
 ### LilyGo LoRa32 v2.1 (SX1276 + built-in OLED)
 
 ```bash
-~/.platformio/penv/bin/pio run -e client_lilygo_lora32_v21 -t upload
+~/.platformio/penv/bin/pio run -e client_lilygo_lora32_v21     -t upload
+~/.platformio/penv/bin/pio run -e client_lilygo_lora32_v21_ble -t upload
 ```
 
 ### Open the serial monitor
