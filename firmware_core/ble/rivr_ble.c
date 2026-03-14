@@ -138,6 +138,19 @@ static void rivr_ble_start_adv(void)
 
     int rc;
 
+    /* ── Resolve own address type ──────────────────────────────────────────── *
+     * Let NimBLE infer the correct address type based on what the chip has.  *
+     * Do NOT hardcode BLE_OWN_ADDR_PUBLIC: dev boards with no burned-in       *
+     * IEEE BD_ADDR fall back to a random static address in NVS, and passing  *
+     * BLE_OWN_ADDR_PUBLIC in that case causes ble_gap_adv_start to either    *
+     * fail silently or advertise in a way Android cannot connect to.         */
+    uint8_t own_addr_type;
+    rc = ble_hs_id_infer_auto(0, &own_addr_type);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "ble_hs_id_infer_auto failed: %d — cannot advertise", rc);
+        return;
+    }
+
     /* ── Advertising fields ── */
     struct ble_hs_adv_fields fields;
     memset(&fields, 0, sizeof(fields));
@@ -176,19 +189,20 @@ static void rivr_ble_start_adv(void)
     memset(&adv_params, 0, sizeof(adv_params));
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;   /* undirected connectable */
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;   /* general discoverable   */
-    /* 500–1000 ms advertising interval in units of 0.625 ms */
-    adv_params.itvl_min  = BLE_GAP_ADV_ITVL_MS(500);
-    adv_params.itvl_max  = BLE_GAP_ADV_ITVL_MS(1000);
+    /* 100–200 ms advertising interval during active window (faster connection) */
+    adv_params.itvl_min  = BLE_GAP_ADV_ITVL_MS(100);
+    adv_params.itvl_max  = BLE_GAP_ADV_ITVL_MS(200);
 
     /* ble_gap_adv_start fires rivr_ble_gap_event on connection / timeout */
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
+    rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER,
                            &adv_params, rivr_ble_gap_event, NULL);
     if (rc != 0 && rc != BLE_HS_EALREADY) {
         /* BLE_HS_EALREADY just means we were already advertising — fine. *
          * Any other error warrants a log entry.                          */
-        ESP_LOGE(TAG, "ble_gap_adv_start failed: %d", rc);
+        ESP_LOGE(TAG, "ble_gap_adv_start (addr_type=%d) failed: %d",
+                 (int)own_addr_type, rc);
     } else {
-        RIVR_LOGI(TAG, "BLE advertising started");
+        RIVR_LOGI(TAG, "BLE advertising started (own_addr_type=%d)", (int)own_addr_type);
     }
 }
 
