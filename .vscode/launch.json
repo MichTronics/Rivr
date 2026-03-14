@@ -12,31 +12,31 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug",
-            "executable": "/home/kali/source/Rivr/.pio/build/repeater_lilygo_lora32_v21/firmware.elf",
-            "projectEnvName": "repeater_lilygo_lora32_v21",
-            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
+            "executable": "e:/Projects/Rivr/.pio/build/esp32_sim/firmware.elf",
+            "projectEnvName": "esp32_sim",
+            "toolchainBinDir": "C:/Users/Michel/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "preLaunchTask": {
                 "type": "PlatformIO",
-                "task": "Pre-Debug (repeater_lilygo_lora32_v21)"
+                "task": "Pre-Debug"
             }
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (skip Pre-Debug)",
-            "executable": "/home/kali/source/Rivr/.pio/build/repeater_lilygo_lora32_v21/firmware.elf",
-            "projectEnvName": "repeater_lilygo_lora32_v21",
-            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
+            "executable": "e:/Projects/Rivr/.pio/build/esp32_sim/firmware.elf",
+            "projectEnvName": "esp32_sim",
+            "toolchainBinDir": "C:/Users/Michel/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart"
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (without uploading)",
-            "executable": "/home/kali/source/Rivr/.pio/build/repeater_lilygo_lora32_v21/firmware.elf",
-            "projectEnvName": "repeater_lilygo_lora32_v21",
-            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
+            "executable": "e:/Projects/Rivr/.pio/build/esp32_sim/firmware.elf",
+            "projectEnvName": "esp32_sim",
+            "toolchainBinDir": "C:/Users/Michel/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "loadMode": "manual"
         }
