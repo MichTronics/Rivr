@@ -179,8 +179,10 @@ static void rivr_ble_start_adv(void)
 
     rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
     if (rc != 0) {
-        ESP_LOGE(TAG, "ble_gap_adv_rsp_set_fields failed: %d", rc);
-        return;
+        /* Fail-open: keep advertising name-only if scan response cannot be set.
+         * This preserves discoverability in RF Connect / companion even when
+         * a controller/NimBLE quirk rejects scan-response updates. */
+        RIVR_LOGW(TAG, "ble_gap_adv_rsp_set_fields failed (%d) - continuing name-only", rc);
     }
 
     /* ── Advertising parameters ── */
