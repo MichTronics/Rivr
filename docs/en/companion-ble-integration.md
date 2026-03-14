@@ -69,8 +69,8 @@ the app to filter scan results by UUID instead of name if preferred.
 
 ### Advertising interval
 
-The node advertises at **500–1000 ms** intervals.  Typical scan discovery time is under 2 s
-with active scanning.
+The node advertises at **100–200 ms** intervals during an active window.  Typical scan
+discovery time is under 1 s with active scanning.
 
 ### Recommended scan filter
 
@@ -274,7 +274,7 @@ final sub = _ble.subscribeToCharacteristic(txChar).listen((data) {
 ```
 App                              Rivr node (BLE active)
  │                                   │
- │── scan (filter: RIVR- or UUID) ──►│  (advertising 500–1000 ms)
+ │── scan (filter: RIVR- or UUID) ──►│  (advertising 100–200 ms)
  │                                   │
  │── connect ────────────────────────►│  GAP CONNECT event
  │                                   │  g_metrics.ble_connections++
