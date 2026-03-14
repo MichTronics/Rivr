@@ -156,10 +156,10 @@ Override frequency at build time:
 
 | Goal | Where to look |
 |---|---|
-| Understand the architecture | [docs/en/architecture.md](en/architecture.md) |
+| Enable BLE companion link | [docs/en/companion-ble-integration.md](en/companion-ble-integration.md) |
+| Architecture | [docs/en/architecture.md](en/architecture.md) |
 | Write a custom RIVR pipeline | [docs/en/language-reference.md](en/language-reference.md) |
 | Wire up new hardware | [docs/en/build-guide.md](en/build-guide.md) |
 | Integrate into existing firmware | [docs/en/firmware-integration.md](en/firmware-integration.md) |
 | Prepare a release | [docs/releasing.md](releasing.md) |
 | Beta release checklist | [docs/beta-release-checklist.md](beta-release-checklist.md) |
-| Enable BLE companion link | [docs/ARCHITECTURE.md#9-ble-transport-bridge](ARCHITECTURE.md#9-ble-transport-bridge) |
