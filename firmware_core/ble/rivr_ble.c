@@ -18,7 +18,8 @@
  * ADVERTISING
  * ────────────
  *  Name format: "RIVR-XXXX" where XXXX = last 2 bytes of g_my_node_id.
- *  Payload includes 128-bit Rivr service UUID for BLE scanner identification.
+ *  Primary ADV carries the short discoverable payload (flags + name).
+ *  Scan response carries the 128-bit Rivr service UUID for scanner identification.
  *  Interval: 500–1000 ms (background scan budget; not performance-critical).
  *
  * TIMEOUT / ACTIVATION
@@ -124,8 +125,8 @@ static void rivr_ble_set_device_name(void)
 /**
  * @brief Start BLE advertising (called from ble_hs_on_sync and on reconnect).
  *
- * Sets full ADV payload: device name + complete list of 128-bit service UUIDs.
- * Interval 500–1000 ms (background scanning; optimise for battery if needed).
+ * Keeps the primary ADV packet compact by advertising the local name there and
+ * placing the 128-bit service UUID in the scan response.
  *
  * No-ops if BLE is currently inactive (deactivated by timeout or user).
  */
@@ -151,37 +152,35 @@ static void rivr_ble_start_adv(void)
         return;
     }
 
-    /* ── Advertising fields ── */
-    struct ble_hs_adv_fields fields;
-    memset(&fields, 0, sizeof(fields));
+    /* ── Advertising fields ──
+     * Keep primary ADV within the 31-byte limit: flags + local name only.
+     * Put the 128-bit NUS service UUID into the scan response.
+     */
+    struct ble_hs_adv_fields adv_fields;
+    struct ble_hs_adv_fields rsp_fields;
+    memset(&adv_fields, 0, sizeof(adv_fields));
+    memset(&rsp_fields, 0, sizeof(rsp_fields));
 
-    fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-
-    /* Full device name in advertising packet */
     const char *name = ble_svc_gap_device_name();
-    fields.name          = (uint8_t *)name;
-    fields.name_len      = (uint8_t)strlen(name);
-    fields.name_is_complete = 1;
+    adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+    adv_fields.name = (uint8_t *)name;
+    adv_fields.name_len = (uint8_t)strlen(name);
+    adv_fields.name_is_complete = 1;
 
-    /* Include the Rivr service UUID so scanners can identify the node */
-    fields.uuids128             = &s_adv_svc_uuid;
-    fields.num_uuids128         = 1u;
-    fields.uuids128_is_complete = 1;
-
-    rc = ble_gap_adv_set_fields(&fields);
+    rc = ble_gap_adv_set_fields(&adv_fields);
     if (rc != 0) {
-        /* ADV packet may be too large; fall back to name-only payload */
-        RIVR_LOGW(TAG, "ble_gap_adv_set_fields failed (%d) — retrying name-only", rc);
-        memset(&fields, 0, sizeof(fields));
-        fields.flags             = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-        fields.name              = (uint8_t *)name;
-        fields.name_len          = (uint8_t)strlen(name);
-        fields.name_is_complete  = 1;
-        rc = ble_gap_adv_set_fields(&fields);
-        if (rc != 0) {
-            ESP_LOGE(TAG, "ble_gap_adv_set_fields (fallback) failed: %d", rc);
-            return;
-        }
+        ESP_LOGE(TAG, "ble_gap_adv_set_fields failed: %d", rc);
+        return;
+    }
+
+    rsp_fields.uuids128 = &s_adv_svc_uuid;
+    rsp_fields.num_uuids128 = 1u;
+    rsp_fields.uuids128_is_complete = 1;
+
+    rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "ble_gap_adv_rsp_set_fields failed: %d", rc);
+        return;
     }
 
     /* ── Advertising parameters ── */
