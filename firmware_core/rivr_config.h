@@ -402,6 +402,32 @@
 #  define RIVR_FEATURE_BLE  0
 #endif
 
+/**
+ * @brief 6-digit BLE passkey for MITM-protected bonding.
+ *
+ * 0 (default) = open connection, no pairing required.  Any phone can connect
+ * and exchange frames without entering a PIN.
+ *
+ * Non-zero = require passkey entry at first connection:
+ *   • Firmware uses BLE_SM_IO_CAP_DISP_ONLY (Display Only).
+ *     The passkey is printed to the serial log as "BLE pairing PIN: XXXXXX".
+ *     If RIVR_FEATURE_DISPLAY=1 it is also shown on the OLED.
+ *   • LE Secure Connections (LESC) + MITM are enforced.
+ *   • TX and RX characteristics require an encrypted link — any write or
+ *     subscribe from an unauthenticated client is rejected with
+ *     ATT_ERR_INSUFFICIENT_ENC.
+ *   • The long-term key (LTK) is stored in NVS; subsequent reconnects
+ *     re-encrypt silently without a re-entry prompt.
+ *
+ * Valid range: 1–999999.  Use a 6-digit value for best UX.
+ * Example:  -DRIVR_BLE_PASSKEY=123456  (or set in variant config.h)
+ *
+ * Note: RIVR_FEATURE_BLE must be 1 for this to have any effect.
+ */
+#ifndef RIVR_BLE_PASSKEY
+#  define RIVR_BLE_PASSKEY  0
+#endif
+
 /** @} */
 
 /* ══════════════════════════════════════════════════════════════════════════

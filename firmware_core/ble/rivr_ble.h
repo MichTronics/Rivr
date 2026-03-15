@@ -48,8 +48,23 @@
  *
  * SECURITY
  * ────────
- *  Initial version: no bonding, no encryption.  Pairing support is a
- *  future extension controlled by rivr_config.h.
+ *  Controlled by the RIVR_BLE_PASSKEY build flag in rivr_config.h:
+ *
+ *  RIVR_BLE_PASSKEY == 0 (default)
+ *    Open connection — no pairing required.  Any phone can subscribe to
+ *    the TX characteristic and write to RX without authentication.
+ *
+ *  RIVR_BLE_PASSKEY != 0
+ *    MITM-protected bonding using LE Secure Connections (LESC):
+ *    • IO capability: BLE_SM_IO_CAP_DISP_ONLY — node displays the static
+ *      passkey; the user enters it on their phone when prompted by the OS.
+ *    • TX and RX characteristics require an encrypted link (ATT_ERR_INSUFFICIENT_ENC
+ *      is returned to any unauthenticated client).
+ *    • The LTK is persisted in NVS (CONFIG_BT_NIMBLE_MAX_BONDS ≥ 1); repeat
+ *      connections re-encrypt silently — no re-entry prompt.
+ *    • s_conn_handle is populated only after BLE_GAP_EVENT_ENC_CHANGE with
+ *      status 0; rivr_ble_is_connected() therefore returns false for an
+ *      unencrypted (unpaired) connection, preventing data leakage.
  *
  * FEATURE FLAG
  * ────────────
