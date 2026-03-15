@@ -239,14 +239,16 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg)
              * BLE_GAP_EVENT_ENC_CHANGE fires with authenticated=1.          */
             s_pending_conn_handle = event->connect.conn_handle;
             g_rivr_metrics.ble_connections++;
-            RIVR_LOGI(TAG, "BLE connected (conn_handle=0x%04x) — awaiting GATT-driven auth",
+            RIVR_LOGI(TAG, "BLE connected (conn_handle=0x%04x) — initiating security",
                       (unsigned)s_pending_conn_handle);
-            /* Security is NOT initiated here deliberately.  The companion app
-             * will call setNotifyValue(CCCD), which NimBLE rejects with
-             * ATT_ERR_INSUFFICIENT_AUTHENTICATION because of the AUTHEN flag
-             * on that characteristic.  The app catches that error, calls
-             * android.createBond(), which triggers the pairing dialog at the
-             * right moment — after GATT discovery, not in a race with it.  */
+            /* NimBLE's auto-generated CCCD does not inherit *_AUTHEN flags
+             * from the characteristic value, so subscribing to notifications
+             * is not a reliable way to trigger pairing.  Start security here
+             * so Android gets the pairing / re-encryption flow immediately. */
+            int sec_rc = ble_gap_security_initiate(s_pending_conn_handle);
+            if (sec_rc != 0 && sec_rc != BLE_HS_EALREADY) {
+                RIVR_LOGW(TAG, "BLE security initiate failed (rc=%d)", sec_rc);
+            }
 #else
             s_conn_handle = event->connect.conn_handle;
             g_rivr_metrics.ble_connections++;
