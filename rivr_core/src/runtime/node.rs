@@ -10,10 +10,10 @@
 //! - [`NodeKind::WindowTicks`] uses a [`BoundedVec`] to cap memory.
 
 #[cfg(not(feature = "std"))]
-use alloc::{format, string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
 use super::bounded::BoundedVec;
-use super::event::Event;
+use super::event::{Event, Stamp};
 use super::value::{StrBuf, Value};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -523,10 +523,10 @@ impl Node {
                     // Safety: called from the engine's single-threaded tick context;
                     // EMIT_DISPATCH is set once before engine init and never mutated.
                     unsafe {
-                        crate::ffi::ffi_emit_hook(sink_name, &ev.v, ev.tag.as_deref());
+                        crate::ffi::ffi_emit_hook(sink_name, ev.stamp, &ev.v, ev.tag.as_deref());
                     }
                 }
-                #[cfg(not(feature = "ffi"))]
+                #[cfg(all(not(feature = "ffi"), feature = "std"))]
                 match sink {
                     SinkKind::UsbPrint => println!("[usb] {}", ev.v.display()),
                     SinkKind::LoraBeacon => { /* dispatched via rivr_emit_dispatch in firmware */ }
@@ -541,6 +541,8 @@ impl Node {
                     }
                     SinkKind::DebugDump => eprintln!("[debug] {ev}"),
                 }
+                #[cfg(all(not(feature = "ffi"), not(feature = "std")))]
+                let _ = sink;
                 vec![Event::new(ev.stamp, Value::Unit)]
             }
         }
@@ -563,7 +565,6 @@ impl Node {
                 if items.is_empty() {
                     return vec![];
                 }
-                use super::event::Stamp;
                 vec![Event::new(Stamp::mono(ws), Value::Window(items))]
             }
             NodeKind::WindowMs { inner } | NodeKind::DebounceMs { inner } => inner.flush_inner(),
@@ -673,7 +674,6 @@ impl NodeKind {
                 if items.is_empty() {
                     return vec![];
                 }
-                use super::event::Stamp;
                 vec![Event::new(Stamp::mono(ws), Value::Window(items))]
             }
             NodeKind::DelayTicks { pending, .. } => {

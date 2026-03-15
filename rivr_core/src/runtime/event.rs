@@ -23,7 +23,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::{
     format,
-    string::{String, ToString},
+    string::String,
 };
 
 use super::value::Value;
@@ -149,7 +149,7 @@ impl core::fmt::Display for Event {
         write!(
             f,
             "[{}@clk{}:tick{}{tag_part}]",
-            self.v.display(),
+            self.v,
             self.stamp.clock,
             self.stamp.tick
         )

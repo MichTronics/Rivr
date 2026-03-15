@@ -40,7 +40,7 @@ use core::ffi::{c_char, CStr};
 
 // Under no_std + alloc, String/format must be imported from alloc explicitly.
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
-use alloc::string::String;
+use alloc::{format, string::String};
 
 #[cfg(not(feature = "alloc"))]
 use crate::runtime::fixed::FixedText;
@@ -254,7 +254,7 @@ pub unsafe extern "C" fn rivr_engine_init(program_src: *const c_char) -> RivrRes
     if !warns.is_empty() {
         if let Some(dispatch) = EMIT_DISPATCH {
             for w in &warns {
-                let msg = w.to_string();
+                let msg = format!("{w}");
                 let bytes = msg.as_bytes();
                 let copy_len = bytes.len().min(127); // CFixedStr.buf is [u8; 128]
                                                      // Emit as a synthetic "rivr.warn" sink event (CValTag::Str = 3).
@@ -555,13 +555,13 @@ pub unsafe extern "C" fn rivr_source_metrics_json(buf: *mut u8, cap: usize) -> u
 // ── Internal: called by the Engine whenever an emit fires ────────────────────
 // Invoked from NodeKind::Emit::process() inside the engine tick.
 #[doc(hidden)]
-pub unsafe fn ffi_emit_hook(sink_name: &str, v: &Value, trace_label: Option<&str>) {
+pub unsafe fn ffi_emit_hook(sink_name: &str, stamp: Stamp, v: &Value, trace_label: Option<&str>) {
     let dispatch = match EMIT_DISPATCH {
         Some(f) => f,
         None => {
             // No emit dispatch.  Still check for trace.
             if let (Some(label), Some(trace_fn)) = (trace_label, TRACE_DISPATCH) {
-                fire_trace(trace_fn, label, sink_name, 0, 0, v);
+                fire_trace(trace_fn, label, sink_name, stamp.clock, stamp.tick, v);
             }
             return;
         }
@@ -579,15 +579,11 @@ pub unsafe fn ffi_emit_hook(sink_name: &str, v: &Value, trace_label: Option<&str
 
     // Fire trace callback if a label is attached.
     if let (Some(label), Some(trace_fn)) = (trace_label, TRACE_DISPATCH) {
-        fire_trace(trace_fn, label, sink_name, 0, 0, v);
+        fire_trace(trace_fn, label, sink_name, stamp.clock, stamp.tick, v);
     }
 }
 
 /// Helper: convert a trace label + sink + value to a C callback invocation.
-///
-/// `clock` and `tick` are provided by the caller when stamp info is available;
-/// currently 0 when invoked from `ffi_emit_hook` (stamp is not passed to the
-/// hook to keep the signature minimal; upgrade if needed).
 unsafe fn fire_trace(
     f: TraceDispatchFn,
     label: &str,
@@ -666,53 +662,43 @@ fn value_to_c(v: &Value) -> CValue {
     }
 }
 
-// ── Embedded no_std support ───────────────────────────────────────────────────
-//
-// When building the staticlib for ESP32 (no std, has alloc via this crate):
-//   • We delegate the global allocator to libc malloc/free provided by ESP-IDF.
-//   • We define a minimal panic handler that aborts (ESP-IDF handles the reset).
-//
-// Both are gated on `not(feature = "std") + not(test)` so host builds and
-// unit-test harnesses use the normal Rust allocator / test panic handler.
+#[cfg(all(test, feature = "ffi", feature = "std"))]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
 
-#[cfg(all(not(feature = "std"), not(test)))]
-mod embedded_rt {
-    use core::alloc::{GlobalAlloc, Layout};
-    use core::panic::PanicInfo;
+    static LAST_TRACE: Mutex<Option<(u8, u64)>> = Mutex::new(None);
 
-    /// Thin wrapper that forwards to ESP-IDF's libc malloc / free.
-    struct LibcAlloc;
+    unsafe extern "C" fn emit_noop(_: *const c_char, _: *const CValue) {}
 
-    unsafe impl GlobalAlloc for LibcAlloc {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            extern "C" {
-                fn malloc(size: usize) -> *mut u8;
-            }
-            malloc(layout.size())
-        }
-        unsafe fn dealloc(&self, ptr: *mut u8, _: Layout) {
-            extern "C" {
-                fn free(ptr: *mut u8);
-            }
-            free(ptr)
-        }
-        unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, new_size: usize) -> *mut u8 {
-            extern "C" {
-                fn realloc(ptr: *mut u8, size: usize) -> *mut u8;
-            }
-            realloc(ptr, new_size)
-        }
+    unsafe extern "C" fn trace_capture(
+        _: *const c_char,
+        _: *const c_char,
+        clock: u8,
+        tick: u64,
+        _: *const CValue,
+    ) {
+        *LAST_TRACE.lock().expect("trace mutex poisoned") = Some((clock, tick));
     }
 
-    #[global_allocator]
-    static A: LibcAlloc = LibcAlloc;
+    #[test]
+    fn trace_callback_receives_event_stamp() {
+        *LAST_TRACE.lock().expect("trace mutex poisoned") = None;
 
-    /// Abort on panic.  ESP-IDF's watchdog or the hardfault handler will reset.
-    #[panic_handler]
-    fn panic(_: &PanicInfo) -> ! {
-        extern "C" {
-            fn abort() -> !;
+        unsafe {
+            EMIT_DISPATCH = Some(emit_noop);
+            TRACE_DISPATCH = Some(trace_capture);
+            ffi_emit_hook("io.debug.dump", Stamp::at(3, 99), &Value::Int(7), Some("tag"));
         }
-        unsafe { abort() }
+
+        assert_eq!(
+            *LAST_TRACE.lock().expect("trace mutex poisoned"),
+            Some((3, 99))
+        );
+
+        unsafe {
+            EMIT_DISPATCH = None;
+            TRACE_DISPATCH = None;
+        }
     }
 }

@@ -17,9 +17,10 @@
 
 #[cfg(not(feature = "std"))]
 use alloc::{
+    boxed::Box,
     collections::BTreeMap,
     format,
-    string::{String, ToString},
+    string::String,
     vec::Vec,
 };
 #[cfg(feature = "std")]
@@ -219,7 +220,11 @@ impl Compiler {
                 },
             ),
             PipeOp::BudgetAirtime { window_ticks, duty } => {
-                let budget_per_window = (*window_ticks as f64 * duty).floor() as u64;
+                let budget_per_window = if *duty <= 0.0 {
+                    0
+                } else {
+                    (*window_ticks as f64 * duty) as u64
+                };
                 (
                     format!("budget.airtime({window_ticks},{duty:.3})"),
                     NodeKind::AirtimeBudget {
@@ -236,7 +241,11 @@ impl Compiler {
                 duty,
                 toa_us,
             } => {
-                let budget_us = (*window_ms as f64 * duty * 1_000.0).floor() as u64;
+                let budget_us = if *duty <= 0.0 {
+                    0
+                } else {
+                    (*window_ms as f64 * duty * 1_000.0) as u64
+                };
                 (
                     format!("budget.toa_us({window_ms},{duty:.3},{toa_us}us)"),
                     NodeKind::ToaBudget {

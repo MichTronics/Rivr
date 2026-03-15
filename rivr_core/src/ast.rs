@@ -9,7 +9,7 @@
 //! - `fold.sum`, `fold.last` – stateful aggregation operators
 
 #[cfg(not(feature = "std"))]
-use alloc::{string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 
 // ── Literals ────────────────────────────────────────────────────────────────
 

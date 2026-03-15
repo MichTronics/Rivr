@@ -6,7 +6,7 @@
 //! - `tick_clock(clock, tick)` advances a specific clock domain.
 //! - `run` uses the priority scheduler (ordered by `(clock, tick, seq, node_id)`).
 
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
+#[cfg(not(feature = "std"))]
 use alloc::{collections::BTreeMap, format, string::String, vec, vec::Vec};
 #[cfg(feature = "std")]
 use std::collections::HashMap;
@@ -230,8 +230,16 @@ impl Engine {
         }
         let stamp = Stamp::at(clock_id, tick);
         // Collect sources whose assigned clock matches.
-        let matching: Vec<NodeId> = self.nodes.iter()
-            .filter(|n| matches!(&n.kind, super::node::NodeKind::Source { clock, .. } if *clock == clock_id))
+        let matching: Vec<NodeId> = self
+            .nodes
+            .iter()
+            .filter(|n| {
+                if let super::node::NodeKind::Source { clock, .. } = &n.kind {
+                    *clock == clock_id
+                } else {
+                    false
+                }
+            })
             .map(|n| n.id)
             .collect();
         for id in matching {
@@ -254,7 +262,9 @@ impl Engine {
             };
 
             if self.debug {
+                #[cfg(feature = "std")]
                 let n = &self.nodes[item.node_id];
+                #[cfg(feature = "std")]
                 eprintln!(
                     "[trace] clk{}:tick{:<8} seq={:<6} node {:>2} ({})  ev={}",
                     item.event.stamp.clock,
@@ -272,7 +282,7 @@ impl Engine {
                     log.push(EffectRecord {
                         stamp: item.event.stamp,
                         sink: sink.clone(),
-                        value_str: item.event.v.display(),
+                        value_str: format!("{}", item.event.v),
                     });
                 }
             }
@@ -302,7 +312,7 @@ impl Engine {
                         label: label.clone(),
                         stamp: ev.stamp,
                         node_name: node_name.clone(),
-                        value_str: ev.v.display(),
+                        value_str: format!("{}", ev.v),
                     });
                 }
             }
@@ -403,6 +413,7 @@ impl Engine {
 
     // ── Stats / diagnostics ───────────────────────────────────────────────
 
+    #[cfg(feature = "std")]
     pub fn print_stats(&self) {
         eprintln!("── RIVR Engine Statistics ─────────────────────────");
         eprintln!("  Nodes            : {}", self.nodes.len());
@@ -424,6 +435,7 @@ impl Engine {
         eprintln!("───────────────────────────────────────────────────");
     }
 
+    #[cfg(feature = "std")]
     pub fn print_graph(&self) {
         eprintln!("── RIVR Stream Graph ──────────────────────────────");
         for n in &self.nodes {

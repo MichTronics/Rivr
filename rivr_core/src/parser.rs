@@ -8,7 +8,12 @@
 //! - `map.lower()`, `map.trim()`, `fold.sum()`, `fold.last()`
 
 #[cfg(not(feature = "std"))]
-use alloc::string::{String, ToString};
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use crate::ast::*;
 
@@ -144,6 +149,14 @@ impl<'s> Parser<'s> {
         self.src[start..self.pos]
             .parse::<u64>()
             .map_err(|e| ParseError::new(start, e.to_string()))
+    }
+
+    fn parse_positive_uint(&mut self, what: &str) -> Result<u64> {
+        let value = self.parse_uint()?;
+        if value == 0 {
+            return Err(ParseError::new(self.pos, format!("{what} must be > 0")));
+        }
+        Ok(value)
     }
 
     fn parse_float(&mut self) -> Result<f64> {
@@ -293,19 +306,19 @@ impl<'s> Parser<'s> {
 
             "window.ms" => {
                 self.expect("(")?;
-                let ms = self.parse_uint()?;
+                let ms = self.parse_positive_uint("window.ms duration")?;
                 self.expect(")")?;
                 Ok(PipeOp::WindowMs(ms))
             }
             "throttle.ms" => {
                 self.expect("(")?;
-                let ms = self.parse_uint()?;
+                let ms = self.parse_positive_uint("throttle.ms interval")?;
                 self.expect(")")?;
                 Ok(PipeOp::ThrottleMs(ms))
             }
             "debounce.ms" => {
                 self.expect("(")?;
-                let ms = self.parse_uint()?;
+                let ms = self.parse_positive_uint("debounce.ms delay")?;
                 self.expect(")")?;
                 Ok(PipeOp::DebounceMs(ms))
             }
@@ -313,10 +326,10 @@ impl<'s> Parser<'s> {
             // window.ticks(N)  or  window.ticks(N, CAP, "policy")
             "window.ticks" => {
                 self.expect("(")?;
-                let n = self.parse_uint()?;
+                let n = self.parse_positive_uint("window.ticks duration")?;
                 // Optional: , CAP, "policy"
                 if self.eat(",") {
-                    let cap = self.parse_uint()? as usize;
+                    let cap = self.parse_positive_uint("window.ticks capacity")? as usize;
                     self.expect(",")?;
                     let pol_str = self.parse_string()?;
                     self.expect(")")?;
@@ -343,13 +356,13 @@ impl<'s> Parser<'s> {
             }
             "throttle.ticks" => {
                 self.expect("(")?;
-                let n = self.parse_uint()?;
+                let n = self.parse_positive_uint("throttle.ticks interval")?;
                 self.expect(")")?;
                 Ok(PipeOp::ThrottleTicks(n))
             }
             "delay.ticks" => {
                 self.expect("(")?;
-                let n = self.parse_uint()?;
+                let n = self.parse_positive_uint("delay.ticks delay")?;
                 self.expect(")")?;
                 Ok(PipeOp::DelayTicks(n))
             }
@@ -368,7 +381,7 @@ impl<'s> Parser<'s> {
                 // or budget.airtime(ms=360000, duty=0.10)
                 self.expect("(")?;
                 skip_named!("ms");
-                let window_ticks = self.parse_uint()?;
+                let window_ticks = self.parse_positive_uint("budget.airtime window")?;
                 self.expect(",")?;
                 skip_named!("duty");
                 let duty = self.parse_float()?;
@@ -381,7 +394,7 @@ impl<'s> Parser<'s> {
                 // or budget.toa_us(window_ms=360000, duty=0.10, toa_us=400)
                 self.expect("(")?;
                 skip_named!("window_ms");
-                let window_ms = self.parse_uint()?;
+                let window_ms = self.parse_positive_uint("budget.toa_us window")?;
                 self.expect(",")?;
                 skip_named!("duty");
                 let duty = self.parse_float()?;
@@ -650,5 +663,22 @@ mod tests {
             result.is_err(),
             "unterminated emit block must produce a ParseError"
         );
+    }
+
+    #[test]
+    fn parse_rejects_zero_timed_parameters() {
+        for src in [
+            "source rf = rf; let x = rf |> window.ms(0);",
+            "source rf = rf; let x = rf |> throttle.ms(0);",
+            "source rf = rf; let x = rf |> debounce.ms(0);",
+            "source rf = rf; let x = rf |> window.ticks(0);",
+            "source rf = rf; let x = rf |> window.ticks(1, 0, \"drop_oldest\");",
+            "source rf = rf; let x = rf |> throttle.ticks(0);",
+            "source rf = rf; let x = rf |> delay.ticks(0);",
+            "source rf = rf; let x = rf |> budget.airtime(0, 0.10);",
+            "source rf = rf; let x = rf |> budget.toa_us(0, 0.10, 400);",
+        ] {
+            assert!(parse(src).is_err(), "expected parse error for `{src}`");
+        }
     }
 }
