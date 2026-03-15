@@ -236,11 +236,16 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg)
 #if RIVR_BLE_PASSKEY != 0
             /* With MITM bonding enabled, do NOT expose the connection until
              * encryption is established.  s_conn_handle stays NONE until
-             * BLE_GAP_EVENT_ENC_CHANGE fires successfully.                  */
+             * BLE_GAP_EVENT_ENC_CHANGE fires with authenticated=1.          */
             s_pending_conn_handle = event->connect.conn_handle;
             g_rivr_metrics.ble_connections++;
-            RIVR_LOGI(TAG, "BLE connected (conn_handle=0x%04x) — awaiting encryption",
+            RIVR_LOGI(TAG, "BLE connected (conn_handle=0x%04x) — initiating security",
                       (unsigned)s_pending_conn_handle);
+            /* Peripheral-initiated security: forces Android to do the full
+             * pairing/re-pairing handshake immediately, before any GATT
+             * operations.  Without this, Android may silently re-use a
+             * cached Just-Works LTK and never show a passkey dialog.       */
+            ble_gap_security_initiate(s_pending_conn_handle);
 #else
             s_conn_handle = event->connect.conn_handle;
             g_rivr_metrics.ble_connections++;
@@ -269,12 +274,27 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg)
         break;
 
 #if RIVR_BLE_PASSKEY != 0
-    case BLE_GAP_EVENT_ENC_CHANGE:
+    case BLE_GAP_EVENT_ENC_CHANGE: {
         if (event->enc_change.status == 0) {
-            /* Encryption / bonding succeeded — promote to authenticated handle */
-            s_conn_handle = s_pending_conn_handle;
-            RIVR_LOGI(TAG, "BLE encrypted & authenticated (conn_handle=0x%04x) — ready",
-                      (unsigned)s_conn_handle);
+            /* Verify the bond is MITM-authenticated, not just encrypted.
+             * A stale Just-Works bond re-encryption gives status=0 but
+             * sec_state.authenticated=0 — we must reject it so Android
+             * tears down the bond and starts fresh MITM pairing.          */
+            struct ble_gap_conn_desc desc;
+            int authen = (ble_gap_conn_find(event->enc_change.conn_handle,
+                                            &desc) == 0)
+                         && desc.sec_state.authenticated;
+            if (authen) {
+                s_conn_handle = s_pending_conn_handle;
+                RIVR_LOGI(TAG,
+                          "BLE encrypted & authenticated (conn_handle=0x%04x) — ready",
+                          (unsigned)s_conn_handle);
+            } else {
+                RIVR_LOGW(TAG,
+                          "BLE link encrypted but NOT MITM-authenticated — disconnecting");
+                ble_gap_terminate(s_pending_conn_handle, BLE_ERR_AUTH_FAIL);
+                s_pending_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            }
         } else {
             /* Pairing failed — disconnect and re-advertise */
             RIVR_LOGW(TAG, "BLE encryption failed (status=%d) — disconnecting",
@@ -283,6 +303,7 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg)
             s_pending_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         }
         break;
+    }
 
     case BLE_GAP_EVENT_PASSKEY_ACTION: {
         /* NimBLE is asking us what passkey to display / confirm.           *
