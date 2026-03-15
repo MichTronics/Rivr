@@ -32,16 +32,21 @@ CONFIG_BT_BLE_ENABLED=y
 # Single client bridge — no need for more than 1 simultaneous connection
 CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
 
-# Minimal bond store; bonding disabled in initial version
+# One bond slot — enough for a single phone pairing.
 CONFIG_BT_NIMBLE_MAX_BONDS=1
+
+# Persist LTK and IRK to NVS so bonds survive reboot.
+# Without this the phone reconnects with a stale LTK after every power-cycle
+# and pairing fails until the user forgets the device.
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
 
 # 128-byte ATT MTU fits one full Rivr frame (max 255 B) in two fragments.
 # Increase to 256 if you want single-fragment delivery (costs more RAM).
 CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=128
 
 # ── NimBLE host task stack ───────────────────────────────────────────────────
-# 4 KB is sufficient for simple GATT with no crypto path.
-CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=4096
+# 6 KB: LESC P-256 key exchange needs more stack than plain GAP (was 4 KB).
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144
 
 # ── Disable unused NimBLE features to reduce code size ───────────────────────
 CONFIG_BT_NIMBLE_MESH=n
