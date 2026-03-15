@@ -232,24 +232,6 @@ _Static_assert(sizeof(rivr_met_ble_payload_t) == RIVR_MET_BLE_PAYLOAD_LEN,
                "rivr_met_ble_payload_t size mismatch");
 
 /**
- * @brief Push a compact binary PKT_METRICS frame to the connected BLE client.
- *
- * Builds a rivr_met_ble_payload_t from @p live and current g_rivr_metrics
- * counters, wraps it in a proper Rivr frame (PKT_METRICS, pkt_type=11),
- * and notifies via rivr_ble_service_notify().  No-op when BLE is not
- * connected or RIVR_FEATURE_BLE=0.
- *
- * Call from the main loop alongside rivr_metrics_print().
- *
- * @param live    Live stats snapshot (same one passed to rivr_metrics_print).
- * @param src_id  This node's node ID (g_my_node_id).
- * @param net_id  Network ID (g_net_id).
- * @param seq     Frame sequence counter (increment before passing).
- */
-void rivr_metrics_ble_push(const rivr_live_stats_t *live,
-                            uint32_t src_id, uint16_t net_id, uint16_t seq);
-
-/**
  * ⚠ THREAD-SAFETY WARNING: g_rivr_metrics is NOT protected by any mutex.
  *
  * All writes MUST originate from the main-loop task (CPU0).
@@ -293,3 +275,21 @@ typedef struct {
  * @param live  Pointer to live stats struct, or NULL for all-zero live fields.
  */
 void rivr_metrics_print(const rivr_live_stats_t *live);
+
+/**
+ * @brief Push a compact binary PKT_METRICS frame to the connected BLE client.
+ *
+ * Builds a rivr_met_ble_payload_t from @p live and current g_rivr_metrics
+ * counters, wraps it in a proper Rivr frame (PKT_METRICS, pkt_type=11),
+ * and notifies via rivr_ble_service_notify().  No-op when BLE is not
+ * connected or RIVR_FEATURE_BLE=0.
+ *
+ * Call from the main loop alongside rivr_metrics_print().
+ *
+ * @param live    Live stats snapshot (same one passed to rivr_metrics_print).
+ * @param src_id  This node's node ID (g_my_node_id).
+ * @param net_id  Network ID (g_net_id).
+ * @param seq     Frame sequence counter (increment before passing).
+ */
+void rivr_metrics_ble_push(const rivr_live_stats_t *live,
+                            uint32_t src_id, uint16_t net_id, uint16_t seq);
