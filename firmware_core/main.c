@@ -871,6 +871,12 @@ void app_main(void)
                     .relay_density = _lnk.count,
                 };
                 rivr_metrics_print(&ls);
+                /* Push the same snapshot as a compact binary PKT_METRICS
+                 * frame to any connected BLE client (73-byte frame, fits
+                 * in one 128-byte MTU notification).  No-op if not connected
+                 * or RIVR_FEATURE_BLE=0.                                    */
+                rivr_metrics_ble_push(&ls, g_my_node_id, g_net_id,
+                                      (uint16_t)++g_ctrl_seq);
             }
         }
 

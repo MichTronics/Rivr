@@ -199,6 +199,56 @@ typedef struct {
     uint32_t usb_rx_frames;    /**< USB-sourced frames entering bus             */
 } rivr_metrics_t;
 
+/* ── Compact BLE metrics payload ────────────────────────────────────────────
+ * Sent as the body of a PKT_METRICS frame (pkt_type = 11) pushed directly to
+ * connected BLE clients every 5 s.  Total frame = 23 (header) + 48 (payload)
+ * + 2 (CRC-16) = 73 bytes — fits in one 128-byte-MTU BLE notification.
+ *
+ * All multi-byte fields are little-endian (native on ESP32 / Xtensa).        */
+#define RIVR_MET_BLE_PAYLOAD_LEN  48u
+
+typedef struct __attribute__((packed)) {
+    uint32_t node_id;       /**< [0-3]   g_my_node_id                        */
+    uint8_t  dc_pct;        /**< [4]     duty-cycle used %                    */
+    uint8_t  q_depth;       /**< [5]     TX queue depth                       */
+    uint32_t tx_total;      /**< [6-9]   total frames transmitted since boot  */
+    uint32_t rx_total;      /**< [10-13] total frames received since boot     */
+    uint8_t  route_cache;   /**< [14]    live route-cache entries             */
+    uint8_t  lnk_cnt;       /**< [15]    live neighbor count                  */
+    uint8_t  lnk_best;      /**< [16]    best neighbor link score 0-100       */
+    int8_t   lnk_rssi;      /**< [17]    EWMA RSSI of best neighbor (dBm)    */
+    uint8_t  lnk_loss;      /**< [18]    avg packet-loss % across neighbors  */
+    uint8_t  relay_density; /**< [19]    viable relay neighbor count          */
+    uint32_t relay_skip;    /**< [20-23] opportunistic + score suppr. total  */
+    uint32_t rx_fail;       /**< [24-27] RX frame decode failures             */
+    uint32_t rx_dup;        /**< [28-31] RX dedupe drops                      */
+    uint32_t ble_conn;      /**< [32-35] cumulative BLE connections           */
+    uint32_t ble_rx;        /**< [36-39] frames received from BLE client      */
+    uint32_t ble_tx;        /**< [40-43] frames notified to BLE client        */
+    uint32_t ble_err;       /**< [44-47] BLE errors                           */
+} rivr_met_ble_payload_t;
+
+_Static_assert(sizeof(rivr_met_ble_payload_t) == RIVR_MET_BLE_PAYLOAD_LEN,
+               "rivr_met_ble_payload_t size mismatch");
+
+/**
+ * @brief Push a compact binary PKT_METRICS frame to the connected BLE client.
+ *
+ * Builds a rivr_met_ble_payload_t from @p live and current g_rivr_metrics
+ * counters, wraps it in a proper Rivr frame (PKT_METRICS, pkt_type=11),
+ * and notifies via rivr_ble_service_notify().  No-op when BLE is not
+ * connected or RIVR_FEATURE_BLE=0.
+ *
+ * Call from the main loop alongside rivr_metrics_print().
+ *
+ * @param live    Live stats snapshot (same one passed to rivr_metrics_print).
+ * @param src_id  This node's node ID (g_my_node_id).
+ * @param net_id  Network ID (g_net_id).
+ * @param seq     Frame sequence counter (increment before passing).
+ */
+void rivr_metrics_ble_push(const rivr_live_stats_t *live,
+                            uint32_t src_id, uint16_t net_id, uint16_t seq);
+
 /**
  * ⚠ THREAD-SAFETY WARNING: g_rivr_metrics is NOT protected by any mutex.
  *
