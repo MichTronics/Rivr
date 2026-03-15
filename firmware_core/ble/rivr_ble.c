@@ -290,16 +290,28 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg)
                           "BLE encrypted & authenticated (conn_handle=0x%04x) — ready",
                           (unsigned)s_conn_handle);
             } else {
+                /* Stale Just-Works bond — delete it from NVS so the next
+                 * connection attempt finds no LTK.  Android will then get
+                 * BT_HCI_ERR_PIN_OR_KEY_MISSING, clear its own cached bond,
+                 * and start a fresh MITM pairing with passkey entry.
+                 * Terminate with a normal user-disconnect reason so Android
+                 * does NOT show "Is device ready to pair?" error.          */
                 RIVR_LOGW(TAG,
-                          "BLE link encrypted but NOT MITM-authenticated — disconnecting");
-                ble_gap_terminate(s_pending_conn_handle, BLE_ERR_AUTH_FAIL);
+                          "BLE link not MITM-authenticated — deleting stale bond");
+                struct ble_gap_conn_desc desc2;
+                if (ble_gap_conn_find(event->enc_change.conn_handle,
+                                      &desc2) == 0) {
+                    ble_gap_unpair(&desc2.peer_id_addr);
+                }
+                ble_gap_terminate(s_pending_conn_handle,
+                                  BLE_ERR_REM_USER_CONN_TERM);
                 s_pending_conn_handle = BLE_HS_CONN_HANDLE_NONE;
             }
         } else {
             /* Pairing failed — disconnect and re-advertise */
             RIVR_LOGW(TAG, "BLE encryption failed (status=%d) — disconnecting",
                       event->enc_change.status);
-            ble_gap_terminate(s_pending_conn_handle, BLE_ERR_AUTH_FAIL);
+            ble_gap_terminate(s_pending_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
             s_pending_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         }
         break;
