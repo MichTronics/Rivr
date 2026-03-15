@@ -84,8 +84,17 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg);
  * volatile provides single-field torn-read protection on 32-bit Xtensa;    *
  * a full mutex is not necessary for this diagnostic/gate usage.            */
 
-/** Current connection handle; BLE_HS_CONN_HANDLE_NONE = no client. */
+/** Current connection handle; BLE_HS_CONN_HANDLE_NONE = no client.
+ *  With RIVR_BLE_PASSKEY != 0 this is only set after successful encryption
+ *  (BLE_GAP_EVENT_ENC_CHANGE), not immediately on connect. */
 static volatile uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+
+#if RIVR_BLE_PASSKEY != 0
+/** GATT connection handle for an in-progress (unencrypted) pairing session.
+ *  Promoted to s_conn_handle once BLE_GAP_EVENT_ENC_CHANGE fires with
+ *  status 0.  BLE_HS_CONN_HANDLE_NONE when no unencrypted session exists. */
+static volatile uint16_t s_pending_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+#endif
 
 /** True while BLE stack is advertising or has an active connection. */
 static volatile bool s_ble_active = false;
@@ -224,11 +233,20 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status == 0) {
-            /* ── Successfully connected ── */
+#if RIVR_BLE_PASSKEY != 0
+            /* With MITM bonding enabled, do NOT expose the connection until
+             * encryption is established.  s_conn_handle stays NONE until
+             * BLE_GAP_EVENT_ENC_CHANGE fires successfully.                  */
+            s_pending_conn_handle = event->connect.conn_handle;
+            g_rivr_metrics.ble_connections++;
+            RIVR_LOGI(TAG, "BLE connected (conn_handle=0x%04x) — awaiting encryption",
+                      (unsigned)s_pending_conn_handle);
+#else
             s_conn_handle = event->connect.conn_handle;
             g_rivr_metrics.ble_connections++;
             RIVR_LOGI(TAG, "BLE connected (conn_handle=0x%04x)",
                       (unsigned)s_conn_handle);
+#endif
         } else {
             /* ── Connection attempt failed — restart advertising ── */
             RIVR_LOGW(TAG, "BLE connect failed (status=%d) — restarting adv",
@@ -243,9 +261,45 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg)
                   (unsigned)event->disconnect.conn.conn_handle,
                   event->disconnect.reason);
         s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+#if RIVR_BLE_PASSKEY != 0
+        s_pending_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+#endif
         /* Restart advertising so the phone can reconnect while BLE window is open */
         rivr_ble_start_adv();
         break;
+
+#if RIVR_BLE_PASSKEY != 0
+    case BLE_GAP_EVENT_ENC_CHANGE:
+        if (event->enc_change.status == 0) {
+            /* Encryption / bonding succeeded — promote to authenticated handle */
+            s_conn_handle = s_pending_conn_handle;
+            RIVR_LOGI(TAG, "BLE encrypted & authenticated (conn_handle=0x%04x) — ready",
+                      (unsigned)s_conn_handle);
+        } else {
+            /* Pairing failed — disconnect and re-advertise */
+            RIVR_LOGW(TAG, "BLE encryption failed (status=%d) — disconnecting",
+                      event->enc_change.status);
+            ble_gap_terminate(s_pending_conn_handle, BLE_ERR_AUTH_FAIL);
+            s_pending_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        }
+        break;
+
+    case BLE_GAP_EVENT_PASSKEY_ACTION: {
+        /* NimBLE is asking us what passkey to display / confirm.           *
+         * With DISP_ONLY IO-cap the action is always BLE_SM_IOACT_DISP:   *
+         * inject our static passkey so it can be sent to the phone.       */
+        struct ble_sm_io pkey;
+        memset(&pkey, 0, sizeof(pkey));
+        if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
+            pkey.action  = BLE_SM_IOACT_DISP;
+            pkey.passkey = (uint32_t)RIVR_BLE_PASSKEY;
+            RIVR_LOGI(TAG, "BLE pairing PIN: %06lu  (enter on phone)",
+                      (unsigned long)pkey.passkey);
+            ble_sm_inject_io(event->passkey.conn_handle, &pkey);
+        }
+        break;
+    }
+#endif
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
         RIVR_LOGD(TAG, "BLE advertising complete (reason=%d)",
@@ -311,6 +365,9 @@ static void rivr_ble_on_reset(int reason)
     ESP_LOGE(TAG, "BLE host reset (reason=%d) — awaiting re-sync", reason);
     s_host_synced = false;
     s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+#if RIVR_BLE_PASSKEY != 0
+    s_pending_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+#endif
 }
 
 /* ── NimBLE host task ────────────────────────────────────────────────────── */
@@ -345,10 +402,27 @@ void rivr_ble_init(void)
     }
 
     /* ── 2. Configure the NimBLE host ── */
-    ble_hs_cfg.reset_cb       = rivr_ble_on_reset;
-    ble_hs_cfg.sync_cb        = rivr_ble_on_sync;
-    ble_hs_cfg.store_status_cb = ble_store_util_status_rr;  /* RAM store */
-    /* No security manager callbacks for initial no-pairing version */
+    ble_hs_cfg.reset_cb        = rivr_ble_on_reset;
+    ble_hs_cfg.sync_cb         = rivr_ble_on_sync;
+    ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+
+#if RIVR_BLE_PASSKEY != 0
+    /* MITM-protected bonding: Display Only IO capability lets us inject a
+     * fixed passkey via BLE_GAP_EVENT_PASSKEY_ACTION.  LE Secure Connections
+     * (LESC) gives forward-secrecy via P-256 ECDH key exchange.           */
+    ble_hs_cfg.sm_io_cap         = BLE_SM_IO_CAP_DISP_ONLY;
+    ble_hs_cfg.sm_bonding        = 1;
+    ble_hs_cfg.sm_mitm           = 1;
+    ble_hs_cfg.sm_sc             = 1;   /* LE Secure Connections           */
+    /* Distribute encryption + identity keys both ways so IRK-based RPA     *
+     * resolution works after re-bonding with a new phone.                  */
+    ble_hs_cfg.sm_our_key_dist   = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+    ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+    RIVR_LOGI(TAG, "BLE security: MITM passkey bonding enabled (PIN=%06lu)",
+              (unsigned long)RIVR_BLE_PASSKEY);
+#else
+    RIVR_LOGI(TAG, "BLE security: open (no pairing)");
+#endif
 
     /* ── 3. Register standard GAP + GATT services ── */
     ble_svc_gap_init();

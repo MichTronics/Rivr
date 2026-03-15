@@ -161,17 +161,30 @@ static const struct ble_gatt_svc_def s_rivr_gatt_svcs[] = {
         .uuid = &s_rivr_svc_uuid.u,
         .characteristics = (struct ble_gatt_chr_def[]) {
             {
-                /* TX characteristic — node → phone (Notify) */
+                /* TX characteristic — node → phone (Notify).
+                 * BLE_GATT_CHR_F_READ_ENC requires an encrypted link before
+                 * NimBLE permits the client to subscribe (CCCD write), so the
+                 * phone must complete pairing before notifications flow.    */
                 .uuid       = &s_rivr_tx_uuid.u,
                 .access_cb  = rivr_chr_access_cb,
                 .val_handle = &s_tx_chr_val_handle,
-                .flags      = BLE_GATT_CHR_F_NOTIFY,
+                .flags      = BLE_GATT_CHR_F_NOTIFY
+#if RIVR_BLE_PASSKEY != 0
+                            | BLE_GATT_CHR_F_READ_ENC
+#endif
+                ,
             },
             {
-                /* RX characteristic — phone → node (Write / Write-NR) */
+                /* RX characteristic — phone → node (Write / Write-NR).
+                 * BLE_GATT_CHR_F_WRITE_ENC rejects frames from unauthenticated
+                 * clients with ATT_ERR_INSUFFICIENT_ENC (0x0F).            */
                 .uuid      = &s_rivr_rx_uuid.u,
                 .access_cb = rivr_chr_access_cb,
-                .flags     = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+                .flags     = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP
+#if RIVR_BLE_PASSKEY != 0
+                           | BLE_GATT_CHR_F_WRITE_ENC
+#endif
+                ,
             },
             { 0 }  /* characteristic list terminator */
         },
