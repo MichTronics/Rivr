@@ -20,16 +20,15 @@ crate-type = ["rlib", "staticlib"]
 # -------------------------------------------------------------------
 # `std`      – enables std::collections, std::io, full serde  (default)
 # `alloc`    – heap types without std (Vec/String/BTreeMap via alloc crate)
-# `ffi`      – C-ABI exports for embedding in C firmware (ESP32)
-# `embedded` – convenience: ffi + no std + no alloc (pure stack types)
-# No features = pure no_std, no heap – uses FixedText / FixedBytes
+# `ffi`      – C-ABI exports for embedding in C firmware (ESP32), requires alloc
+# `embedded` – convenience: ffi + no std + alloc
 # -------------------------------------------------------------------
 [features]
 default  = ["std"]
 std      = ["serde/std", "alloc"] # host build: enable std + heap types
 alloc    = ["serde/alloc"]        # no_std + heap: Vec/String from alloc crate
-ffi      = []                     # C-ABI exports
-embedded = ["ffi"]                # convenience: ffi, no std, no alloc (pure-stack types)
+ffi      = ["alloc"]              # C-ABI exports
+embedded = ["ffi"]                # convenience: ffi + no std + alloc
 
 [dependencies]
 serde      = { workspace = true }

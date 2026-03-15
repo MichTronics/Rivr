@@ -4,17 +4,15 @@
 //! | feature | `Str` type        | `Bytes` type       | `Window` available |
 //! |---------|-------------------|--------------------|--------------------|
 //! | `alloc` | `String`          | `Vec<u8>`          | yes                |
-//! | (none)  | `FixedText<64>`   | `FixedBytes<64>`   | no                 |
 //!
 //! The `alloc` feature is automatically enabled by `std`, so host builds are
-//! unaffected.  No-alloc embedded builds use stack-allocated `FixedText` /
-//! `FixedBytes` for payloads and omit the heap-backed `Window` variant.
+//! unaffected.
 
 // Import alloc types when no_std + alloc.  Under std these are in scope already.
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::{
     format,
-    string::{String, ToString},
+    string::String,
     vec::Vec,
 };
 
@@ -107,7 +105,7 @@ impl Value {
             Value::Bool(b) => format!("{b}"),
             Value::Str(s) => s.clone(),
             Value::Bytes(b) => format!("<bytes len={}>", b.len()),
-            Value::Unit => "()".to_string(),
+            Value::Unit => String::from("()"),
             Value::Window(w) => format!("[window {} events]", w.len()),
         }
     }
@@ -151,12 +149,5 @@ impl core::fmt::Display for Value {
         {
             write!(f, "{}", self.display_fixed())
         }
-    }
-}
-
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
-impl ToString for Value {
-    fn to_string(&self) -> String {
-        self.display()
     }
 }
