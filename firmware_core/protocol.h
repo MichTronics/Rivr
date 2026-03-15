@@ -92,6 +92,11 @@ extern "C" {
  *   [3–6]  value       i32 LE — associated reading (e.g. batt_mv, temp × 100) */
 #define PKT_ALERT         10u
 
+/** Compact node-metrics snapshot pushed to BLE clients every 5 s.
+ *  Never relayed over LoRa (ttl=1).  Payload = rivr_met_ble_payload_t (48 B).
+ *  Total wire size = 23 + 48 + 2 = 73 bytes — fits in one 128-byte MTU. */
+#define PKT_METRICS       11u
+
 /* ── Service payload lengths ─────────────────────────────────────────────── */
 
 #define SVC_TELEMETRY_PAYLOAD_LEN  11u   /**< Fixed telemetry field size             */

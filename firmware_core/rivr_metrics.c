@@ -1,6 +1,11 @@
 #include "rivr_metrics.h"
 #include "rivr_log.h"
+#include "rivr_config.h"
+#include "protocol.h"
+#include "ble/rivr_ble.h"
+#include "ble/rivr_ble_service.h"
 #include <stdio.h>
+#include <string.h>
 #include <inttypes.h>
 
 rivr_metrics_t g_rivr_metrics = {0};
@@ -222,4 +227,62 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.bus_errors,
         g_rivr_metrics.lora_rx_frames,
         g_rivr_metrics.usb_rx_frames);
+}
+
+void rivr_metrics_ble_push(const rivr_live_stats_t *live,
+                            uint32_t src_id, uint16_t net_id, uint16_t seq)
+{
+#if RIVR_FEATURE_BLE
+    if (!rivr_ble_is_connected()) return;
+    if (!live) return;
+
+    /* ── Build compact BLE payload ──────────────────────────────────────── */
+    rivr_met_ble_payload_t pl;
+    memset(&pl, 0, sizeof(pl));
+    pl.node_id       = live->node_id;
+    pl.dc_pct        = live->dc_pct;
+    pl.q_depth       = live->q_depth;
+    pl.tx_total      = live->tx_total;
+    pl.rx_total      = live->rx_total;
+    pl.route_cache   = live->route_cache;
+    pl.lnk_cnt       = live->lnk_cnt;
+    pl.lnk_best      = live->lnk_best;
+    pl.lnk_rssi      = live->lnk_best_rssi;
+    pl.lnk_loss      = live->lnk_avg_loss;
+    pl.relay_density  = live->relay_density;
+    pl.relay_skip    = g_rivr_metrics.flood_fwd_cancelled_opport_total
+                       + g_rivr_metrics.flood_fwd_score_suppressed_total;
+    pl.rx_fail       = g_rivr_metrics.rx_decode_fail;
+    pl.rx_dup        = g_rivr_metrics.rx_dedupe_drop;
+    pl.ble_conn      = g_rivr_metrics.ble_connections;
+    pl.ble_rx        = g_rivr_metrics.ble_rx_frames;
+    pl.ble_tx        = g_rivr_metrics.ble_tx_frames;
+    pl.ble_err       = g_rivr_metrics.ble_errors;
+
+    /* ── Encode as a PKT_METRICS Rivr frame ─────────────────────────────── */
+    rivr_pkt_hdr_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.magic       = RIVR_MAGIC;
+    hdr.version     = RIVR_PROTO_VER;
+    hdr.pkt_type    = PKT_METRICS;
+    hdr.ttl         = 1u;   /* not meant to be relayed */
+    hdr.hop         = 0u;
+    hdr.net_id      = net_id;
+    hdr.src_id      = src_id;
+    hdr.dst_id      = 0u;   /* broadcast / addressed-to-app */
+    hdr.seq         = seq;
+    hdr.pkt_id      = seq;
+    hdr.payload_len = (uint8_t)sizeof(pl);
+
+    /* Frame buffer: header(23) + payload(48) + CRC(2) = 73 bytes */
+    uint8_t frame[23u + RIVR_MET_BLE_PAYLOAD_LEN + 2u];
+    int len = protocol_encode(&hdr, (const uint8_t *)&pl,
+                              (uint8_t)sizeof(pl),
+                              frame, (uint8_t)sizeof(frame));
+    if (len <= 0) return;
+
+    rivr_ble_service_notify(rivr_ble_conn_handle(), frame, (uint8_t)len);
+#else
+    (void)live; (void)src_id; (void)net_id; (void)seq;
+#endif /* RIVR_FEATURE_BLE */
 }
