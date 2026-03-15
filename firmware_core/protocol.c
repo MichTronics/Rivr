@@ -147,10 +147,10 @@ bool protocol_decode(const uint8_t    *buf,
     if (buf[2] != RIVR_PROTO_VER) return false;
 
     /* Reject reserved or out-of-range packet types.  Type 0 is never     *
-     * assigned; values above PKT_ALERT (10) are undefined in v1.         *
+     * assigned; values above PKT_METRICS (11) are currently undefined.   *
      * Frames with invalid types are counted separately from CRC failures  *
      * so operators can distinguish malformed traffic from foreign devices. */
-    if (buf[3] == 0u || buf[3] > PKT_ALERT) {
+    if (buf[3] == 0u || buf[3] > PKT_METRICS) {
         g_rivr_metrics.rx_invalid_type++;
         return false;
     }

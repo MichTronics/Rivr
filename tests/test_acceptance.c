@@ -1280,6 +1280,21 @@ static void run8_pkt_identity(void)
     CHECK(dec8e,                      "8e: decode succeeds (CRC valid)");
     CHECK(out8e.seq    == 0x1234u,    "8e: seq == 0x1234 after round-trip");
     CHECK(out8e.pkt_id == 0x5678u,    "8e: pkt_id == 0x5678 after round-trip");
+
+    /* ── 8f: PKT_METRICS is accepted by protocol_decode ───────────── */
+    rivr_pkt_hdr_t h8f = {
+        .magic    = RIVR_MAGIC, .version  = RIVR_PROTO_VER,
+        .pkt_type = PKT_METRICS,.ttl      = 1u,
+        .src_id   = NODE_A,     .dst_id   = 0u,
+        .seq      = 0x0102u,    .pkt_id   = 0x0304u,
+    };
+    uint8_t wire8f[64];
+    int wlen8f = protocol_encode(&h8f, NULL, 0u, wire8f, sizeof(wire8f));
+    CHECK(wlen8f > 0, "8f: PKT_METRICS encode succeeds");
+    rivr_pkt_hdr_t out8f;
+    bool dec8f = protocol_decode(wire8f, (uint8_t)wlen8f, &out8f, NULL);
+    CHECK(dec8f,                           "8f: PKT_METRICS decode succeeds");
+    CHECK(out8f.pkt_type == PKT_METRICS,   "8f: pkt_type == PKT_METRICS after round-trip");
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
