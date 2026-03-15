@@ -318,17 +318,29 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg)
     }
 
     case BLE_GAP_EVENT_PASSKEY_ACTION: {
-        /* NimBLE is asking us what passkey to display / confirm.           *
-         * With DISP_ONLY IO-cap the action is always BLE_SM_IOACT_DISP:   *
-         * inject our static passkey so it can be sent to the phone.       */
         struct ble_sm_io pkey;
         memset(&pkey, 0, sizeof(pkey));
         if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
+            /* Passkey Entry: we display, Android types.  Inject our static
+             * passkey — Android will show an input field for it.          */
             pkey.action  = BLE_SM_IOACT_DISP;
             pkey.passkey = (uint32_t)RIVR_BLE_PASSKEY;
-            RIVR_LOGI(TAG, "BLE pairing PIN: %06lu  (enter on phone)",
+            RIVR_LOGI(TAG, "BLE pairing: Passkey Entry — show %06lu on phone",
                       (unsigned long)pkey.passkey);
             ble_sm_inject_io(event->passkey.conn_handle, &pkey);
+        } else if (event->passkey.params.action == BLE_SM_IOACT_NUMCMP) {
+            /* Numeric Comparison: Android shows a 6-digit code and asks the
+             * user to confirm it matches.  Auto-accept on our side — the
+             * user still has to press Yes on Android.  Bond will have
+             * sec_state.authenticated == 1 so our ENC_CHANGE check passes. */
+            pkey.action        = BLE_SM_IOACT_NUMCMP;
+            pkey.numcmp_accept = 1;
+            RIVR_LOGI(TAG, "BLE pairing: Numeric Comparison %06lu — auto-confirmed",
+                      (unsigned long)event->passkey.params.numcmp);
+            ble_sm_inject_io(event->passkey.conn_handle, &pkey);
+        } else {
+            RIVR_LOGW(TAG, "BLE pairing: unexpected PASSKEY_ACTION %d — ignoring",
+                      (int)event->passkey.params.action);
         }
         break;
     }
@@ -440,10 +452,20 @@ void rivr_ble_init(void)
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
 #if RIVR_BLE_PASSKEY != 0
-    /* MITM-protected bonding: Display Only IO capability lets us inject a
-     * fixed passkey via BLE_GAP_EVENT_PASSKEY_ACTION.  LE Secure Connections
-     * (LESC) gives forward-secrecy via P-256 ECDH key exchange.           */
-    ble_hs_cfg.sm_io_cap         = BLE_SM_IO_CAP_DISP_ONLY;
+    /* MITM-protected bonding using DisplayYesNo IO capability.
+     *
+     * IO cap selection rationale (BT Core Vol 3, Part H §2.3.5.1):
+     *   Android KeyboardDisplay + ESP32 DisplayYesNo → Numeric Comparison
+     *   Android DisplayYesNo   + ESP32 DisplayYesNo → Numeric Comparison
+     *   Android KeyboardDisplay + ESP32 DisplayOnly  → Passkey Entry
+     *   Android DisplayYesNo   + ESP32 DisplayOnly  → Just Works (!)  ← old bug
+     *
+     * DisplayYesNo covers both Android IO cap variants and always yields an
+     * authenticated bond (sec_state.authenticated == 1).  The IOACT_DISP
+     * case (passkey entry) still injects RIVR_BLE_PASSKEY for the rare
+     * KeyboardDisplay+DisplayOnly path; IOACT_NUMCMP auto-confirms on our
+     * side so the user only has to tap "Yes" on Android.                  */
+    ble_hs_cfg.sm_io_cap         = BLE_SM_IO_CAP_DISP_YES_NO;
     ble_hs_cfg.sm_bonding        = 1;
     ble_hs_cfg.sm_mitm           = 1;
     ble_hs_cfg.sm_sc             = 1;   /* LE Secure Connections           */
