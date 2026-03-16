@@ -139,47 +139,54 @@ void route_cache_update(route_cache_t *cache,
 {
     if (!cache || dst_id == 0 || next_hop == 0) return;
 
-    /* Search for an existing entry for this dst_id */
+    /* Single-pass scan: expire stale entries, find an existing match for
+     * dst_id, and note the first free slot — all in one iteration. */
+    int8_t free_idx = -1;
+
     for (uint8_t i = 0; i < RCACHE_SIZE; i++) {
         route_cache_entry_t *e = &cache->entries[i];
 
-        /* Reclaim expired entry for any dst_id */
+        /* Lazy expiry: clear entries older than RCACHE_EXPIRY_MS. */
         expire_entry(e, now_ms);
 
         if (e->dst_id == dst_id && (e->flags & RCACHE_FLAG_VALID)) {
-            /* Prefer: fewer hops; within same hop-count, better metric wins
-             * only if improvement exceeds RCACHE_METRIC_HYSTERESIS, which
-             * prevents route oscillation when two paths have similar scores. */
+            /* Found existing route — update only if this is a better path.
+             * Fewer hops always wins; within the same hop count, the metric
+             * must beat the current value by RCACHE_METRIC_HYSTERESIS to
+             * avoid oscillation between near-equal paths. */
             if (hop_count < e->hop_count ||
                 (hop_count == e->hop_count &&
                  (uint32_t)metric > (uint32_t)e->metric + RCACHE_METRIC_HYSTERESIS)) {
-                e->next_hop      = next_hop;
-                e->hop_count     = hop_count;
-                e->metric        = metric;
-                e->flags         = (uint8_t)(flags | RCACHE_FLAG_VALID);
+                e->next_hop  = next_hop;
+                e->hop_count = hop_count;
+                e->metric    = metric;
+                e->flags     = (uint8_t)(flags | RCACHE_FLAG_VALID);
             }
-            /* Always refresh timestamp so route doesn't expire prematurely */
+            /* Always refresh timestamp so the route doesn't expire
+             * while we are still hearing about it. */
             e->last_seen_ms = now_ms;
             return;
         }
-    }
 
-    /* Not found — find an empty or expired slot */
-    for (uint8_t i = 0; i < RCACHE_SIZE; i++) {
-        route_cache_entry_t *e = &cache->entries[i];
-        if (!(e->flags & RCACHE_FLAG_VALID)) {
-            e->dst_id       = dst_id;
-            e->next_hop     = next_hop;
-            e->last_seen_ms = now_ms;
-            e->hop_count    = hop_count;
-            e->metric       = metric;
-            e->flags        = (uint8_t)(flags | RCACHE_FLAG_VALID);
-            if (cache->count < RCACHE_SIZE) cache->count++;
-            return;
+        if (free_idx < 0 && !(e->flags & RCACHE_FLAG_VALID)) {
+            free_idx = (int8_t)i;   /* remember first available slot */
         }
     }
 
-    /* Table full — evict round-robin */
+    /* dst_id not found — write into the first free slot if one was found. */
+    if (free_idx >= 0) {
+        route_cache_entry_t *e = &cache->entries[free_idx];
+        e->dst_id       = dst_id;
+        e->next_hop     = next_hop;
+        e->last_seen_ms = now_ms;
+        e->hop_count    = hop_count;
+        e->metric       = metric;
+        e->flags        = (uint8_t)(flags | RCACHE_FLAG_VALID);
+        if (cache->count < RCACHE_SIZE) cache->count++;
+        return;
+    }
+
+    /* Table full — evict round-robin to avoid starving recently-added routes. */
     uint8_t idx = cache->evict_hand;
     cache->evict_hand = (uint8_t)((idx + 1u) % RCACHE_SIZE);
 

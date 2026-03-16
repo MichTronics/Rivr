@@ -136,6 +136,23 @@ static fabric_bucket_t *fabric_current(uint32_t now_ms)
 }
 
 /**
+ * Congestion-score formula weights.
+ *
+ * score = (rx_per_s  * RX_PER_S  + blocked_per_s * DC_BLOCKED + fail_per_s * TX_FAIL) / 100
+ *
+ * Tuning rationale:
+ *   - RX_PER_S (2):   mild upward pressure for high receive throughput; traffic
+ *                      load alone should not mark the node as congested quickly.
+ *   - DC_BLOCKED (25): duty-cycle blocks are a strong congestion signal; weigh
+ *                      heavily so relay selection steers away from a saturated node.
+ *   - TX_FAIL (10):    TX failures indicate RF contention or hardware back-
+ *                      pressure; weigh more than RX but less than duty-cycle.
+ */
+#define FABRIC_SCORE_WEIGHT_RX_PER_S   2u
+#define FABRIC_SCORE_WEIGHT_DC_BLOCKED 25u
+#define FABRIC_SCORE_WEIGHT_TX_FAIL    10u
+
+/**
  * Compute congestion score 0..100 from window totals.
  * Uses integer arithmetic only; 100× internal scaling for sub-1 precision.
  */
@@ -158,11 +175,11 @@ static uint8_t fabric_score(uint32_t now_ms)
     uint32_t fail_per_s_x100    = fail_total     * 100u / FABRIC_BUCKETS;
     uint32_t blocked_per_s_x100 = blocked_total  * 100u / FABRIC_BUCKETS;
 
-    /* score100 = (rx_per_s * 2 + blocked_per_s * 25 + fail_per_s * 10) * 100 */
+    /* score100 = (rx_per_s * WEIGHT + …) * 100 — clamped to [0, 10000] */
     uint32_t score100 =
-          rx_per_s_x100      *  2u
-        + blocked_per_s_x100 * 25u
-        + fail_per_s_x100    * 10u;
+          rx_per_s_x100      * FABRIC_SCORE_WEIGHT_RX_PER_S
+        + blocked_per_s_x100 * FABRIC_SCORE_WEIGHT_DC_BLOCKED
+        + fail_per_s_x100    * FABRIC_SCORE_WEIGHT_TX_FAIL;
 
     /* score100 is now (score * 100); clamp to [0, 10000] then divide. */
     if (score100 > 10000u) score100 = 10000u;

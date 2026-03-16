@@ -40,6 +40,44 @@ static void patch_pkt_id_and_crc(uint8_t *data, uint8_t len, uint16_t new_pkt_id
     }
 }
 
+/**
+ * build_fallback_flood - Construct a fallback-flood TX request from an exhausted retry entry.
+ *
+ * When all unicast retries are exhausted the original frame is re-encoded as a
+ * broadcast flood so that the message still has a chance of delivery via any
+ * neighbour that can reach the destination.  Changes applied to the wire frame:
+ *   - PKT_FLAG_ACK_REQ cleared, PKT_FLAG_FALLBACK set
+ *   - ttl = RIVR_FALLBACK_TTL, hop = 0 (fresh origination, not a relay hop)
+ *   - dst_id = 0 (broadcast), loop_guard = 0
+ *   - fresh pkt_id and recomputed CRC so relays treat it as a new packet
+ *
+ * @param e          Exhausted retry entry holding the original wire frame.
+ * @param fb_pkt_id  Fresh packet ID allocated by the caller.
+ * @param out_fb     Output TX request; caller is responsible for queuing it.
+ */
+static void build_fallback_flood(const retry_entry_t *e,
+                                 uint16_t             fb_pkt_id,
+                                 rf_tx_request_t     *out_fb)
+{
+    memset(out_fb, 0u, sizeof(*out_fb));
+    memcpy(out_fb->data, e->data, e->len);
+    out_fb->len    = e->len;
+    out_fb->toa_us = e->toa_us;
+    out_fb->due_ms = 0u;
+
+    /* Wire-byte offsets match protocol.h wire layout. */
+    out_fb->data[4]  = (uint8_t)((out_fb->data[4] & ~(uint8_t)PKT_FLAG_ACK_REQ)
+                                  | (uint8_t)PKT_FLAG_FALLBACK);
+    out_fb->data[5]  = RIVR_FALLBACK_TTL;  /* ttl */
+    out_fb->data[6]  = 0u;                 /* hop  = 0 (originated here) */
+    out_fb->data[13] = 0u;                 /* dst_id = 0 (broadcast) */
+    out_fb->data[14] = 0u;
+    out_fb->data[15] = 0u;
+    out_fb->data[16] = 0u;
+    out_fb->data[LOOP_GUARD_BYTE_OFFSET] = 0u; /* fresh flood, no loop history */
+    patch_pkt_id_and_crc(out_fb->data, out_fb->len, fb_pkt_id);
+}
+
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 void retry_table_init(retry_table_t *rt)
@@ -150,32 +188,9 @@ uint8_t retry_table_tick(retry_table_t *rt,
                 "[RETRY] failed=%u dst=0x%08lx – initiating fallback flood",
                 (unsigned)RETRY_MAX, (unsigned long)e->dst_id);
 
-            /* Build fallback flood by patching the stored frame's wire bytes.
-             * Field offsets per protocol.h wire layout:
-             *   [4]     flags      [5]  ttl       [6]   hop
-             *   [13–16] dst_id LE  [22] loop_guard */
             uint16_t fb_pkt_id = (uint16_t)(++(*pkt_id_counter));
             rf_tx_request_t fb;
-            memset(&fb, 0u, sizeof(fb));
-            memcpy(fb.data, e->data, e->len);
-            fb.len    = e->len;
-            fb.toa_us = e->toa_us;
-            fb.due_ms = 0u;
-
-            /* flags: clear ACK_REQ, set FALLBACK */
-            fb.data[4]  = (uint8_t)((fb.data[4] & ~(uint8_t)PKT_FLAG_ACK_REQ)
-                                    | (uint8_t)PKT_FLAG_FALLBACK);
-            /* ttl = fallback TTL */
-            fb.data[5]  = RIVR_FALLBACK_TTL;
-            /* hop = 0 (originated, not a relay) */
-            fb.data[6]  = 0u;
-            /* dst_id = 0 (broadcast) */
-            fb.data[13] = 0u;  fb.data[14] = 0u;
-            fb.data[15] = 0u;  fb.data[16] = 0u;
-            /* loop_guard = 0 for fresh flood */
-            fb.data[LOOP_GUARD_BYTE_OFFSET] = 0u;
-            /* patch pkt_id + recompute CRC */
-            patch_pkt_id_and_crc(fb.data, fb.len, fb_pkt_id);
+            build_fallback_flood(e, fb_pkt_id, &fb);
 
             if (rb_try_push(tx_queue, &fb)) {
                 pushed++;

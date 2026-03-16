@@ -65,6 +65,45 @@ bool pending_queue_enqueue(pending_queue_t *pq,
     return false;  /* queue full even after expiry */
 }
 
+/**
+ * reencode_as_unicast_hop - Re-encode a pending wire frame for forwarding to next_hop.
+ *
+ * Decodes the stored frame, overwrites dst_id with next_hop and sets ttl=1
+ * for a single unicast hop, then re-encodes into an rf_tx_request_t ready for
+ * the TX queue.
+ *
+ * @param data     Stored wire frame bytes.
+ * @param len      Length of the stored frame.
+ * @param next_hop Resolved next-hop node ID written into dst_id.
+ * @param toa_us   Pre-computed time-on-air for the TX request.
+ * @param out_req  Output TX request; caller pushes this to the TX queue.
+ * @return         True if decode + encode both succeeded; false otherwise.
+ */
+static bool reencode_as_unicast_hop(const uint8_t   *data,
+                                    uint8_t          len,
+                                    uint32_t         next_hop,
+                                    uint32_t         toa_us,
+                                    rf_tx_request_t *out_req)
+{
+    rivr_pkt_hdr_t hdr;
+    const uint8_t *pl = NULL;
+    if (!protocol_decode(data, len, &hdr, &pl)) return false;
+
+    hdr.dst_id = next_hop;
+    hdr.ttl    = 1u;    /* single hop — next_hop must be a direct neighbour */
+
+    memset(out_req, 0, sizeof(*out_req));
+    out_req->due_ms = 0u;
+    out_req->toa_us = toa_us;
+
+    int enc = protocol_encode(&hdr, pl, hdr.payload_len,
+                               out_req->data, sizeof(out_req->data));
+    if (enc <= 0) return false;
+
+    out_req->len = (uint8_t)enc;
+    return true;
+}
+
 uint8_t pending_queue_drain_for_dst(pending_queue_t *pq,
                                      uint32_t         dst_id,
                                      uint32_t         next_hop,
@@ -84,23 +123,9 @@ uint8_t pending_queue_drain_for_dst(pending_queue_t *pq,
 
         if (!expired) {
             /* Decode the saved wire frame, rewrite for unicast, re-encode. */
-            rivr_pkt_hdr_t hdr;
-            const uint8_t *pl  = NULL;
-            if (protocol_decode(e->data, e->len, &hdr, &pl)) {
-                hdr.dst_id = next_hop;
-                hdr.ttl    = 1u;          /* single hop to next_hop */
-
-                rf_tx_request_t req;
-                memset(&req, 0, sizeof(req));
-                req.due_ms = 0u;           /* drain immediately */
-                req.toa_us = e->toa_us;
-
-                int enc = protocol_encode(&hdr, pl, hdr.payload_len,
-                                          req.data, sizeof(req.data));
-                if (enc > 0) {
-                    req.len = (uint8_t)enc;
-                    if (rb_try_push(tx_queue, &req)) sent++;
-                }
+            rf_tx_request_t req;
+            if (reencode_as_unicast_hop(e->data, e->len, next_hop, e->toa_us, &req)) {
+                if (rb_try_push(tx_queue, &req)) sent++;
             }
         }
 

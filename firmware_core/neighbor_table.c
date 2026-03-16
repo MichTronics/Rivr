@@ -54,6 +54,66 @@ static uint8_t oldest_slot(const rivr_neighbor_table_t *tbl)
     return oldest;
 }
 
+/**
+ * update_loss_rate_ewma - Drive the per-neighbour loss-rate estimate.
+ *
+ * Uses the sequence-number gap between @p seq and the previously-seen
+ * seq to infer how many frames were missed.  Each missed slot drives the
+ * EWMA toward 100 (100% loss); the successfully-received frame drives it
+ * toward 0 (no loss).  α = 1/8 in both directions.
+ *
+ * Unsigned 16-bit subtraction handles the 0xFFFF→0x0000 seq rollover
+ * correctly without any special-case code.
+ *
+ * Only called when rx_ok > 0 (i.e. we have a previous seq to compare).
+ */
+static void update_loss_rate_ewma(rivr_neighbor_t *n, uint16_t seq)
+{
+    uint16_t gap = (uint16_t)(seq - n->last_seq - 1u);
+
+    /* Cap the gap so a node reboot or long silence doesn't over-penalise
+     * the link.  The expiry mechanism handles truly lost neighbours. */
+    if (gap > NTABLE_LOSS_MAX_GAP) {
+        gap = NTABLE_LOSS_MAX_GAP;
+    }
+
+    /* Drive EWMA toward 100 (= total loss) for each missed slot. */
+    for (uint16_t m = 0u; m < gap; m++) {
+        n->loss_rate = (uint8_t)(((uint32_t)n->loss_rate * 7u + 100u) / 8u);
+    }
+    /* Drive EWMA toward 0 (= no loss) for the frame just received. */
+    n->loss_rate = (uint8_t)(((uint32_t)n->loss_rate * 7u) / 8u);
+}
+
+/**
+ * recompute_etx - Update the etx_x8 field from the current loss_rate.
+ *
+ * ETX (Expected Transmission Count) is the average number of transmissions
+ * needed to deliver one packet.  A perfect link has ETX=1 (etx_x8=8).
+ *
+ * Formula: etx_x8 = 8 × 100 / max(100 − loss_rate, 1)
+ * Clamped to [8, 255] so the routing layer can use it directly as a
+ * fixed-point weight (÷8 to recover the true ETX float value).
+ *
+ * Examples:
+ *   loss_rate = 0   → etx_x8 =   8   (perfect link)
+ *   loss_rate = 50  → etx_x8 =  16   (2× expected transmissions)
+ *   loss_rate = 87  → etx_x8 =  62   (heavy loss)
+ *   loss_rate ≥ 97  → etx_x8 = 255   (saturated / effectively dead)
+ */
+static void recompute_etx(rivr_neighbor_t *n)
+{
+    uint32_t delivery_pct = 100u - (uint32_t)n->loss_rate;
+    if (delivery_pct == 0u) {
+        n->etx_x8 = 255u;
+        return;
+    }
+    uint32_t etx = (8u * 100u) / delivery_pct;
+    if (etx > 255u)    etx = 255u;
+    else if (etx < 8u) etx = 8u;
+    n->etx_x8 = (uint8_t)etx;
+}
+
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 void neighbor_table_init(rivr_neighbor_table_t *tbl)
@@ -73,114 +133,75 @@ rivr_neighbor_t *neighbor_update(rivr_neighbor_table_t *tbl,
 {
     if (!tbl || node_id == 0u) return NULL;
 
-    /* ── Locate or allocate slot ──────────────────────────────────────────── */
     int idx = find_slot(tbl, node_id);
     rivr_neighbor_t *n;
 
     if (idx >= 0) {
-        /* Existing entry — update metrics. */
+        /* ── Update existing entry ──────────────────────────────────────── */
         n = &tbl->entries[idx];
 
-        /* EWMA update for RSSI and SNR (α = 1/8). */
+        /* EWMA smoothing for RF metrics (α = 1/8) — suppresses short-lived
+         * channel fading and prevents route oscillation. */
         n->rssi_avg = (int16_t)(((int32_t)n->rssi_avg * 7 + (int32_t)rssi_dbm) / 8);
         n->snr_avg  = (int8_t) (((int32_t)n->snr_avg  * 7 + (int32_t)snr_db)   / 8);
 
-        /* Loss-rate estimation via sequence-number gaps.
-         *
-         * Compute how many sequence numbers were skipped since last seen.
-         * The subtraction is unsigned (uint16_t wraps correctly) so it
-         * handles the 0xFFFF→0x0000 rollover transparently.
-         *
-         * Gap:  0 = no missed frames (consecutive seq).
-         *       1 = one missed frame.
-         *      >1 = multiple missed frames.
-         *
-         * The first receive of any node seeds last_seq so this branch only
-         * executes from the second observation onward.
-         */
+        /* Loss-rate estimation: applies from the second observation onward
+         * so that last_seq is already a valid reference point. */
         if (n->rx_ok > 0u) {
-            uint16_t gap = (uint16_t)(seq - n->last_seq - 1u);
-
-            /* Cap the gap to avoid over-penalising after a node reboot or a
-             * long silence (the expiry mechanism handles that separately). */
-            if (gap > NTABLE_LOSS_MAX_GAP) {
-                gap = NTABLE_LOSS_MAX_GAP;
-            }
-
-            /* Drive EWMA toward 100 (=loss) for each missed slot. */
-            for (uint16_t m = 0u; m < gap; m++) {
-                n->loss_rate = (uint8_t)(((uint32_t)n->loss_rate * 7u + 100u) / 8u);
-            }
-            /* Drive EWMA toward 0 (=no loss) for the frame just received. */
-            n->loss_rate = (uint8_t)(((uint32_t)n->loss_rate * 7u + 0u) / 8u);
+            update_loss_rate_ewma(n, seq);
         }
 
-        /* Keep track of the minimum observed hop distance. */
+        /* Prefer the shortest observed hop distance. */
         if (hop_count < n->hop_count) {
             n->hop_count = hop_count;
         }
 
-        /* ── Phase 1: recompute ETX × 8 from the updated loss rate ── *
-         * ETX = 1 / delivery_ratio;  delivery_ratio = (100 - loss_rate) / 100.
-         * etx_x8 = 8 × 100 / max(100 − loss_rate, 1).  Clamp to [8, 255]. *
-         *   loss_rate = 0   → etx_x8 =   8   (perfect link)               *
-         *   loss_rate = 50  → etx_x8 =  16   (two expected transmissions)  *
-         *   loss_rate = 87  → etx_x8 =  62   (heavy loss)                  *
-         *   loss_rate ≥ 97  → etx_x8 = 255   (saturated / dead)             */
-        {
-            uint32_t del_pct = 100u - (uint32_t)n->loss_rate;
-            if (del_pct == 0u) {
-                n->etx_x8 = 255u;
-            } else {
-                uint32_t etx = (8u * 100u) / del_pct;
-                n->etx_x8 = (uint8_t)(etx > 255u ? 255u : (etx < 8u ? 8u : etx));
-            }
-        }
+        /* Recompute ETX from the refreshed loss_rate. */
+        recompute_etx(n);
+
     } else {
-        /* New peer — allocate slot. */
+        /* ── Allocate slot for a new peer ───────────────────────────────── */
         uint8_t slot;
         if (tbl->count < NTABLE_SIZE) {
-            /* Free slot available. */
             slot = tbl->count;
             tbl->count++;
         } else {
-            /* Table full — evict oldest entry. */
+            /* Table full — evict the oldest seen entry. */
             slot = oldest_slot(tbl);
         }
 
         n = &tbl->entries[slot];
         memset(n, 0, sizeof(*n));
 
-        /* Seed the EWMA fields with the first sample so the entry is
-         * immediately useful rather than starting from zero. */
-        n->neighbor_id  = node_id;
-        n->rssi_avg     = rssi_dbm;
-        n->snr_avg      = snr_db;
-        n->loss_rate    = 0u;  /* optimistic seed — no loss history yet */
-        n->hop_count    = hop_count;
-        n->etx_x8       = 8u;  /* Phase 1: seed as perfect link (no loss observed yet) */
-        n->avg_frame_len = 0u; /* Phase 1: seeded on first frame_len observation below */
-        /* last_seq seeded below; loss-rate gap not applied on first receive */
+        /* Seed EWMA fields with the first sample so the entry is immediately
+         * useful rather than requiring several observations to stabilise. */
+        n->neighbor_id   = node_id;
+        n->rssi_avg      = rssi_dbm;
+        n->snr_avg       = snr_db;
+        n->loss_rate     = 0u;  /* optimistic: no loss history yet */
+        n->hop_count     = hop_count;
+        n->etx_x8        = 8u;  /* perfect-link seed (ETX=1.0) */
+        n->avg_frame_len = 0u;  /* seeded on first frame_len observation below */
+        /* last_seq seeded in the common block below; no gap penalty on first receive */
     }
 
-    /* ── Phase 1: update avg_frame_len EWMA on every observation ── *
-     * frame_len == 0 means the caller did not supply a length (skip).      */
+    /* ── Update avg_frame_len EWMA (every observation) ─────────────────────
+     * Caller passes 0 when frame length is unavailable — skip in that case. */
     if (frame_len > 0u) {
         if (n->avg_frame_len == 0u) {
-            n->avg_frame_len = frame_len;  /* seed with first observation */
+            n->avg_frame_len = frame_len;       /* seed with first sample */
         } else {
             n->avg_frame_len = (uint8_t)(
                 ((uint32_t)n->avg_frame_len * 7u + (uint32_t)frame_len) / 8u);
         }
     }
 
-    /* ── Fields updated on every observation ─────────────────────────────── */
+    /* ── Common fields updated on every observation ─────────────────────── */
     n->last_seq     = seq;
     n->last_seen_ms = now_ms;
     n->rx_ok++;
 
-    /* Refresh flags. */
-    n->flags &= (uint8_t)~NTABLE_FLAG_STALE;   /* clear stale; will be re-set lazily */
+    n->flags &= (uint8_t)~NTABLE_FLAG_STALE;   /* clear stale; re-evaluated lazily */
     if (hop_count == 0u) {
         n->flags |= NTABLE_FLAG_DIRECT;
     }
