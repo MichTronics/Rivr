@@ -83,8 +83,6 @@ jobs:
           echo "Activating Xtensa toolchain: $ESP_TOOLCHAIN"
           echo "RUSTUP_TOOLCHAIN=$ESP_TOOLCHAIN" >> "$GITHUB_ENV"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          # rust-src is required for -Zbuild-std (compiles core/alloc from source)
-          rustup component add rust-src --toolchain "$ESP_TOOLCHAIN"
 
       # ── 5. Restore build cache ────────────────────────────────────────────
       #
