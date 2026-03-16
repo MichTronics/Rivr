@@ -67,22 +67,21 @@ jobs:
       # ── 4. Install Espressif Rust toolchain (Xtensa) ─────────────────────
       #
       # espup installs the Xtensa Rust compiler fork and writes export-esp.sh.
-      # We source it in the same step to expand variables, then persist them
-      # for subsequent steps:
-      #   - PATH additions  → $GITHUB_PATH  (appends; never overwrites PATH)
-      #   - Other vars      → $GITHUB_ENV   (written as already-expanded values)
-      # Writing the raw export-esp.sh PATH line to $GITHUB_ENV would set PATH
-      # to the literal string "$PATH" (unexpanded), breaking cargo lookup.
+      # We source it to get LIBCLANG_PATH, then explicitly discover the installed
+      # esp toolchain name via `rustup toolchain list` and write it to GITHUB_ENV.
+      # This is resilient to espup versions that no longer write RUSTUP_TOOLCHAIN
+      # into export-esp.sh (which would otherwise leave cargo on stable/no Xtensa).
       - name: Install Espressif Rust toolchain via espup
         run: |
           cargo install espup --locked
           espup install
           source "$HOME/export-esp.sh"
-          # Persist expanded values of known Xtensa env vars
-          [ -n "$LIBCLANG_PATH"    ] && echo "LIBCLANG_PATH=$LIBCLANG_PATH"       >> "$GITHUB_ENV"
-          [ -n "$CLANG_PATH"       ] && echo "CLANG_PATH=$CLANG_PATH"             >> "$GITHUB_ENV"
-          [ -n "$RUSTUP_TOOLCHAIN" ] && echo "RUSTUP_TOOLCHAIN=$RUSTUP_TOOLCHAIN" >> "$GITHUB_ENV"
-          # Add cargo and Xtensa tool binaries to PATH via GITHUB_PATH
+          [ -n "$LIBCLANG_PATH" ] && echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
+          [ -n "$CLANG_PATH"    ] && echo "CLANG_PATH=$CLANG_PATH"       >> "$GITHUB_ENV"
+          # Discover toolchain name (e.g. "esp" or "esp-1.84.0.0") from rustup
+          ESP_TOOLCHAIN=$(rustup toolchain list | grep -E '^esp' | awk '{print $1}' | head -n1)
+          echo "Activating Xtensa toolchain: $ESP_TOOLCHAIN"
+          echo "RUSTUP_TOOLCHAIN=$ESP_TOOLCHAIN" >> "$GITHUB_ENV"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       # ── 5. Restore build cache ────────────────────────────────────────────
