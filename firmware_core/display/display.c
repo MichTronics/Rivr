@@ -318,6 +318,18 @@ static void render_page_overview(const display_stats_t *s)
     snprintf(buf, sizeof(buf), "UP: %lu:%02lu:%02lu",
              (unsigned long)h, (unsigned long)m, (unsigned long)sec);
     fb_str(0u, 5u, buf);
+
+    if (s->ble_connected) {
+        fb_str(0u, 6u, "BLE: CONNECTED");
+    } else if (s->ble_passkey != 0u && s->ble_active) {
+        snprintf(buf, sizeof(buf), "PIN:%06lu",
+                 (unsigned long)s->ble_passkey);
+        fb_str(0u, 6u, buf);
+    } else if (s->ble_active) {
+        fb_str(0u, 6u, "BLE: OPEN");
+    } else {
+        fb_str(0u, 6u, "BLE: OFF");
+    }
 }
 
 static void render_page_rf(const display_stats_t *s)
@@ -641,8 +653,14 @@ static void display_update(const display_stats_t *stats)
     if ((now - s_last_update_ms) < DISPLAY_REFRESH_MS) return;
     s_last_update_ms = now;
 
-    /* ── Auto-rotate page every 3 s ── */
-    if ((now - s_last_rotate_ms) >= DISPLAY_PAGE_ROTATE_MS) {
+    bool show_ble_pin = stats->ble_active && !stats->ble_connected &&
+                        (stats->ble_passkey != 0u);
+
+    /* Keep the overview page pinned while we need to show the BLE PIN. */
+    if (show_ble_pin) {
+        s_page = 0u;
+        s_last_rotate_ms = now;
+    } else if ((now - s_last_rotate_ms) >= DISPLAY_PAGE_ROTATE_MS) {
         s_last_rotate_ms = now;
         s_page = (uint8_t)((s_page + 1u) % DISPLAY_PAGES);
     }

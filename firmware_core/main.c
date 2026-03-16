@@ -886,6 +886,9 @@ void app_main(void)
             /* Fill the snapshot from live globals — cheap reads, no alloc */
             disp.node_id  = g_my_node_id;
             disp.uptime_s = now / 1000u;
+            disp.ble_active = rivr_ble_is_active();
+            disp.ble_connected = rivr_ble_is_connected();
+            disp.ble_passkey = rivr_ble_passkey();
 
             /* Rate-limit the GetRssiInst SPI call: once per 500 ms is more
              * than sufficient for the display; polling every 10 ms floods the

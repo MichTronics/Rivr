@@ -54,6 +54,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_random.h"
 
 /* NimBLE headers */
 #include "nimble/nimble_port.h"
@@ -77,6 +78,10 @@ extern uint32_t g_my_node_id;
 static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg);
 
 #define TAG "RIVR_BLE"
+
+#if RIVR_BLE_PASSKEY != 0
+#define RIVR_BLE_DEFAULT_SENTINEL_PASSKEY 123456UL
+#endif
 
 /* ── Module state ────────────────────────────────────────────────────────── *
  * s_conn_handle: written by NimBLE task in gap_event_cb,                   *
@@ -108,11 +113,28 @@ static uint32_t s_timeout_ms  = BLE_BOOT_WINDOW_MS;
 /** Prevents rivr_start_adv() from running before the host is synced. */
 static volatile bool s_host_synced = false;
 
+#if RIVR_BLE_PASSKEY != 0
+/** Active 6-digit passkey for this boot session. */
+static uint32_t s_active_passkey = 0u;
+#endif
+
 /* ── Service UUID (used in advertising payload) ───────────────────────────── *
  * 6E400001-B5A3-F393-E0A9-E50E24DCCA9E in little-endian byte order.         */
 static const ble_uuid128_t s_adv_svc_uuid =
     BLE_UUID128_INIT(0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
                      0x93, 0xf3, 0xa3, 0xb5, 0x01, 0x00, 0x40, 0x6e);
+
+#if RIVR_BLE_PASSKEY != 0
+static uint32_t rivr_ble_choose_passkey(void)
+{
+#if RIVR_FEATURE_DISPLAY
+    if ((uint32_t)RIVR_BLE_PASSKEY == RIVR_BLE_DEFAULT_SENTINEL_PASSKEY) {
+        return 100000u + (esp_random() % 900000u);
+    }
+#endif
+    return (uint32_t)RIVR_BLE_PASSKEY;
+}
+#endif
 
 /* ── Advertising helpers ─────────────────────────────────────────────────── */
 
@@ -327,18 +349,17 @@ static int rivr_ble_gap_event(struct ble_gap_event *event, void *arg)
             /* Passkey Entry: we display, Android types.  Inject our static
              * passkey — Android will show an input field for it.          */
             pkey.action  = BLE_SM_IOACT_DISP;
-            pkey.passkey = (uint32_t)RIVR_BLE_PASSKEY;
+            pkey.passkey = s_active_passkey;
             RIVR_LOGI(TAG, "BLE pairing: Passkey Entry — show %06lu on phone",
                       (unsigned long)pkey.passkey);
             ble_sm_inject_io(event->passkey.conn_handle, &pkey);
         } else if (event->passkey.params.action == BLE_SM_IOACT_NUMCMP) {
-            /* Numeric Comparison: Android shows a 6-digit code and asks the
-             * user to confirm it matches.  Auto-accept on our side — the
-             * user still has to press Yes on Android.  Bond will have
-             * sec_state.authenticated == 1 so our ENC_CHANGE check passes. */
+            /* DisplayOnly should normally force Passkey Entry on Android.
+             * If a stack still requests Numeric Comparison, accept it so the
+             * link can progress rather than failing outright. */
             pkey.action        = BLE_SM_IOACT_NUMCMP;
             pkey.numcmp_accept = 1;
-            RIVR_LOGI(TAG, "BLE pairing: Numeric Comparison %06lu — auto-confirmed",
+            RIVR_LOGW(TAG, "BLE pairing: unexpected Numeric Comparison %06lu — auto-accepted",
                       (unsigned long)event->passkey.params.numcmp);
             ble_sm_inject_io(event->passkey.conn_handle, &pkey);
         } else {
@@ -455,20 +476,18 @@ void rivr_ble_init(void)
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
 #if RIVR_BLE_PASSKEY != 0
-    /* MITM-protected bonding using DisplayYesNo IO capability.
+    s_active_passkey = rivr_ble_choose_passkey();
+
+    /* MITM-protected bonding using DisplayOnly IO capability.
      *
      * IO cap selection rationale (BT Core Vol 3, Part H §2.3.5.1):
-     *   Android KeyboardDisplay + ESP32 DisplayYesNo → Numeric Comparison
-     *   Android DisplayYesNo   + ESP32 DisplayYesNo → Numeric Comparison
-     *   Android KeyboardDisplay + ESP32 DisplayOnly  → Passkey Entry
-     *   Android DisplayYesNo   + ESP32 DisplayOnly  → Just Works (!)  ← old bug
+     *   Android KeyboardDisplay + ESP32 DisplayOnly → Passkey Entry
+     *   Android DisplayYesNo   + ESP32 DisplayOnly → Passkey Entry / OS
+     *                                                mediated passkey UI
      *
-     * DisplayYesNo covers both Android IO cap variants and always yields an
-     * authenticated bond (sec_state.authenticated == 1).  The IOACT_DISP
-     * case (passkey entry) still injects RIVR_BLE_PASSKEY for the rare
-     * KeyboardDisplay+DisplayOnly path; IOACT_NUMCMP auto-confirms on our
-     * side so the user only has to tap "Yes" on Android.                  */
-    ble_hs_cfg.sm_io_cap         = BLE_SM_IO_CAP_DISP_YES_NO;
+     * This matches the MeshCore UX: show a 6-digit PIN on the node and let
+     * Android ask the user to enter it during pairing.                    */
+    ble_hs_cfg.sm_io_cap         = BLE_SM_IO_CAP_DISP_ONLY;
     ble_hs_cfg.sm_bonding        = 1;
     ble_hs_cfg.sm_mitm           = 1;
     ble_hs_cfg.sm_sc             = 1;   /* LE Secure Connections           */
@@ -477,7 +496,7 @@ void rivr_ble_init(void)
     ble_hs_cfg.sm_our_key_dist   = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     RIVR_LOGI(TAG, "BLE security: MITM passkey bonding enabled (PIN=%06lu)",
-              (unsigned long)RIVR_BLE_PASSKEY);
+              (unsigned long)s_active_passkey);
 #else
     RIVR_LOGI(TAG, "BLE security: open (no pairing)");
 #endif
@@ -496,7 +515,11 @@ void rivr_ble_init(void)
     /* ── 5. Mark BLE as active in the BOOT_WINDOW mode ── */
     s_ble_active   = true;
     s_activate_ms  = 0u;   /* tb_millis() is valid now; will be set in tick */
+#if RIVR_BLE_PASSKEY != 0
+    s_timeout_ms   = 0u;   /* MeshCore-style secure BLE: stay available */
+#else
     s_timeout_ms   = BLE_BOOT_WINDOW_MS;
+#endif
     s_conn_handle  = BLE_HS_CONN_HANDLE_NONE;
 
     /* ── 6. Start the NimBLE host FreeRTOS task ── */
@@ -504,8 +527,12 @@ void rivr_ble_init(void)
      * Stack depth 4 KB is sufficient for NimBLE with simple GATT usage.    */
     nimble_port_freertos_init(ble_host_task);
 
-    RIVR_LOGI(TAG, "NimBLE host task started; BLE active (%lu ms window)",
-              (unsigned long)BLE_BOOT_WINDOW_MS);
+    if (s_timeout_ms == 0u) {
+        RIVR_LOGI(TAG, "NimBLE host task started; BLE active without timeout");
+    } else {
+        RIVR_LOGI(TAG, "NimBLE host task started; BLE active (%lu ms window)",
+                  (unsigned long)BLE_BOOT_WINDOW_MS);
+    }
 }
 
 void rivr_ble_tick(uint32_t now_ms)
@@ -529,7 +556,11 @@ void rivr_ble_activate(rivr_ble_mode_t mode)
 {
     switch (mode) {
     case RIVR_BLE_MODE_BOOT_WINDOW:
+#if RIVR_BLE_PASSKEY != 0
+        s_timeout_ms = 0u;
+#else
         s_timeout_ms = BLE_BOOT_WINDOW_MS;
+#endif
         break;
     case RIVR_BLE_MODE_BUTTON:
         s_timeout_ms = BLE_BUTTON_WINDOW_MS;
@@ -588,6 +619,15 @@ bool rivr_ble_is_connected(void)
 uint16_t rivr_ble_conn_handle(void)
 {
     return s_conn_handle;
+}
+
+uint32_t rivr_ble_passkey(void)
+{
+#if RIVR_BLE_PASSKEY != 0
+    return s_active_passkey;
+#else
+    return 0u;
+#endif
 }
 
 #endif /* RIVR_FEATURE_BLE */
