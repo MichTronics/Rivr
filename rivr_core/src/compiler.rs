@@ -16,13 +16,7 @@
 //! - Static type-check pass validates sources, clocks, and emit bindings.
 
 #[cfg(not(feature = "std"))]
-use alloc::{
-    boxed::Box,
-    collections::BTreeMap,
-    format,
-    string::String,
-    vec::Vec,
-};
+use alloc::{boxed::Box, collections::BTreeMap, format, string::String, vec::Vec};
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 

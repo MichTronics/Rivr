@@ -10,11 +10,7 @@
 
 // Import alloc types when no_std + alloc.  Under std these are in scope already.
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::{
-    format,
-    string::String,
-    vec::Vec,
-};
+use alloc::{format, string::String, vec::Vec};
 
 use serde::{Deserialize, Serialize};
 
