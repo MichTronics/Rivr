@@ -66,19 +66,24 @@ jobs:
 
       # ── 4. Install Espressif Rust toolchain (Xtensa) ─────────────────────
       #
-      # The xtensa-esp32-espidf target requires a patched Rust compiler fork
-      # maintained by esp-rs. espup is the official installer for this toolchain.
-      #
-      # After installation espup writes ~/export-esp.sh containing export
-      # statements for LIBCLANG_PATH, PATH, and RUSTUP_TOOLCHAIN.
-      # We strip the leading "export " from each line and append the result to
-      # $GITHUB_ENV so that every subsequent step in this job inherits those
-      # variables automatically — no shell sourcing required per step.
+      # espup installs the Xtensa Rust compiler fork and writes export-esp.sh.
+      # We source it in the same step to expand variables, then persist them
+      # for subsequent steps:
+      #   - PATH additions  → $GITHUB_PATH  (appends; never overwrites PATH)
+      #   - Other vars      → $GITHUB_ENV   (written as already-expanded values)
+      # Writing the raw export-esp.sh PATH line to $GITHUB_ENV would set PATH
+      # to the literal string "$PATH" (unexpanded), breaking cargo lookup.
       - name: Install Espressif Rust toolchain via espup
         run: |
           cargo install espup --locked
           espup install
-          sed 's/^export //' "$HOME/export-esp.sh" >> "$GITHUB_ENV"
+          source "$HOME/export-esp.sh"
+          # Persist expanded values of known Xtensa env vars
+          [ -n "$LIBCLANG_PATH"    ] && echo "LIBCLANG_PATH=$LIBCLANG_PATH"       >> "$GITHUB_ENV"
+          [ -n "$CLANG_PATH"       ] && echo "CLANG_PATH=$CLANG_PATH"             >> "$GITHUB_ENV"
+          [ -n "$RUSTUP_TOOLCHAIN" ] && echo "RUSTUP_TOOLCHAIN=$RUSTUP_TOOLCHAIN" >> "$GITHUB_ENV"
+          # Add cargo and Xtensa tool binaries to PATH via GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       # ── 5. Restore build cache ────────────────────────────────────────────
       #
