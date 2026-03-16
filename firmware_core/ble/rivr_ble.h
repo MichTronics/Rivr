@@ -59,9 +59,9 @@
  *    MITM-protected bonding using LE Secure Connections (LESC):
  *    • IO capability: BLE_SM_IO_CAP_DISP_ONLY — node displays a 6-digit
  *      passkey; the user enters it on their phone when prompted by the OS.
- *    • When RIVR_FEATURE_DISPLAY=1 and RIVR_BLE_PASSKEY is left at 123456,
- *      the firmware generates a random 6-digit passkey each boot, matching
- *      MeshCore-style "show PIN on screen, type it on the phone".
+ *    • By default the configured RIVR_BLE_PASSKEY is used as-is.
+ *    • Set RIVR_BLE_RANDOM_PASSKEY=1 if you want a random 6-digit session
+ *      passkey instead of the configured build-time value.
  *    • TX and RX characteristics require an encrypted link (ATT_ERR_INSUFFICIENT_ENC
  *      is returned to any unauthenticated client).
  *    • The LTK is persisted in NVS (CONFIG_BT_NIMBLE_MAX_BONDS ≥ 1); repeat
