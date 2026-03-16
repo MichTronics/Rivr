@@ -73,6 +73,7 @@
 #include "../firmware_core/dutycycle.h"
 #include "../firmware_core/rivr_policy.h"
 #include "../firmware_core/routing_stats.h"
+#include "../firmware_core/ble/rivr_ble.h"
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 
@@ -249,6 +250,7 @@ static void cli_handle_line(void)
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
+               "  ble-clear-bonds       remove all persisted BLE bonds from this node\r\n"
                "  reboot                software reset the device\r\n"
                "  help                  show this list\r\n");
         fflush(stdout);
@@ -603,6 +605,20 @@ static void cli_handle_line(void)
                 .relay_density = _lnk.count,
             };
             rivr_metrics_print(&ls);
+        }
+        fflush(stdout);
+        return;
+    }
+
+    /* "ble-clear-bonds" — remove persisted BLE bond records */
+    if (strncmp(p, "ble-clear-bonds", 15u) == 0 &&
+        (p[15] == '\0' || p[15] == ' ')) {
+        int removed = rivr_ble_clear_bonds();
+        if (removed < 0) {
+            printf("ERR: failed to clear BLE bonds\r\n");
+        } else {
+            printf("OK BLE bonds cleared: %d\r\n", removed);
+            printf("If the phone was previously paired, forget the node in Android too.\r\n");
         }
         fflush(stdout);
         return;

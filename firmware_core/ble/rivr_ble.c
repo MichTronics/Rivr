@@ -9,6 +9,7 @@
 #if RIVR_FEATURE_BLE
 
 #include <inttypes.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -441,6 +442,58 @@ uint32_t rivr_ble_passkey(void)
 #else
     return 0u;
 #endif
+}
+
+int rivr_ble_clear_bonds(void)
+{
+    int dev_num = esp_ble_get_bond_device_num();
+    if (dev_num <= 0) {
+        if (s_remote_bda_valid) {
+            esp_ble_gap_disconnect(s_remote_bda);
+        }
+        return 0;
+    }
+
+    esp_ble_bond_dev_t *dev_list = calloc((size_t)dev_num, sizeof(*dev_list));
+    if (dev_list == NULL) {
+        RIVR_LOGW(TAG, "BLE clear bonds: allocation failed for %d entries", dev_num);
+        return -1;
+    }
+
+    int list_count = dev_num;
+    esp_err_t err = esp_ble_get_bond_device_list(&list_count, dev_list);
+    if (err != ESP_OK) {
+        RIVR_LOGW(TAG, "BLE clear bonds: list fetch failed: %s", esp_err_to_name(err));
+        free(dev_list);
+        return -1;
+    }
+
+    if (s_remote_bda_valid) {
+        esp_ble_gap_disconnect(s_remote_bda);
+        s_conn_handle = 0xFFFFu;
+        s_pending_conn_handle = 0xFFFFu;
+        s_remote_bda_valid = false;
+        rivr_ble_service_clear_connection();
+    }
+
+    int removed = 0;
+    for (int i = 0; i < list_count; ++i) {
+        err = esp_ble_remove_bond_device(dev_list[i].bd_addr);
+        if (err == ESP_OK) {
+            removed++;
+        } else {
+            RIVR_LOGW(TAG, "BLE clear bonds: remove failed for entry %d: %s",
+                      i, esp_err_to_name(err));
+        }
+    }
+
+    free(dev_list);
+
+    RIVR_LOGI(TAG, "BLE clear bonds: removed %d/%d records", removed, list_count);
+    if (s_ble_active) {
+        rivr_ble_start_adv();
+    }
+    return removed;
 }
 
 #endif /* RIVR_FEATURE_BLE */
