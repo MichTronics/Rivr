@@ -395,40 +395,29 @@ static void tx_drain_loop(void)
             continue;   /* skip — try next frame; revisit this one next tick  */
         }
 
-        /* ── Phase 4: Opportunistic relay suppression ──────────────────── *
-         * If a neighbor was heard relaying this same (src_id, pkt_id) pair *
-         * during our jitter window, skip our copy — it's redundant.       *
-         * Only suppresses relay frames (PKT_FLAG_RELAY set); originated   *
-         * frames are never cancelled.                                      *
-         *                                                                  *
-         * req_is_relay is set here and consumed below to increment         *
-         * relay_forwarded_total when the frame completes TX.               */
+        /* Decode the outgoing frame once to identify relay frames.
+         * req_is_relay gates opportunistic suppression (when OPFWD is on)
+         * and the relay_forwarded_total counter incremented on TX complete. */
         bool req_is_relay = false;
-#if RIVR_FEATURE_OPPORTUNISTIC_FWD
-        {
-            rivr_pkt_hdr_t sup_hdr;
-            const uint8_t *sup_pl = NULL;
-            if (protocol_decode(req.data, req.len, &sup_hdr, &sup_pl)) {
-                req_is_relay = (sup_hdr.flags & PKT_FLAG_RELAY) != 0u;
-                if (req_is_relay
-                        && opfwd_suppress_check(&g_opfwd_suppress,
-                                                sup_hdr.src_id, sup_hdr.pkt_id,
-                                                now_ms)) {
-                    g_rivr_metrics.flood_fwd_cancelled_opport_total++;
-                    ESP_LOGD(TAG,
-                        "opfwd: suppress relay src=0x%08lx pkt_id=0x%04x",
-                        (unsigned long)sup_hdr.src_id, (unsigned)sup_hdr.pkt_id);
-                    continue;
-                }
-            }
+        rivr_pkt_hdr_t req_hdr;
+        const uint8_t *req_pl = NULL;
+        if (protocol_decode(req.data, req.len, &req_hdr, &req_pl)) {
+            req_is_relay = (req_hdr.flags & PKT_FLAG_RELAY) != 0u;
         }
-#else
-        {
-            /* Detect relay flag for relay_forwarded metric when OPFWD is off */
-            rivr_pkt_hdr_t _hdr; const uint8_t *_pl = NULL;
-            if (protocol_decode(req.data, req.len, &_hdr, &_pl)) {
-                req_is_relay = (_hdr.flags & PKT_FLAG_RELAY) != 0u;
-            }
+
+        /* Opportunistic relay suppression: if a neighbour was already heard
+         * forwarding this (src_id, pkt_id) pair during our jitter window,
+         * our copy is redundant.  Only relay frames are candidates — frames
+         * we originated are never suppressed. */
+#if RIVR_FEATURE_OPPORTUNISTIC_FWD
+        if (req_is_relay
+                && opfwd_suppress_check(&g_opfwd_suppress,
+                                        req_hdr.src_id, req_hdr.pkt_id,
+                                        now_ms)) {
+            g_rivr_metrics.flood_fwd_cancelled_opport_total++;
+            ESP_LOGD(TAG, "opfwd: suppress relay src=0x%08lx pkt_id=0x%04x",
+                     (unsigned long)req_hdr.src_id, (unsigned)req_hdr.pkt_id);
+            continue;
         }
 #endif /* RIVR_FEATURE_OPPORTUNISTIC_FWD */
 
@@ -571,84 +560,104 @@ static void rivr_init_gateway(void)
      * gateway just adds an extra forwarding path: RF → IP. */
 }
 #endif  /* RIVR_ROLE_GATEWAY */
-/* ── Entry point ─────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Boot helper functions
+ * Called once from app_main() in a deliberate sequence:
+ *   hardware_and_timing_init()
+ *   derive_node_id() / sim identity assignment
+ *   load_node_identity()
+ *   rivr_subsystems_init()
+ *   build_info_print_banner()
+ *   rivr_role_init()
+ *   emit_boot_supportpack()
+ *   start_display_task()
+ *   start_transport_interfaces()
+ * ══════════════════════════════════════════════════════════════════════════ */
 
-void app_main(void)
+/**
+ * hardware_and_timing_init - Configure hardware peripherals and start clocks.
+ *
+ * Simulation mode: initialise ring-buffers only (no SPI, no GPIO).
+ * Hardware mode: full platform init, radio init, duty-cycle + airtime contexts,
+ * then register the main task with the ESP Task Watchdog so a main-loop stall
+ * (e.g. flash write deadlock) triggers a clean reboot instead of a wedged node.
+ */
+static void hardware_and_timing_init(void)
 {
-    /* ── Check for crash/WDT from previous boot — emits @CRASH JSON if needed ─ */
-#if !RIVR_SIM_MODE
-    rivr_panic_check_prev();
-#endif
-
-    RIVR_LOGI(TAG, "═══ RIVR Embedded Node booting ═══");
-    RIVR_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
-
 #if RIVR_SIM_MODE
-    RIVR_LOGI(TAG, "*** SIMULATION MODE: no real SX1262 hardware ***");
-#endif
-
-    /* ── Hardware init ── */
-#if RIVR_SIM_MODE
-    /* In sim mode skip full platform_init (no SPI bus, no GPIO interrupts).
-     * Only initialise the ring-buffers inside the radio module so that
-     * sim_inject_packets() can push frames immediately.
-     * [HARDWARE-TODO / SIM-ONLY] TODO(SX1262): replace with platform_init() once hardware is connected. */
+    /* Skip SPI/GPIO init — only bring up ring-buffers so sim_inject_packets()
+     * can push frames before the main loop starts. */
     timebase_init();
     dutycycle_init(&g_dc);
     airtime_sched_init();
-    radio_sim_init();   /* initialises ringbufs, attempts SX1262 reset (safe to ignore) */
+    radio_sim_init();
 #else
     platform_init();
     timebase_init();
     radio_init();
     dutycycle_init(&g_dc);
     airtime_sched_init();
-
-    /* Subscribe the main task to the ESP Task Watchdog.
-     * Timeout is set by CONFIG_ESP_TASK_WDT_TIMEOUT_S in sdkconfig.defaults.
-     * If the main loop stalls (flash write deadlock, SPI hang, etc.) for that
-     * duration, the WDT fires a panic → clean reboot instead of wedged node. */
+    /* Timeout is set by CONFIG_ESP_TASK_WDT_TIMEOUT_S in sdkconfig.defaults. */
     esp_task_wdt_add(NULL);
-
-    /* Derive unique node ID from lower 4 bytes of WiFi STA MAC address */
-    {
-        uint8_t mac[6];
-        esp_read_mac(mac, ESP_MAC_WIFI_STA);
-        g_my_node_id = ((uint32_t)mac[2] << 24) | ((uint32_t)mac[3] << 16)
-                     | ((uint32_t)mac[4] <<  8) |  (uint32_t)mac[5];
-        RIVR_LOGI(TAG, "Node ID: 0x%08lX (from MAC bytes [2..5])",
-                 (unsigned long)g_my_node_id);
-    }
 #endif
+}
 
-#if RIVR_SIM_MODE
-    /* Assign our simulated node identity before the RIVR engine starts so
-     * routing_should_reply_route_req(), route_cache_learn_rx(), etc., can
-     * distinguish this node from the injected remote nodes. */
-    g_my_node_id = MY_NODE_ID;
-    RIVR_LOGI(TAG, "[SIM] node identity: 0x%08lx", (unsigned long)MY_NODE_ID);
-#endif
+#if !RIVR_SIM_MODE
+/**
+ * derive_node_id - Compute a unique 32-bit node ID from the chip MAC address.
+ *
+ * Uses WiFi STA MAC bytes [2..5] (the lower 32 bits) so every ESP32 on the
+ * same network has a distinct identity without manual provisioning.
+ */
+static void derive_node_id(void)
+{
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    g_my_node_id = ((uint32_t)mac[2] << 24) | ((uint32_t)mac[3] << 16)
+                 | ((uint32_t)mac[4] <<  8) |  (uint32_t)mac[5];
+    RIVR_LOGI(TAG, "Node ID: 0x%08lX (from MAC bytes [2..5])",
+             (unsigned long)g_my_node_id);
+}
+#endif /* !RIVR_SIM_MODE */
 
-    /* ── RIVR engine init ── */
-    /* Apply compile-time identity defaults first, then override from NVS so
-       nodes can be provisioned in the field without reflashing.
-       Publish identity globals before init so beacon_sink_cb and NVS helpers
-       can read callsign and net_id from the moment the engine starts. */
+/**
+ * load_node_identity - Set callsign and net_id, then apply any NVS overrides.
+ *
+ * Compile-time defaults (RIVR_CALLSIGN, RIVR_NET_ID) are applied first so the
+ * node is always functional out of the box.  NVS values silently replace them,
+ * allowing field provisioning without reflashing.  Identity globals must be
+ * written before rivr_embed_init() so beacon_sink_cb can read them immediately.
+ */
+static void load_node_identity(void)
+{
     g_net_id = (uint16_t)RIVR_NET_ID;
     strncpy(g_callsign, RIVR_CALLSIGN, sizeof(g_callsign) - 1u);
     g_callsign[sizeof(g_callsign) - 1u] = '\0';
     rivr_nvs_load_identity();   /* NVS values silently override compile-time defaults */
-    rivr_policy_init();          /* load compiled-in defaults into g_policy_params */
+}
+
+/**
+ * rivr_subsystems_init - Initialise the RIVR engine and transport bus.
+ *
+ * Order is significant: policy defaults must be loaded before the fabric and
+ * engine start, since both read policy parameters on first tick.
+ */
+static void rivr_subsystems_init(void)
+{
+    rivr_policy_init();   /* load compiled-in defaults into g_policy_params */
     rivr_fabric_init();
     rivr_embed_init();
-    rivr_bus_init();     /* multi-transport packet bus: zero dup cache, log init */
+    rivr_bus_init();      /* zero dup-cache, log transport init */
+}
 
-    /* Emit single-line build identity banner (git SHA, env, radio profile). */
-    build_info_print_banner();
-
-    /* ── Role-specific startup ─────────────────────────────────────────────
-     * Delegates to rivr_init_{client,repeater,gateway}() defined above.     *
-     * Each logs its role banner and performs role-specific setup.            */
+/**
+ * rivr_role_init - Perform role-specific initialisation and log the role banner.
+ *
+ * Dispatches to rivr_init_{client,repeater,gateway}() defined above.
+ * Only the stub matching the compile-time role flag is compiled in.
+ */
+static void rivr_role_init(void)
+{
 #if RIVR_ROLE_CLIENT
     rivr_init_client();
 #elif RIVR_ROLE_REPEATER
@@ -658,54 +667,102 @@ void app_main(void)
 #else
     RIVR_LOGI(TAG, "role: GENERIC  | sim/test build");
 #endif
-    /* Also emit @SUPPORTPACK at boot so the first log line is copy-paste ready. */
-    {
-        char sp_buf[768];
-        build_info_write_supportpack(sp_buf, sizeof(sp_buf),
-            0u, 0u, 0u,
-            (uint64_t)36000000u, 0u, 0u,   /* DC: full budget at boot */
-            0u, 0u, 0u);
-        printf("@SUPPORTPACK %s\r\n", sp_buf);
-        fflush(stdout);
-    }
+}
 
-#if RIVR_ROLE_CLIENT
-    /* Start serial CLI — installs UART driver, prints boot banner.
-     * NOTE: CLI init is now done inside rivr_init_client(); this block is *
-     * intentionally empty — kept for symmetry with the other role blocks.  */
-#endif
+/**
+ * emit_boot_supportpack - Print a @SUPPORTPACK JSON diagnostic line to stdout.
+ *
+ * Emitted once at boot so the first console output is copy-paste ready for
+ * GitHub bug reports.  The main loop also emits periodic @SUPPORTPACK lines.
+ */
+static void emit_boot_supportpack(void)
+{
+    char sp_buf[768];
+    build_info_write_supportpack(sp_buf, sizeof(sp_buf),
+        0u, 0u, 0u,
+        (uint64_t)36000000u, 0u, 0u,   /* DC: full budget at boot */
+        0u, 0u, 0u);
+    printf("@SUPPORTPACK %s\r\n", sp_buf);
+    fflush(stdout);
+}
 
-    /* ── Display task (spawns low-priority FreeRTOS task; never blocks main) ── */
-    {
-        display_stats_t boot_stats;
-        memset(&boot_stats, 0, sizeof(boot_stats));
-        boot_stats.node_id = g_my_node_id;
-        boot_stats.net_id  = g_net_id;
-        strncpy(boot_stats.callsign, g_callsign, sizeof(boot_stats.callsign) - 1u);
+/**
+ * start_display_task - Seed the boot stats snapshot and start the display task.
+ *
+ * Spawns a low-priority FreeRTOS task that drives the display device.
+ * The main loop communicates with it via display_post_stats().
+ * No-op in simulation mode (no display hardware present).
+ */
+static void start_display_task(void)
+{
+    display_stats_t boot_stats;
+    memset(&boot_stats, 0, sizeof(boot_stats));
+    boot_stats.node_id = g_my_node_id;
+    boot_stats.net_id  = g_net_id;
+    strncpy(boot_stats.callsign, g_callsign, sizeof(boot_stats.callsign) - 1u);
 #if !RIVR_SIM_MODE
-        display_task_start(&boot_stats);
+    display_task_start(&boot_stats);
 #endif
-    }
+}
 
-    /* ── BLE transport init: start NimBLE in 120 s boot-window mode ─────────── *
-     * Advertises as "RIVR-XXXX" immediately after NimBLE host sync (~200 ms).  *
-     * Auto-deactivates when the boot window expires (rivr_ble_tick in loop).   *
-     * No-op when RIVR_FEATURE_BLE=0 (stubs inline in rivr_ble.h).            */
+/**
+ * start_transport_interfaces - Start BLE and USB-UART SLIP bridge interfaces.
+ *
+ * BLE:  starts NimBLE in 120-second boot-window mode; auto-deactivates when
+ *       the window expires (polled by rivr_ble_tick in the main loop).
+ *       No-op when RIVR_FEATURE_BLE=0 (stubs in rivr_ble.h).
+ * USB:  installs the UART driver for the USB-UART bridge.
+ *       No-op when RIVR_FEATURE_USB_BRIDGE=0 (stubs in rivr_iface_usb.h).
+ * Both are skipped entirely in simulation mode.
+ */
+static void start_transport_interfaces(void)
+{
 #if !RIVR_SIM_MODE
     rivr_ble_init();
-    /* ── USB-UART SLIP bridge init ────────────────────────────────────────────
-     * Installs UART driver for the USB bridge (default: UART1, GPIO16/17).    *
-     * No-op when RIVR_FEATURE_USB_BRIDGE=0 (inline stub in rivr_iface_usb.h). */
     rivr_iface_usb_init();
 #endif
+}
+
+/* ── Entry point ─────────────────────────────────────────────────────────── */
+
+void app_main(void)
+{
+    /* Check for crash/WDT from previous boot — emits @CRASH JSON if set. */
+#if !RIVR_SIM_MODE
+    rivr_panic_check_prev();
+#endif
+
+    RIVR_LOGI(TAG, "═══ RIVR Embedded Node booting ═══");
+    RIVR_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
+#if RIVR_SIM_MODE
+    RIVR_LOGI(TAG, "*** SIMULATION MODE: no real SX1262 hardware ***");
+#endif
+
+    hardware_and_timing_init();
 
 #if RIVR_SIM_MODE
-    /* Push simulated frames AFTER engine is ready so clock state is fully
-     * initialised, but BEFORE radio_start_rx (which is skipped in sim mode). */
+    /* Assign simulated identity before the engine starts so routing and
+     * route-cache helpers can distinguish this node from injected peers. */
+    g_my_node_id = MY_NODE_ID;
+    RIVR_LOGI(TAG, "[SIM] node identity: 0x%08lx", (unsigned long)MY_NODE_ID);
+#else
+    derive_node_id();
+#endif
+
+    load_node_identity();
+    rivr_subsystems_init();
+    build_info_print_banner();
+    rivr_role_init();
+    emit_boot_supportpack();
+    start_display_task();
+    start_transport_interfaces();
+
+#if RIVR_SIM_MODE
+    /* Inject test frames after the engine is ready but before the main loop
+     * starts (radio_start_rx is skipped in sim mode). */
     sim_inject_packets();
     RIVR_LOGI(TAG, "[SIM] frames injected, entering main loop (rivr_tick will process them)");
 #else
-    /* ── Start radio RX ── */
     radio_start_rx();
 #endif
 

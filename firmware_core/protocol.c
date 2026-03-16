@@ -128,55 +128,70 @@ int protocol_encode(const rivr_pkt_hdr_t *hdr,
 
 /* ── decode ──────────────────────────────────────────────────────────────── */
 
-bool protocol_decode(const uint8_t    *buf,
-                     uint8_t           len,
-                     rivr_pkt_hdr_t   *hdr,
-                     const uint8_t   **payload_out)
+/**
+ * validate_wire_frame - Check all structural constraints before parsing.
+ *
+ * Returns true and writes the validated payload_len into @p payload_len_out
+ * on success.  Returns false immediately on any failure.  Side-effect:
+ * increments rx_invalid_type metric on packet-type violations.
+ *
+ * Checks in order:
+ *   1. buf length ≥ RIVR_PKT_MIN_FRAME (25 bytes).
+ *   2. Magic word == RIVR_MAGIC ("RV").
+ *   3. Version == RIVR_PROTO_VER (1).
+ *   4. Packet type in [1, PKT_METRICS] (0 and >11 are undefined).
+ *   5. payload_len ≤ RIVR_PKT_MAX_PAYLOAD (guards uint8_t wrap below).
+ *   6. buf length ≥ RIVR_PKT_HDR_LEN + payload_len + RIVR_PKT_CRC_LEN.
+ *   7. CRC-16/CCITT over the header and payload region.
+ */
+static bool validate_wire_frame(const uint8_t *buf, uint8_t len,
+                                 uint8_t *payload_len_out)
 {
-    if (!buf || !hdr) return false;
-
-    /* Minimum: header (22) + CRC (2) */
     if (len < RIVR_PKT_MIN_FRAME) return false;
 
-    /* Check magic */
     uint16_t magic = (uint16_t)(buf[0] | ((uint16_t)buf[1] << 8));
     if (magic != RIVR_MAGIC) return false;
 
-    /* Reject unknown protocol versions — prevents silent processing of
-     * frames from future incompatible protocol revisions.               */
+    /* Silently reject incompatible protocol versions to avoid log spam
+     * when a future-version peer is in range. */
     if (buf[2] != RIVR_PROTO_VER) return false;
 
-    /* Reject reserved or out-of-range packet types.  Type 0 is never     *
-     * assigned; values above PKT_METRICS (11) are currently undefined.   *
-     * Frames with invalid types are counted separately from CRC failures  *
-     * so operators can distinguish malformed traffic from foreign devices. */
+    /* Type 0 is unassigned; values above PKT_METRICS are undefined.
+     * Count these separately from CRC failures so operators can
+     * distinguish "foreign device" from "corrupted frame". */
     if (buf[3] == 0u || buf[3] > PKT_METRICS) {
         g_rivr_metrics.rx_invalid_type++;
         return false;
     }
 
-    /* Extract payload_len from header byte [21] */
     uint8_t payload_len = buf[21];
+    /* Guard against uint8_t wrap in the expected_len arithmetic below:
+     * without this check, payload_len=231 would make expected_len wrap to a
+     * small value and the CRC check would pass on a truncated frame. */
+    if (payload_len > RIVR_PKT_MAX_PAYLOAD) return false;
 
-    /* Reject packets claiming a payload larger than the protocol maximum.
-     * Without this guard, payload_len >= 231 wraps the uint8_t expected_len
-     * calculation below, causing the decode to succeed on a truncated frame. */
-    if (payload_len > RIVR_PKT_MAX_PAYLOAD) {
-        return false;
-    }
-
-    /* Check total length */
     uint8_t expected_len = (uint8_t)(RIVR_PKT_HDR_LEN + payload_len + RIVR_PKT_CRC_LEN);
     if (len < expected_len) return false;
 
-    /* Verify CRC (covers bytes 0 .. 21+payload_len) */
-    uint8_t  data_len   = (uint8_t)(RIVR_PKT_HDR_LEN + payload_len);
-    uint16_t crc_calc   = protocol_crc16(buf, data_len);
-    uint16_t crc_wire   = (uint16_t)(buf[data_len] | ((uint16_t)buf[data_len + 1] << 8));
+    uint8_t  data_len = (uint8_t)(RIVR_PKT_HDR_LEN + payload_len);
+    uint16_t crc_calc = protocol_crc16(buf, data_len);
+    uint16_t crc_wire = (uint16_t)(buf[data_len] | ((uint16_t)buf[data_len + 1] << 8));
     if (crc_calc != crc_wire) return false;
 
-    /* Populate header struct */
-    hdr->magic       = magic;
+    *payload_len_out = payload_len;
+    return true;
+}
+
+/**
+ * unpack_header_from_wire - Deserialise raw wire bytes into rivr_pkt_hdr_t.
+ *
+ * @p buf must have already passed validate_wire_frame().
+ * All multi-byte fields are little-endian per the RIVR wire specification.
+ */
+static void unpack_header_from_wire(const uint8_t *buf, uint8_t payload_len,
+                                     rivr_pkt_hdr_t *hdr)
+{
+    hdr->magic       = (uint16_t)(buf[0] | ((uint16_t)buf[1] << 8));
     hdr->version     = buf[2];
     hdr->pkt_type    = buf[3];
     hdr->flags       = buf[4];
@@ -190,13 +205,25 @@ bool protocol_decode(const uint8_t    *buf,
                                            | ((uint32_t)buf[15] << 16)
                                            | ((uint32_t)buf[16] << 24));
     hdr->seq         = (uint16_t)(buf[17] | ((uint16_t)buf[18] << 8));
-    hdr->pkt_id       = (uint16_t)(buf[19] | ((uint16_t)buf[20] << 8));
+    hdr->pkt_id      = (uint16_t)(buf[19] | ((uint16_t)buf[20] << 8));
     hdr->payload_len = payload_len;
     hdr->loop_guard  = buf[LOOP_GUARD_BYTE_OFFSET];   /* byte [22] */
+}
 
-    /* Pointer into @p buf for the payload */
+bool protocol_decode(const uint8_t    *buf,
+                     uint8_t           len,
+                     rivr_pkt_hdr_t   *hdr,
+                     const uint8_t   **payload_out)
+{
+    if (!buf || !hdr) return false;
+
+    uint8_t payload_len = 0u;
+    if (!validate_wire_frame(buf, len, &payload_len)) return false;
+
+    unpack_header_from_wire(buf, payload_len, hdr);
+
     if (payload_out) {
-        *payload_out = (payload_len > 0) ? (buf + RIVR_PKT_HDR_LEN) : NULL;
+        *payload_out = (payload_len > 0u) ? (buf + RIVR_PKT_HDR_LEN) : NULL;
     }
 
     return true;

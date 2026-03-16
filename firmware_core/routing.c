@@ -157,6 +157,49 @@ void routing_neighbor_init(neighbor_table_t *tbl)
     memset(tbl, 0, sizeof(*tbl));
 }
 
+/**
+ * neighbor_fill_slot - Write a new or freshly evicted neighbour slot.
+ *
+ * Seeds all fields from the received packet header and RF measurements.
+ * Called for empty slots and for evicted slots when the table is full.
+ */
+static void neighbor_fill_slot(neighbor_entry_t      *n,
+                                const rivr_pkt_hdr_t  *pkt,
+                                int8_t                 rssi_dbm,
+                                int8_t                 snr_db,
+                                uint32_t               now_ms)
+{
+    n->node_id      = pkt->src_id;
+    n->last_seen_ms = now_ms;
+    n->rssi_dbm     = rssi_dbm;
+    n->last_snr_db  = snr_db;
+    n->hop_count    = (uint8_t)(pkt->hop + 1u);
+    n->rx_ok        = 1u;
+}
+
+/**
+ * neighbor_update_existing - Refresh a known neighbour entry with new measurements.
+ *
+ * RSSI and SNR are smoothed with an EWMA (α=1/8) to suppress short-lived
+ * RF spikes and prevent route oscillation on noisy links.  hop_count is
+ * kept at the minimum observed value so routing always uses the shortest path.
+ */
+static void neighbor_update_existing(neighbor_entry_t     *n,
+                                      int8_t                rssi_dbm,
+                                      int8_t                snr_db,
+                                      uint8_t               new_hops,
+                                      uint32_t              now_ms)
+{
+    n->last_seen_ms = now_ms;
+    n->rssi_dbm     = (int8_t)(((int16_t)n->rssi_dbm * 7 + (int16_t)rssi_dbm) / 8);
+    n->last_snr_db  = (int8_t)(((int16_t)n->last_snr_db * 7 + (int16_t)snr_db) / 8);
+    n->rx_ok++;
+    /* Only update hop_count if this path is shorter — keeps the best-known route */
+    if (new_hops < n->hop_count) {
+        n->hop_count = new_hops;
+    }
+}
+
 void routing_neighbor_update(neighbor_table_t       *tbl,
                              const rivr_pkt_hdr_t   *pkt,
                              int8_t                  rssi_dbm,
@@ -165,41 +208,28 @@ void routing_neighbor_update(neighbor_table_t       *tbl,
 {
     if (!tbl || !pkt || pkt->src_id == 0) return;
 
-    /* Search for existing entry */
-    int8_t oldest_idx   = -1;
-    uint32_t oldest_age = 0;
+    uint8_t  new_hops   = (uint8_t)(pkt->hop + 1u);
+    int8_t   oldest_idx = -1;
+    uint32_t oldest_age = 0u;
 
     for (uint8_t i = 0; i < NEIGHBOR_TABLE_SIZE; i++) {
         neighbor_entry_t *n = &tbl->entries[i];
 
         if (n->node_id == 0) {
-            /* Empty slot — use it immediately */
-            n->node_id      = pkt->src_id;
-            n->last_seen_ms = now_ms;
-            n->rssi_dbm     = rssi_dbm;
-            n->last_snr_db  = snr_db;
-            n->hop_count    = (uint8_t)(pkt->hop + 1u);
-            n->rx_ok        = 1u;
-            if (tbl->count < NEIGHBOR_TABLE_SIZE) { tbl->count++; }
+            /* Empty slot — fill it and return immediately. */
+            neighbor_fill_slot(n, pkt, rssi_dbm, snr_db, now_ms);
+            if (tbl->count < NEIGHBOR_TABLE_SIZE) {
+                tbl->count++;
+            }
             return;
         }
 
         if (n->node_id == pkt->src_id) {
-            /* Update existing entry — EWMA for RSSI and SNR (α=1/8) to
-             * suppress short-lived spikes and prevent route oscillation. */
-            n->last_seen_ms = now_ms;
-            n->rssi_dbm     = (int8_t)(((int16_t)n->rssi_dbm * 7
-                                         + (int16_t)rssi_dbm) / 8);
-            n->last_snr_db  = (int8_t)(((int16_t)n->last_snr_db * 7
-                                         + (int16_t)snr_db) / 8);
-            n->rx_ok++;
-            /* Only update hop_count if this path is shorter */
-            uint8_t new_hops = (uint8_t)(pkt->hop + 1u);
-            if (new_hops < n->hop_count) { n->hop_count = new_hops; }
+            neighbor_update_existing(n, rssi_dbm, snr_db, new_hops, now_ms);
             return;
         }
 
-        /* Track oldest for eviction */
+        /* Track the oldest entry in case we need to evict. */
         uint32_t age = now_ms - n->last_seen_ms;
         if (oldest_idx < 0 || age > oldest_age) {
             oldest_idx = (int8_t)i;
@@ -207,15 +237,9 @@ void routing_neighbor_update(neighbor_table_t       *tbl,
         }
     }
 
-    /* Table full — evict the oldest or most-expired entry */
+    /* Table full — evict the oldest (most-expired) entry. */
     if (oldest_idx >= 0) {
-        neighbor_entry_t *n = &tbl->entries[oldest_idx];
-        n->node_id      = pkt->src_id;
-        n->last_seen_ms = now_ms;
-        n->rssi_dbm     = rssi_dbm;
-        n->last_snr_db  = snr_db;
-        n->hop_count    = (uint8_t)(pkt->hop + 1u);
-        n->rx_ok        = 1u;
+        neighbor_fill_slot(&tbl->entries[oldest_idx], pkt, rssi_dbm, snr_db, now_ms);
     }
 }
 
