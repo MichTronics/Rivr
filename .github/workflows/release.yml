@@ -67,16 +67,18 @@ jobs:
       # ── 4. Install Espressif Rust toolchain (Xtensa) ─────────────────────
       #
       # The xtensa-esp32-espidf target requires a patched Rust compiler fork
-      # maintained by esp-rs. The official action handles toolchain installation,
-      # LIBCLANG_PATH, and all required env vars automatically.
-      # Setting default=true makes `cargo +esp` (and plain `cargo`) resolve
-      # to the esp toolchain without any further shell sourcing.
-      - name: Set up Xtensa Rust toolchain
-        uses: esp-rs/xtensa-toolchain@v1
-        with:
-          default: true
-          version: latest
-          ldproxy: false
+      # maintained by esp-rs. espup is the official installer for this toolchain.
+      #
+      # After installation espup writes ~/export-esp.sh containing export
+      # statements for LIBCLANG_PATH, PATH, and RUSTUP_TOOLCHAIN.
+      # We strip the leading "export " from each line and append the result to
+      # $GITHUB_ENV so that every subsequent step in this job inherits those
+      # variables automatically — no shell sourcing required per step.
+      - name: Install Espressif Rust toolchain via espup
+        run: |
+          cargo install espup --locked
+          espup install
+          sed 's/^export //' "$HOME/export-esp.sh" >> "$GITHUB_ENV"
 
       # ── 5. Restore build cache ────────────────────────────────────────────
       #
@@ -100,9 +102,11 @@ jobs:
       # The CMakeLists.txt hard-errors if librivr_core.a is not present before
       # the PlatformIO build runs.  Build it in release mode so the final
       # firmware is optimised.
+      # RUSTUP_TOOLCHAIN=esp (set via $GITHUB_ENV above) makes plain `cargo`
+      # resolve to the esp toolchain — no +esp override needed.
       - name: Build Rust rivr_core (xtensa-esp32-espidf)
         run: |
-          cargo +esp build -p rivr_core \
+          cargo build -p rivr_core \
             --target xtensa-esp32-espidf \
             --features ffi \
             --release
