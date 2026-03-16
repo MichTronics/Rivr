@@ -34,18 +34,17 @@
  *
  * THREADING MODEL
  * ───────────────
- *  NimBLE runs in its own FreeRTOS host task (nimble_port_freertos_init).
- *  BLE callbacks are called from the NimBLE host task.
+ *  ESP-IDF Bluedroid runs its BLE callbacks from the BT host context.
  *
  *  rf_rx_ringbuf is an SPSC ring buffer:
- *    producer = NimBLE host task (BLE write callback)
+ *    producer = BLE callback context (BLE write callback)
  *    consumer = main-loop task  (sources_rf_rx_drain)
  *
  *  rivr_ble_service_notify() is called from the main-loop task, which is
- *  safe: ble_gatts_notify_custom() takes NimBLE's internal lock.
+ *  safe for the Bluedroid GATTS send path used by this module.
  *
  *  rivr_ble_tick() and rivr_ble_activate/deactivate() must ONLY be called
- *  from the main-loop task.  They are NOT thread-safe with the NimBLE task.
+ *  from the main-loop task.
  *
  * SECURITY
  * ────────
@@ -64,11 +63,11 @@
  *      passkey instead of the configured build-time value.
  *    • TX and RX characteristics require an encrypted link (ATT_ERR_INSUFFICIENT_ENC
  *      is returned to any unauthenticated client).
- *    • The LTK is persisted in NVS (CONFIG_BT_NIMBLE_MAX_BONDS ≥ 1); repeat
- *      connections re-encrypt silently — no re-entry prompt.
- *    • s_conn_handle is populated only after BLE_GAP_EVENT_ENC_CHANGE with
- *      status 0; rivr_ble_is_connected() therefore returns false for an
- *      unencrypted (unpaired) connection, preventing data leakage.
+ *    • The bond is persisted in the ESP-IDF BLE store; repeat connections
+ *      re-encrypt silently — no re-entry prompt.
+ *    • s_conn_handle is populated only after authenticated bonding completes;
+ *      rivr_ble_is_connected() therefore returns false for an unpaired
+ *      connection, preventing data leakage.
  *
  * FEATURE FLAG
  * ────────────
@@ -120,14 +119,13 @@ typedef enum {
 /* ── Lifecycle ───────────────────────────────────────────────────────────── */
 
 /**
- * @brief Initialise NimBLE stack, register GATT service, start BLE host task.
+ * @brief Initialise the ESP-IDF Bluedroid BLE stack and register the GATT service.
  *
  * Must be called once from app_main() AFTER g_my_node_id is set and AFTER
  * platform_init() / timebase_init() have completed.
  *
- * On return, NimBLE is running in its own FreeRTOS task and will begin
- * advertising once the host sync callback fires (~few hundred ms later).
- * The activation mode is set to BLE_BOOT_WINDOW_MS by default.
+ * On return, the Bluedroid BLE host is running and will begin advertising once
+ * the GAP advertising data and GATT attribute table are ready.
  */
 void rivr_ble_init(void);
 
@@ -174,8 +172,8 @@ bool rivr_ble_is_connected(void);
 
 /**
  * @return The connection handle of the current client, or
- *         BLE_HS_CONN_HANDLE_NONE (0xFFFF) when not connected.
- *         Only meaningful from the main-loop task (no NimBLE lock held).
+ *         0xFFFF when not connected.
+ *         Only meaningful from the main-loop task.
  */
 uint16_t rivr_ble_conn_handle(void);
 
@@ -184,6 +182,16 @@ uint16_t rivr_ble_conn_handle(void);
  *         when BLE security is open / disabled.
  */
 uint32_t rivr_ble_passkey(void);
+
+/**
+ * @brief Remove all persisted BLE bonds from the node.
+ *
+ * If a central is currently connected, the connection is dropped first and the
+ * node returns to advertising when BLE remains active.
+ *
+ * @return Number of removed bond records, or -1 on API/allocation failure.
+ */
+int rivr_ble_clear_bonds(void);
 
 #else  /* RIVR_FEATURE_BLE == 0 — compile everything to empty stubs ───────── */
 
@@ -196,6 +204,7 @@ static inline bool    rivr_ble_is_active(void)   { return false; }
 static inline bool    rivr_ble_is_connected(void){ return false; }
 static inline uint16_t rivr_ble_conn_handle(void){ return 0xFFFFu; }
 static inline uint32_t rivr_ble_passkey(void)    { return 0u; }
+static inline int     rivr_ble_clear_bonds(void) { return 0; }
 
 #endif /* RIVR_FEATURE_BLE */
 
