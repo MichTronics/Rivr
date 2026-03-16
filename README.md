@@ -170,7 +170,7 @@ cargo build -p rivr_host
 cargo run -p rivr_host --bin rivrc -- examples/chat_relay.rivr
 
 # Replay captured mesh traffic through the engine
-cargo run -p rivr_host -- rivr_replay.jsonl
+cargo run -p rivr_host -- tests/rivr_replay.jsonl
 ```
 
 Expected output ends with: `[REPLAY] done — 42 frames processed, 0 errors`
@@ -203,7 +203,7 @@ Monitor at 115200 baud:
 Default air parameters: **869.480 MHz · SF8 · BW 125 kHz · CR 4/8 · preamble 8**
 Override at build time: `build_flags = -DRIVR_RF_FREQ_HZ=915000000`
 
-See [FLASHING.md](FLASHING.md) for all board variants and wiring tables.
+See [docs/FLASHING.md](docs/FLASHING.md) for all board variants and wiring tables.
 
 ---
 
@@ -395,9 +395,9 @@ The biggest remaining work is in advanced adaptive radio behavior, full opportun
 | Topic | English | Nederlands |
 |---|---|---|
 | **Quickstart** | [docs/quickstart.md](docs/quickstart.md) | — |
-| **Flashing guide** | [FLASHING.md](FLASHING.md) | — |
-| **Build guide** | [BUILDING.md](BUILDING.md) · [docs/en/build-guide.md](docs/en/build-guide.md) | [docs/nl/bouwhandleiding.md](docs/nl/bouwhandleiding.md) |
-| **User config** | [user_config_template.h](user_config_template.h) | — |
+| **Flashing guide** | [docs/FLASHING.md](docs/FLASHING.md) | — |
+| **Build guide** | [docs/BUILDING.md](docs/BUILDING.md) · [docs/en/build-guide.md](docs/en/build-guide.md) | [docs/nl/bouwhandleiding.md](docs/nl/bouwhandleiding.md) |
+| **User config** | [firmware_core/user_config_template.h](firmware_core/user_config_template.h) | — |
 | Overview | [docs/en/overview.md](docs/en/overview.md) | [docs/nl/overzicht.md](docs/nl/overzicht.md) |
 | Architecture | [docs/en/architecture.md](docs/en/architecture.md) | [docs/nl/architectuur.md](docs/nl/architectuur.md) |
 | Language reference | [docs/en/language-reference.md](docs/en/language-reference.md) | [docs/nl/taalreferentie.md](docs/nl/taalreferentie.md) |
@@ -448,7 +448,7 @@ Before deploying nodes outside a development environment:
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) and [.github/CODE_OF_CONDUCT.md](.github/CODE_OF_CONDUCT.md).
 Before opening a PR, run:
 
 ```bash
