@@ -444,6 +444,15 @@ uint32_t rivr_ble_passkey(void)
 #endif
 }
 
+bool rivr_ble_has_bond(void)
+{
+#if RIVR_BLE_PASSKEY != 0
+    return esp_ble_get_bond_device_num() > 0;
+#else
+    return false;
+#endif
+}
+
 int rivr_ble_clear_bonds(void)
 {
     int dev_num = esp_ble_get_bond_device_num();

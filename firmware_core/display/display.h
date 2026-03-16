@@ -100,6 +100,7 @@ typedef struct {
     uint32_t uptime_s;      /**< Seconds since boot (tb_millis() / 1000)    */
     bool     ble_active;    /**< BLE advertising / transport active         */
     bool     ble_connected; /**< BLE client connected                       */
+    bool     ble_paired;    /**< At least one persisted BLE bond exists     */
     uint32_t ble_passkey;   /**< Active 6-digit BLE passkey; 0 when open    */
 
     /* Page 1 – RF Stats */

@@ -184,6 +184,11 @@ uint16_t rivr_ble_conn_handle(void);
 uint32_t rivr_ble_passkey(void);
 
 /**
+ * @return true when this node has at least one persisted BLE bond record.
+ */
+bool rivr_ble_has_bond(void);
+
+/**
  * @brief Remove all persisted BLE bonds from the node.
  *
  * If a central is currently connected, the connection is dropped first and the
@@ -204,6 +209,7 @@ static inline bool    rivr_ble_is_active(void)   { return false; }
 static inline bool    rivr_ble_is_connected(void){ return false; }
 static inline uint16_t rivr_ble_conn_handle(void){ return 0xFFFFu; }
 static inline uint32_t rivr_ble_passkey(void)    { return 0u; }
+static inline bool    rivr_ble_has_bond(void)    { return false; }
 static inline int     rivr_ble_clear_bonds(void) { return 0; }
 
 #endif /* RIVR_FEATURE_BLE */

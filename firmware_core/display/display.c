@@ -321,10 +321,14 @@ static void render_page_overview(const display_stats_t *s)
 
     if (s->ble_connected) {
         fb_str(0u, 6u, "BLE: CONNECTED");
-    } else if (s->ble_passkey != 0u && s->ble_active) {
+    } else if (s->ble_passkey != 0u && s->ble_active && !s->ble_paired) {
         snprintf(buf, sizeof(buf), "PIN:%06lu",
                  (unsigned long)s->ble_passkey);
         fb_str(0u, 6u, buf);
+    } else if (s->ble_paired && s->ble_active) {
+        fb_str(0u, 6u, "BLE: PAIRED");
+    } else if (s->ble_paired) {
+        fb_str(0u, 6u, "BLE: PAIRED OFF");
     } else if (s->ble_active) {
         fb_str(0u, 6u, "BLE: OPEN");
     } else {
@@ -654,7 +658,7 @@ static void display_update(const display_stats_t *stats)
     s_last_update_ms = now;
 
     bool show_ble_pin = stats->ble_active && !stats->ble_connected &&
-                        (stats->ble_passkey != 0u);
+                        !stats->ble_paired && (stats->ble_passkey != 0u);
 
     /* Keep the overview page pinned while we need to show the BLE PIN. */
     if (show_ble_pin) {
