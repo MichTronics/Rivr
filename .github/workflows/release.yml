@@ -66,24 +66,17 @@ jobs:
 
       # ── 4. Install Espressif Rust toolchain (Xtensa) ─────────────────────
       #
-      # cargo +esp and the xtensa-esp32-espidf target are not part of the
-      # standard Rust distribution. espup installs the fork maintained by
-      # esp-rs (llvm-xtensa + std lib for ESP32).
-      - name: Install espup
-        run: cargo install espup --locked
-
-      - name: Install Espressif Rust toolchain
-        run: espup install --targets esp32
-
-      # espup writes a shell export script; source it so subsequent steps
-      # inherit LIBCLANG_PATH, RUSTUP_TOOLCHAIN, etc.
-      - name: Export Espressif environment
-        run: |
-          # shellcheck disable=SC1090
-          source "$HOME/export-esp.sh"
-          # Persist all exported variables for later steps via $GITHUB_ENV.
-          env | grep -E '^(LIBCLANG_PATH|CLANG_PATH|PATH|RUSTUP_TOOLCHAIN|ESP_IDF_VERSION|IDF_PATH)=' \
-              >> "$GITHUB_ENV"
+      # The xtensa-esp32-espidf target requires a patched Rust compiler fork
+      # maintained by esp-rs. The official action handles toolchain installation,
+      # LIBCLANG_PATH, and all required env vars automatically.
+      # Setting default=true makes `cargo +esp` (and plain `cargo`) resolve
+      # to the esp toolchain without any further shell sourcing.
+      - name: Set up Xtensa Rust toolchain
+        uses: esp-rs/xtensa-toolchain@v1
+        with:
+          default: true
+          version: latest
+          ldproxy: false
 
       # ── 5. Restore build cache ────────────────────────────────────────────
       #
