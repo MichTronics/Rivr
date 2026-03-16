@@ -5,8 +5,7 @@ target/
 build/
 sdkconfig
 sdkconfig.*
-!sdkconfig.defaults
-!sdkconfig.ble
+!sdkconfig/
 managed_components/
 dependencies.lock
 
