@@ -688,7 +688,12 @@ mod tests {
         unsafe {
             EMIT_DISPATCH = Some(emit_noop);
             TRACE_DISPATCH = Some(trace_capture);
-            ffi_emit_hook("io.debug.dump", Stamp::at(3, 99), &Value::Int(7), Some("tag"));
+            ffi_emit_hook(
+                "io.debug.dump",
+                Stamp::at(3, 99),
+                &Value::Int(7),
+                Some("tag"),
+            );
         }
 
         assert_eq!(

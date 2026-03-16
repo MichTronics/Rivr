@@ -21,10 +21,7 @@
 //! clock-tick.
 
 #[cfg(not(feature = "std"))]
-use alloc::{
-    format,
-    string::String,
-};
+use alloc::{format, string::String};
 
 use super::value::Value;
 use serde::{Deserialize, Serialize};
@@ -149,9 +146,7 @@ impl core::fmt::Display for Event {
         write!(
             f,
             "[{}@clk{}:tick{}{tag_part}]",
-            self.v,
-            self.stamp.clock,
-            self.stamp.tick
+            self.v, self.stamp.clock, self.stamp.tick
         )
     }
 }
