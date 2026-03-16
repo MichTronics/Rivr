@@ -98,6 +98,9 @@ typedef struct {
     uint16_t net_id;        /**< Network / channel discriminator             */
     char     callsign[12];  /**< Amateur callsign or node name (NUL-terminated) */
     uint32_t uptime_s;      /**< Seconds since boot (tb_millis() / 1000)    */
+    bool     ble_active;    /**< BLE advertising / transport active         */
+    bool     ble_connected; /**< BLE client connected                       */
+    uint32_t ble_passkey;   /**< Active 6-digit BLE passkey; 0 when open    */
 
     /* Page 1 – RF Stats */
     int16_t  rssi_inst_dbm; /**< Instantaneous RSSI polled from SX1262 (dBm) */

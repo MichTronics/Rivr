@@ -27,7 +27,8 @@
  *
  * ACTIVATION MODES
  * ─────────────────
- *  BOOT_WINDOW    — BLE active for 120 s after boot (default)
+ *  BOOT_WINDOW    — BLE active for 120 s after boot (default for open BLE);
+ *                   passkey-protected builds keep BLE active until disabled
  *  BUTTON         — User-triggered 5-minute window
  *  APP_REQUESTED  — Enabled via mesh command; stays on until deactivated
  *
@@ -56,8 +57,11 @@
  *
  *  RIVR_BLE_PASSKEY != 0
  *    MITM-protected bonding using LE Secure Connections (LESC):
- *    • IO capability: BLE_SM_IO_CAP_DISP_ONLY — node displays the static
+ *    • IO capability: BLE_SM_IO_CAP_DISP_ONLY — node displays a 6-digit
  *      passkey; the user enters it on their phone when prompted by the OS.
+ *    • When RIVR_FEATURE_DISPLAY=1 and RIVR_BLE_PASSKEY is left at 123456,
+ *      the firmware generates a random 6-digit passkey each boot, matching
+ *      MeshCore-style "show PIN on screen, type it on the phone".
  *    • TX and RX characteristics require an encrypted link (ATT_ERR_INSUFFICIENT_ENC
  *      is returned to any unauthenticated client).
  *    • The LTK is persisted in NVS (CONFIG_BT_NIMBLE_MAX_BONDS ≥ 1); repeat
@@ -175,6 +179,12 @@ bool rivr_ble_is_connected(void);
  */
 uint16_t rivr_ble_conn_handle(void);
 
+/**
+ * @return The active 6-digit BLE passkey for the current boot session, or 0
+ *         when BLE security is open / disabled.
+ */
+uint32_t rivr_ble_passkey(void);
+
 #else  /* RIVR_FEATURE_BLE == 0 — compile everything to empty stubs ───────── */
 
 typedef int rivr_ble_mode_t;
@@ -185,6 +195,7 @@ static inline void    rivr_ble_deactivate(void)                     {}
 static inline bool    rivr_ble_is_active(void)   { return false; }
 static inline bool    rivr_ble_is_connected(void){ return false; }
 static inline uint16_t rivr_ble_conn_handle(void){ return 0xFFFFu; }
+static inline uint32_t rivr_ble_passkey(void)    { return 0u; }
 
 #endif /* RIVR_FEATURE_BLE */
 

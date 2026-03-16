@@ -383,8 +383,10 @@
  * @brief Enable BLE local edge interface (NimBLE UART-over-BLE bridge).
  *
  * When RIVR_FEATURE_BLE=1:
- *   • NimBLE stack starts at boot and advertises as "RIVR-XXXX" for
- *     BLE_BOOT_WINDOW_MS (120 s) before shutting down to save power.
+ *   • NimBLE stack starts at boot and advertises as "RIVR-XXXX".
+ *     Open BLE builds use a 120 s boot window; passkey-protected builds
+ *     stay active until explicitly disabled, matching MeshCore-style
+ *     companion pairing on demand.
  *   • A BLE client can write binary Rivr frames to inject them into the
  *     mesh (identical path to LoRa RX); the node notifies the client with
  *     every valid frame it receives from the radio.
@@ -410,8 +412,10 @@
  *
  * Non-zero = require passkey entry at first connection:
  *   • Firmware uses BLE_SM_IO_CAP_DISP_ONLY (Display Only).
- *     The passkey is printed to the serial log as "BLE pairing PIN: XXXXXX".
- *     If RIVR_FEATURE_DISPLAY=1 it is also shown on the OLED.
+ *     The active passkey is printed to the serial log and, when
+ *     RIVR_FEATURE_DISPLAY=1, shown on the OLED while waiting for pairing.
+ *   • If RIVR_FEATURE_DISPLAY=1 and RIVR_BLE_PASSKEY is left at 123456,
+ *     the firmware generates a random 6-digit passkey each boot session.
  *   • LE Secure Connections (LESC) + MITM are enforced.
  *   • TX and RX characteristics require an encrypted link — any write or
  *     subscribe from an unauthenticated client is rejected with
