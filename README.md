@@ -348,6 +348,46 @@ See the [rivr-companion repository](https://github.com/MichTronics/rivr-companio
 - **next** — Frequency hopping / channel rotation; multi-channel duty-cycle tracking
 - **future** — Trace system (`tag()` operator → `@TRACE` JSON); per-source metrics frame
 
+## Implementation Status
+
+Rivr is already well beyond prototype stage, but not every roadmap item is complete yet.
+
+| Area | Status | Notes |
+|---|---|---|
+| Core runtime | Done | Deterministic main loop, fixed-size structures, zero-heap-after-boot model |
+| Radio driver architecture | Done | ISR-safe radio path, recovery logic, SPSC ring buffer design |
+| Multi-hop forwarding | Done | TTL, dedupe, jittered relay forwarding, loop protection |
+| Duty-cycle enforcement | Done | Sliding-window limiter and airtime gates are implemented |
+| Reliability layer | Done | Retry table, ACK handling, retransmit/fallback flow |
+| Metrics & diagnostics | Done | JSON metrics, supportpack, replay tooling, diagnostics views |
+| Supported hardware | Done | ESP32 + SX1262/SX1276 support is present |
+| Test suite | Done | Current docs claim 295 checks |
+| Link awareness | Done | RSSI/SNR tracking, EWMA smoothing, loss tracking, ETX-style scoring |
+| Path scoring | Done | Route and neighbor scoring already influence forwarding decisions |
+| Companion ecosystem | Partial | Android, Linux, and Windows companion app exists and is functional |
+| BLE / USB edge connectivity | Partial | Present and usable, still evolving in behavior and UX |
+| OTA update flow | Partial | OTA program delivery exists, but full polished user flow is still evolving |
+| Smart mesh routing | Partial | Strong foundations exist, but not the full long-term routing vision yet |
+| Opportunistic forwarding | Partial | Core building blocks exist, but not fully realized yet |
+| Adaptive relay election | Partial | Partly implemented through scoring, suppression, and fabric logic |
+| Mesh visualizer | Partial | Network/node views exist, but not yet a mature visualizer |
+| Trace event system | Partial | Observability is strong, but not yet the full trace model described in the roadmap |
+| Frequency hopping | Planned | Not implemented yet |
+| Adaptive channel rotation | Planned | Not implemented yet |
+| Per-channel duty-cycle tracking | Planned | Not implemented yet |
+| Self-organizing mesh intelligence | Planned | Future work |
+| Distributed optimization / load balancing | Planned | Future work |
+
+### Summary
+
+- Done: ~55%
+- Partial: ~25%
+- Planned: ~20%
+
+Rivr is already strong in runtime quality, radio reliability, routing foundations, and diagnostics.
+
+The biggest remaining work is in advanced adaptive radio behavior, full opportunistic mesh intelligence, and a more polished end-user ecosystem.
+
 ---
 
 ## Documentation
