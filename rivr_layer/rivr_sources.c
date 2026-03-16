@@ -6,6 +6,7 @@
 #include "rivr_sources.h"
 #include "rivr_embed.h"
 #include "rivr_cli.h"
+#include "rivr_sinks.h"
 #include <inttypes.h>   /* PRIu32 */
 #include "../firmware_core/platform_esp32.h"  /* UART_CLI_BAUD + pin defs */
 #include "../firmware_core/radio_sx1262.h"
@@ -40,6 +41,84 @@
 static policy_state_t g_policy;
 static bool g_policy_init_done = false;
 
+static const char *source_pkt_type_name(uint8_t pkt_type)
+{
+    switch (pkt_type) {
+    case PKT_CHAT: return "CHAT";
+    case PKT_DATA: return "DATA";
+    default:       return "OTHER";
+    }
+}
+
+static bool source_handle_ble_origination(const rf_rx_frame_t *frame, uint32_t now_ms)
+{
+    if (!frame || frame->iface != 1u) return false;
+
+    rivr_pkt_hdr_t hdr;
+    const uint8_t *payload_ptr = NULL;
+    if (!protocol_decode(frame->data, frame->len, &hdr, &payload_ptr)) {
+        RIVR_LOGW(TAG, "BLE origin: invalid frame dropped (len=%u)", (unsigned)frame->len);
+        g_rivr_metrics.ble_errors++;
+        return true;
+    }
+
+    if (hdr.src_id == 0u) {
+        RIVR_LOGW(TAG, "BLE origin: src_id=0 rejected");
+        g_rivr_metrics.ble_errors++;
+        return true;
+    }
+
+    if (!rivr_policy_allow_origination(hdr.pkt_type, now_ms)) {
+        printf("@DROP origination throttled type=%s\r\n",
+               source_pkt_type_name(hdr.pkt_type));
+        fflush(stdout);
+        RIVR_LOGI(TAG, "BLE origin: throttled pkt_type=%u src=0x%08lx",
+                  (unsigned)hdr.pkt_type, (unsigned long)hdr.src_id);
+        return true;
+    }
+
+    /* Normalize app-originated frames to the same expectations as CLI TX:
+     * broadcast is dst_id=0, net_id follows the local node config, and each
+     * injected frame needs a fresh pkt_id for mesh dedupe/jitter. */
+    if (hdr.dst_id == 0xFFFFFFFFu) {
+        hdr.dst_id = 0u;
+    }
+    if (hdr.net_id == 0u) {
+        hdr.net_id = g_net_id;
+    }
+    if (hdr.pkt_id == 0u) {
+        hdr.pkt_id = (uint16_t)++g_ctrl_seq;
+    }
+    hdr.hop = 0u;
+    hdr.loop_guard = 0u;
+    hdr.flags = (uint8_t)(hdr.flags & (uint8_t)~(PKT_FLAG_RELAY | PKT_FLAG_FALLBACK));
+
+    uint8_t normalized[RF_MAX_PAYLOAD_LEN];
+    int enc = protocol_encode(&hdr, payload_ptr, hdr.payload_len,
+                              normalized, (uint8_t)sizeof(normalized));
+    if (enc <= 0) {
+        RIVR_LOGW(TAG, "BLE origin: re-encode failed for pkt_type=%u", (unsigned)hdr.pkt_type);
+        g_rivr_metrics.ble_errors++;
+        return true;
+    }
+
+    rivr_value_t v;
+    memset(&v, 0, sizeof(v));
+    v.tag = RIVR_VAL_BYTES;
+    memcpy(v.as_bytes.buf, normalized, (size_t)enc);
+    v.as_bytes.len = (uint16_t)enc;
+
+    rf_tx_sink_cb(&v, NULL);
+    RIVR_LOGI(TAG,
+              "BLE origin: queued pkt_type=%u src=0x%08lx dst=0x%08lx seq=%u pkt_id=%u",
+              (unsigned)hdr.pkt_type,
+              (unsigned long)hdr.src_id,
+              (unsigned long)hdr.dst_id,
+              (unsigned)hdr.seq,
+              (unsigned)hdr.pkt_id);
+    return true;
+}
+
 /* ── ACK / retry state (owned here; exposed via rivr_embed.h extern) ──────── */
 retry_table_t g_retry_table;   /* zero-initialised in BSS */
 
@@ -62,6 +141,10 @@ uint32_t sources_rf_rx_drain(void)
     for (uint32_t i = 0; i < SOURCES_RF_RX_DRAIN_LIMIT; i++) {
         rf_rx_frame_t frame;
         if (!rb_pop(&rf_rx_ringbuf, &frame)) break;  /* ringbuf empty */
+
+        if (source_handle_ble_origination(&frame, now_ms)) {
+            continue;
+        }
 
         /* ── 1. Validate: must be a RIVR binary protocol packet ── */
         rivr_pkt_hdr_t pkt_hdr;
