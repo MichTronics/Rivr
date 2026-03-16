@@ -380,10 +380,10 @@
 #endif
 
 /**
- * @brief Enable BLE local edge interface (NimBLE UART-over-BLE bridge).
+ * @brief Enable BLE local edge interface (Bluedroid UART-over-BLE bridge).
  *
  * When RIVR_FEATURE_BLE=1:
- *   • NimBLE stack starts at boot and advertises as "RIVR-XXXX".
+ *   • Bluedroid starts at boot and advertises as "RIVR-XXXX".
  *     Open BLE builds use a 120 s boot window; passkey-protected builds
  *     stay active until explicitly disabled, matching MeshCore-style
  *     companion pairing on demand.
