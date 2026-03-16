@@ -8,6 +8,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Opt into Node.js 24 for all Actions runners now; GitHub will force this
+  # for all jobs by default on June 2, 2026.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ─── Rust: format, lint, test, FFI build ────────────────────────────────────
