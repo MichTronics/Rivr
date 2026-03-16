@@ -414,8 +414,11 @@
  *   • Firmware uses BLE_SM_IO_CAP_DISP_ONLY (Display Only).
  *     The active passkey is printed to the serial log and, when
  *     RIVR_FEATURE_DISPLAY=1, shown on the OLED while waiting for pairing.
- *   • If RIVR_FEATURE_DISPLAY=1 and RIVR_BLE_PASSKEY is left at 123456,
- *     the firmware generates a random 6-digit passkey each boot session.
+ *   • By default the configured RIVR_BLE_PASSKEY is used as-is, so a
+ *     build-time value like 123456 stays stable and can also be entered
+ *     directly in the companion app.
+ *   • Optional: set RIVR_BLE_RANDOM_PASSKEY=1 to generate a random 6-digit
+ *     session passkey instead of using the configured build-time value.
  *   • LE Secure Connections (LESC) + MITM are enforced.
  *   • TX and RX characteristics require an encrypted link — any write or
  *     subscribe from an unauthenticated client is rejected with
@@ -430,6 +433,16 @@
  */
 #ifndef RIVR_BLE_PASSKEY
 #  define RIVR_BLE_PASSKEY  0
+#endif
+
+/**
+ * @brief Generate a random BLE passkey at boot instead of using RIVR_BLE_PASSKEY.
+ *
+ * Only applies when RIVR_BLE_PASSKEY != 0.  Default 0 keeps the configured
+ * passkey stable, which matches the current companion-app pairing flow.
+ */
+#ifndef RIVR_BLE_RANDOM_PASSKEY
+#  define RIVR_BLE_RANDOM_PASSKEY  0
 #endif
 
 /** @} */

@@ -127,10 +127,9 @@ static const ble_uuid128_t s_adv_svc_uuid =
 #if RIVR_BLE_PASSKEY != 0
 static uint32_t rivr_ble_choose_passkey(void)
 {
-#if RIVR_FEATURE_DISPLAY
-    if ((uint32_t)RIVR_BLE_PASSKEY == RIVR_BLE_DEFAULT_SENTINEL_PASSKEY) {
-        return 100000u + (esp_random() % 900000u);
-    }
+#if RIVR_BLE_RANDOM_PASSKEY
+    (void)RIVR_BLE_DEFAULT_SENTINEL_PASSKEY;
+    return 100000u + (esp_random() % 900000u);
 #endif
     return (uint32_t)RIVR_BLE_PASSKEY;
 }
