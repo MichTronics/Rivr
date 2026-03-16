@@ -10,13 +10,14 @@
  *
  * RESPONSIBILITIES
  * ────────────────
- *  rivr_ble_service.c registers the GATT attribute table with NimBLE.
+ *  rivr_ble_service.c registers the GATT attribute table with the active BLE
+ *  stack and handles the RX/TX characteristic callbacks.
  *  rivr_ble.c calls rivr_ble_service_register() during stack init and
  *  rivr_ble_service_notify() to push frames to a connected client.
  *
  *  The write callback (phone → node) is handled entirely inside this module;
  *  it pushes validated frames into rf_rx_ringbuf without any locking, relying
- *  on the SPSC ring-buffer contract (NimBLE task = producer, main loop = consumer).
+ *  on the SPSC ring-buffer contract (BLE callback task = producer, main loop = consumer).
  */
 
 #ifndef RIVR_BLE_SERVICE_H
@@ -33,12 +34,12 @@ extern "C" {
 #if RIVR_FEATURE_BLE
 
 /**
- * @brief Register the Rivr GATT service with NimBLE.
+ * @brief Register the Rivr GATT service application/profile.
  *
- * Must be called ONCE during BLE init, before nimble_port_freertos_init().
- * Calls ble_gatts_count_cfg() + ble_gatts_add_svcs() internally.
+ * Must be called ONCE during BLE init, after GAP/GATTS callbacks were
+ * registered with the ESP-IDF BT stack.
  *
- * @return 0 on success, NimBLE error code on failure.
+ * @return 0 on success, ESP-IDF error code on failure.
  */
 int rivr_ble_service_register(void);
 
@@ -49,10 +50,10 @@ int rivr_ble_service_register(void);
  * Silently no-ops if no client is connected or BLE is inactive.
  *
  * Safe to call from the main-loop task only.
- * The frame is copied into an NimBLE mbuf — @p data can be stack-allocated.
+ * The frame bytes are copied by the active BLE stack — @p data can be stack-allocated.
  *
  * Increments g_rivr_metrics.ble_tx_frames on success.
- * Increments g_rivr_metrics.ble_errors on mbuf allocation failure.
+ * Increments g_rivr_metrics.ble_errors on notify failure.
  *
  * @param conn_handle  Active BLE connection handle (from rivr_ble_conn_handle()).
  * @param data         Binary Rivr frame bytes.
