@@ -1,0 +1,188 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  Rivr – Firmware Release Pipeline                                        ║
+# ║                                                                          ║
+# ║  Triggered by: git tag push matching  v*  (e.g. v1.2.0)                 ║
+# ║                                                                          ║
+# ║  Pipeline overview:                                                      ║
+# ║    1. Build all firmware variants in parallel (matrix)                   ║
+# ║    2. Each job caches pip, PlatformIO, and ccache layers                 ║
+# ║    3. Rust rivr_core is cross-compiled for Xtensa ESP32 before PIO       ║
+# ║    4. A follow-up job collects all artifacts and publishes the release   ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# All jobs need write permission to create the GitHub Release and attach assets.
+permissions:
+  contents: write
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Build matrix
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false   # keep other variants building if one fails
+      matrix:
+        include:
+          # pio_env   → name in platformio.ini [env:<name>]
+          # artifact  → desired output filename stem (rivr_<artifact>.bin)
+          - pio_env: client_esp32devkit_e22_900
+            artifact: client_esp32_e22_900
+
+          - pio_env: client_lilygo_tbeam_sx1262
+            artifact: client_esp32_sx1262
+
+          - pio_env: client_heltec_lora32_v2
+            artifact: client_heltec_v2
+
+          - pio_env: repeater_esp32devkit_e22_900
+            artifact: relay_esp32_e22_900
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Python (required by PlatformIO and ESP-IDF build system) ──────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # ── 3. Install PlatformIO ─────────────────────────────────────────────
+      - name: Install PlatformIO
+        run: |
+          pip install --upgrade pip
+          pip install platformio
+
+      # ── 4. Install Espressif Rust toolchain (Xtensa) ─────────────────────
+      #
+      # cargo +esp and the xtensa-esp32-espidf target are not part of the
+      # standard Rust distribution. espup installs the fork maintained by
+      # esp-rs (llvm-xtensa + std lib for ESP32).
+      - name: Install espup
+        run: cargo install espup --locked
+
+      - name: Install Espressif Rust toolchain
+        run: espup install --targets esp32
+
+      # espup writes a shell export script; source it so subsequent steps
+      # inherit LIBCLANG_PATH, RUSTUP_TOOLCHAIN, etc.
+      - name: Export Espressif environment
+        run: |
+          # shellcheck disable=SC1090
+          source "$HOME/export-esp.sh"
+          # Persist all exported variables for later steps via $GITHUB_ENV.
+          env | grep -E '^(LIBCLANG_PATH|CLANG_PATH|PATH|RUSTUP_TOOLCHAIN|ESP_IDF_VERSION|IDF_PATH)=' \
+              >> "$GITHUB_ENV"
+
+      # ── 5. Restore build cache ────────────────────────────────────────────
+      #
+      # Three caches in one step keeps restore/save logic together.
+      # Key includes the PIO env name so cache from one variant is not
+      # accidentally reused by a different variant (different toolchain flags).
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+            ~/.cache/ccache
+          key: firmware-${{ matrix.pio_env }}-${{ runner.os }}-${{ hashFiles('platformio.ini', 'variants/**/*.ini', 'Cargo.lock') }}
+          restore-keys: |
+            firmware-${{ matrix.pio_env }}-${{ runner.os }}-
+            firmware-${{ matrix.pio_env }}-
+
+      # ── 6. Build Rust rivr_core for Xtensa ESP32 ─────────────────────────
+      #
+      # The CMakeLists.txt hard-errors if librivr_core.a is not present before
+      # the PlatformIO build runs.  Build it in release mode so the final
+      # firmware is optimised.
+      - name: Build Rust rivr_core (xtensa-esp32-espidf)
+        run: |
+          cargo +esp build -p rivr_core \
+            --target xtensa-esp32-espidf \
+            --features ffi \
+            --release
+
+      # ── 7. Build firmware with PlatformIO ────────────────────────────────
+      #
+      # -e <env>  selects the single variant defined in the matrix row.
+      # CCACHE_DIR is set so that the ESP-IDF toolchain's ccache wrapper
+      # writes into the cached ~/.cache/ccache path.
+      - name: Build firmware (${{ matrix.pio_env }})
+        env:
+          CCACHE_DIR: ${{ runner.temp }}/ccache
+        run: |
+          pio run -e ${{ matrix.pio_env }}
+
+      # ── 8. Collect firmware binary ────────────────────────────────────────
+      - name: Collect firmware binary
+        run: |
+          mkdir -p release
+          cp .pio/build/${{ matrix.pio_env }}/firmware.bin \
+             release/rivr_${{ matrix.artifact }}.bin
+          echo "Built: rivr_${{ matrix.artifact }}.bin"
+          ls -lh release/
+
+      # ── 9. Upload per-variant artifact ───────────────────────────────────
+      #
+      # Each matrix job uploads its own artifact; the release job below
+      # downloads them all and attaches them to the GitHub Release.
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rivr_${{ matrix.artifact }}
+          path: release/rivr_${{ matrix.artifact }}.bin
+          if-no-files-found: error
+          retention-days: 7
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Release job – runs after all build matrix jobs succeed
+  # ───────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build   # wait for all matrix builds to finish
+
+    steps:
+      # ── 10. Download all firmware artifacts ──────────────────────────────
+      #
+      # pattern: "rivr_*" matches every artifact uploaded by the build matrix.
+      # merge-multiple: true flattens them into the binaries/ directory.
+      - name: Download all firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rivr_*
+          path: binaries
+          merge-multiple: true
+
+      - name: List collected binaries
+        run: ls -lh binaries/
+
+      # ── 11. Create GitHub Release and attach binaries ─────────────────────
+      #
+      # softprops/action-gh-release creates the release from the pushed tag and
+      # attaches every .bin file found in binaries/.
+      # The release body is auto-generated from git log between this tag and
+      # the previous one ("generate_release_notes: true").
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Rivr ${{ github.ref_name }}"
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          generate_release_notes: true
+          files: binaries/*.bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
