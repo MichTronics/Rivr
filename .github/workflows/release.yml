@@ -103,15 +103,17 @@ jobs:
 
       # ── 6. Build Rust rivr_core for Xtensa ESP32 ─────────────────────────
       #
-      # The CMakeLists.txt hard-errors if librivr_core.a is not present before
-      # the PlatformIO build runs.  Build it in release mode so the final
-      # firmware is optimised.
-      # RUSTUP_TOOLCHAIN=esp (set via $GITHUB_ENV above) makes plain `cargo`
-      # resolve to the esp toolchain — no +esp override needed.
+      # rivr_core is no_std + alloc; the `ffi` feature only pulls in alloc
+      # (not std). --no-default-features MUST be passed to disable the
+      # default `std` feature, which would require a full std installation
+      # for xtensa-esp32-espidf and cause E0463 "can't find crate for std".
+      # With --no-default-features --features ffi, only core + alloc are
+      # needed — both are pre-built in the esp toolchain.
       - name: Build Rust rivr_core (xtensa-esp32-espidf)
         run: |
           cargo build -p rivr_core \
             --target xtensa-esp32-espidf \
+            --no-default-features \
             --features ffi \
             --release
 
