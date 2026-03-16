@@ -83,6 +83,8 @@ jobs:
           echo "Activating Xtensa toolchain: $ESP_TOOLCHAIN"
           echo "RUSTUP_TOOLCHAIN=$ESP_TOOLCHAIN" >> "$GITHUB_ENV"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          # rust-src is required for -Zbuild-std (compiles core/alloc from source)
+          rustup component add rust-src --toolchain "$ESP_TOOLCHAIN"
 
       # ── 5. Restore build cache ────────────────────────────────────────────
       #
@@ -103,19 +105,19 @@ jobs:
 
       # ── 6. Build Rust rivr_core for Xtensa ESP32 ─────────────────────────
       #
-      # rivr_core is no_std + alloc; the `ffi` feature only pulls in alloc
-      # (not std). --no-default-features MUST be passed to disable the
-      # default `std` feature, which would require a full std installation
-      # for xtensa-esp32-espidf and cause E0463 "can't find crate for std".
-      # With --no-default-features --features ffi, only core + alloc are
-      # needed — both are pre-built in the esp toolchain.
+      # rivr_core is no_std + alloc. The esp toolchain has the Xtensa LLVM
+      # backend but does NOT ship pre-built sysroots for xtensa-esp32-espidf
+      # via rustup. -Zbuild-std=core,alloc compiles them from source using the
+      # rust-src component installed above. This is the standard CI approach
+      # documented by esp-rs and avoids all sysroot lookup failures.
       - name: Build Rust rivr_core (xtensa-esp32-espidf)
         run: |
           cargo build -p rivr_core \
             --target xtensa-esp32-espidf \
             --no-default-features \
             --features ffi \
-            --release
+            --release \
+            -Zbuild-std=core,alloc
 
       # ── 7. Build firmware with PlatformIO ────────────────────────────────
       #
