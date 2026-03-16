@@ -39,7 +39,7 @@ graph TD
 
         DISPLAY["display/\nSSD1306 128×64\n7-page UI (FreeRTOS CPU1)"]
         CLI["rivr_cli.c\nserial UART0 chat shell\n(client builds only)"]
-        BLE["firmware_core/ble/\nNimBLE transport bridge\n(RIVR_FEATURE_BLE)"]
+        BLE["firmware_core/ble/\nBluedroid transport bridge\n(RIVR_FEATURE_BLE)"]
         METRICS["rivr_metrics.c\n80 counters · @MET JSON"]
 
         SX -->|IRQ| ISR
@@ -87,7 +87,7 @@ sequenceDiagram
     AppMain->>Embed: rivr_embed_init(prog_src)
     Embed->>Embed: parse → compile → bind sources/sinks
     AppMain->>AppMain: rivr_ble_init() [#if !RIVR_SIM_MODE]
-    Note right of AppMain: NimBLE host task started;<br/>BOOT_WINDOW active (120 s)
+    Note right of AppMain: Bluedroid BLE started;<br/>BOOT_WINDOW active (120 s)
     AppMain->>Tick: loop forever
 
     loop Every ~1 ms
@@ -281,23 +281,23 @@ received over BLE.
 ### BLE data flow
 
 ```
-Phone app                          ESP32 (NimBLE host task, CPU0)
+Phone app                          ESP32 (Bluedroid BT host)
 
-          ─── WRITE RX char ──►  rivr_chr_access_cb()
-                                  └─ rb_try_push(&rf_rx_ringbuf, &frame)
+          ─── WRITE RX char ──►  ESP_GATTS_WRITE_EVT
+                                  └─ rivr_ble_service_handle_rx_write()
+                                     └─ rb_try_push(&rf_rx_ringbuf, &frame)
                                      └─ processed by main loop as if LoRa frame
 
 rivr_fabric_on_rx() ─────────────► rivr_ble_service_notify(handle, data, len)
-                                  └─ ble_gatts_notify_custom(TX char)
+                                  └─ esp_ble_gatts_send_indicate(TX char)
                                  ─── NOTIFY TX char ──► companion app
 ```
 
 ### Thread safety
 
-NimBLE runs in its own FreeRTOS task (CPU0) and is the **producer** to `rf_rx_ringbuf`.
-The main loop is the **consumer**.  This is the same SPSC pattern used for the SX1262 ISR
-path — no mutex is needed.  `ble_gatts_notify_custom()` is internal-lock-safe and may be
-called from the main loop.
+Bluedroid dispatches GATT callbacks from the BT host context and is the **producer** to
+`rf_rx_ringbuf`. The main loop is the **consumer**. This is the same SPSC pattern used for the
+SX1262 ISR path, so no mutex is needed. `esp_ble_gatts_send_indicate()` is used for TX notify.
 
 ### Enabling BLE
 
@@ -334,5 +334,5 @@ All six supported boards have a `client_<board>_ble` environment in their
    ```
 3. Flash normally — `rivr_ble_init()` is called automatically at boot.
 
-RAM cost (NimBLE stack): ~4 KB task stack + ~12 KB NimBLE heap (when active).
+RAM cost depends on the ESP-IDF Bluedroid configuration in `sdkconfig.ble`.
 When `RIVR_FEATURE_BLE=0` all BLE calls compile to empty inlines; no RAM is allocated.

@@ -64,7 +64,7 @@ Expected: 5 suites, **295 checks total, 0 failures** (acceptance · radio\_recov
 # Flash a client node (send + receive, no relay)
 ~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900     -t upload
 
-# Flash the same client with NimBLE BLE bridge enabled
+# Flash the same client with BLE bridge enabled
 ~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900_ble -t upload
 
 # Flash a dedicated repeater node

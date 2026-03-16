@@ -90,7 +90,7 @@ ID    NAME                      KIND / PARAMS
 | `esp32_hw` | Standard hardware node | `FEATURE_DISPLAY=1` |
 | `repeater_<board>` | Dedicated relay with Rivr Fabric | `RIVR_FABRIC_REPEATER=1`, `FEATURE_DISPLAY=1` |
 | `client_<board>` | Chat/data receiver; no relay | `RIVR_ROLE_CLIENT=1`, `FEATURE_DISPLAY=1` |
-| `client_<board>_ble` | Client + NimBLE BLE bridge | `RIVR_ROLE_CLIENT=1`, `RIVR_FEATURE_BLE=1`, `sdkconfig.ble` |
+| `client_<board>_ble` | Client + BLE bridge | `RIVR_ROLE_CLIENT=1`, `RIVR_FEATURE_BLE=1`, `sdkconfig.ble` |
 
 Supported boards: `esp32devkit_e22_900`, `lilygo_lora32_v21`, `heltec_lora32_v2`, `heltec_lora32_v3`, `lilygo_t3s3`, `lilygo_tbeam_sx1262`.
 

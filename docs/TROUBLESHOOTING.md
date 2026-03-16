@@ -238,7 +238,7 @@ At SF8/BW125: CHAT ~92 ms, BEACON ~70 ms
 
 > BLE is only active when `RIVR_FEATURE_BLE=1` is set **and** the `sdkconfig.ble` fragment
 > is included in the build (`CONFIG_BT_ENABLED=y`).  When disabled, `ble_*` metrics
-> stay at zero and the NimBLE stack is never initialised.
+> stay at zero and the BLE stack is never initialised.
 
 ### Symptom: Device does not advertise after boot
 
@@ -291,7 +291,7 @@ or the buffer is overwhelmed by high LoRa traffic. Reduce BLE write rate.
 | Common cause | Diagnosis |
 |---|---|
 | `rf_rx_ringbuf` full | `ble_err` increments; reduce BLE TX rate or check main-loop stall (`loop_jitter_ms` high) |
-| NimBLE mbuf pool exhausted | Check `I [ble] notify: mbuf alloc failed` in log; CONFIG_BT_NIMBLE_MSYS1_BLOCK_COUNT too low |
+| BLE GATTS notify failures | Check the BLE log for `notify failed` or pairing/auth errors; verify bonding and MTU setup |
 
 ---
 

@@ -55,7 +55,7 @@ cargo +esp build -p rivr_core --target xtensa-esp32s3-espidf --features ffi --re
 Pick the command for your board. All environments flash at 921600 baud.
 
 > **BLE client variants** — every board has a `client_<board>_ble` environment that enables
-> the NimBLE BLE bridge in addition to the standard LoRa client firmware. The node advertises
+> the BLE bridge in addition to the standard LoRa client firmware. The node advertises
 > as `RIVR-XXXX` and accepts GATT writes using Nordic NUS UUIDs. Replace any `client_*`
 > environment below with its `_ble` counterpart to flash the BLE-enabled build.
 
@@ -67,7 +67,7 @@ Pick the command for your board. All environments flash at 921600 baud.
 # Client node (send/receive, serial CLI, no relay)
 pio run -e client_esp32devkit_e22_900     -t upload
 
-# Client + NimBLE BLE bridge (advertises as "RIVR-XXXX" over BLE)
+# Client + BLE bridge (advertises as "RIVR-XXXX" over BLE)
 pio run -e client_esp32devkit_e22_900_ble -t upload
 
 # Dedicated repeater (relay with congestion scoring, no CLI chat)
