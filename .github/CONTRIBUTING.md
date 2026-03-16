@@ -90,7 +90,7 @@ See [docs/quickstart.md](docs/quickstart.md) for the full setup guide.
 ```bash
 # Host simulation (Rust)
 cargo build -p rivr_host
-cargo run -p rivr_host -- rivr_replay.jsonl
+cargo run -p rivr_host -- tests/rivr_replay.jsonl
 
 # C test suite
 make -C tests all
