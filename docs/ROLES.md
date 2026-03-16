@@ -122,7 +122,7 @@ Loop guard:
 ~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900     -t upload
 ~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900
 
-# With NimBLE BLE bridge (_ble variant available for every supported board)
+# With BLE bridge (_ble variant available for every supported board)
 ~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900_ble -t upload
 ~/.platformio/penv/bin/pio device monitor -e client_esp32devkit_e22_900_ble
 ```
@@ -242,7 +242,7 @@ Does the node need to relay traffic?
 | `RIVR_ROUTE_CACHE_SIZE` | role-derived | `RCACHE_SIZE` override; see capacity table above |
 | `RIVR_RETRY_TABLE_SIZE` | role-derived | `RETRY_TABLE_SIZE` override; see capacity table above |
 | `RIVR_FABRIC_REPEATER` | 0 | Enable congestion-aware relay suppression (auto on for Repeater/Gateway) |
-| `RIVR_FEATURE_BLE` | 0 | Enable NimBLE BLE transport bridge (Nordic NUS service, BOOT\_WINDOW/BUTTON/APP\_REQUESTED activation modes); requires `sdkconfig.ble` + `CONFIG_BT_ENABLED=y` |
+| `RIVR_FEATURE_BLE` | 0 | Enable BLE transport bridge (Nordic NUS service, BOOT\_WINDOW/BUTTON/APP\_REQUESTED activation modes); requires `sdkconfig.ble` + `CONFIG_BT_ENABLED=y` |
 | `RIVR_SIM_MODE` | 0 | Software simulation — no SX1262 hardware |
 | `RIVR_RF_FREQ_HZ` | 869480000 | RF centre frequency in Hz |
 | `FEATURE_DISPLAY` | 1 | Enable SSD1306 I²C display task |

@@ -187,7 +187,7 @@ For full toolchain setup see [docs/en/build-guide.md](docs/en/build-guide.md).
 # Client node (send + receive, no relay)
 ~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900     -t upload
 
-# Client + NimBLE BLE bridge (append _ble to any client_* env)
+# Client + BLE bridge (append _ble to any client_* env)
 ~/.platformio/penv/bin/pio run -e client_esp32devkit_e22_900_ble -t upload
 
 # Dedicated repeater (Rivr Fabric congestion relay suppression enabled)
@@ -274,7 +274,7 @@ Rivr is a full networking stack, not just a radio wrapper.
 | **Signed `@PARAMS`** | Optional HMAC-SHA-256 PSK authentication; `sig=<64hex>` wire field |
 | **OLED UI** | SSD1306 128×64; 7 auto-rotating pages: overview · RF · routing · duty-cycle · VM · neighbours · Fabric |
 | **80 metric counters** | Emitted as `@MET` JSON; aggregated into `@SUPPORTPACK` for bug reports |
-| **BLE transport bridge** | Optional NimBLE edge interface (Nordic NUS UUIDs); same Rivr frames over BLE as LoRa; 3 activation modes; `RIVR_FEATURE_BLE=1` |
+| **BLE transport bridge** | Optional Bluedroid-based edge interface (Nordic NUS UUIDs); same Rivr frames over BLE as LoRa; 3 activation modes; `RIVR_FEATURE_BLE=1` |
 | **Simulation mode** | 8-round mesh simulation without radio hardware (`RIVR_SIM_MODE`) |
 
 ---
@@ -341,7 +341,7 @@ See the [rivr-companion repository](https://github.com/MichTronics/rivr-companio
 - ✅ **Application services** — PKT_TELEMETRY (8), PKT_MAILBOX (9), PKT_ALERT (10); structured `@TEL` / `@MAIL` / `@ALERT` JSON log records; 8-entry LRU mailbox store
 - ✅ **Neighbor table** — 16-slot BSS table; EWMA RSSI/SNR; seq-gap loss-rate; `DIRECT` / `STALE` / `BEACON` flags; auto-expiry
 - ✅ **Neighbor-aware next-hop routing** — three-tier decision; composite score weights RSSI+SNR, hop count, age decay, loss rate
-- ✅ **BLE transport bridge** — NimBLE-based edge interface using Nordic NUS UUIDs (6E400001/002/003); same binary Rivr frames over BLE as over LoRa; BOOT_WINDOW (120 s) / BUTTON (5 min) / APP_REQUESTED activation modes; enabled via `RIVR_FEATURE_BLE=1` + `sdkconfig.ble`
+- ✅ **BLE transport bridge** — Bluedroid-based edge interface using Nordic NUS UUIDs (6E400001/002/003); same binary Rivr frames over BLE as over LoRa; BOOT_WINDOW (120 s) / BUTTON (5 min) / APP_REQUESTED activation modes; enabled via `RIVR_FEATURE_BLE=1` + `sdkconfig.ble`
 
 ## Roadmap
 

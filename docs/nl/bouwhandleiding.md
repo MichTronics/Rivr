@@ -78,7 +78,7 @@ rivrc mijn_programma.rivr
 | `esp32_hw` | Standaard hardwareknoop | `FEATURE_DISPLAY=1` |
 | `repeater_<board>` | Dedicated relay met Rivr Fabric | `RIVR_FABRIC_REPEATER=1`, `FEATURE_DISPLAY=1` |
 | `client_<board>` | Chat-/data-ontvanger; geen relay | `RIVR_ROLE_CLIENT=1`, `FEATURE_DISPLAY=1` |
-| `client_<board>_ble` | Client + NimBLE BLE-brug | `RIVR_ROLE_CLIENT=1`, `RIVR_FEATURE_BLE=1`, `sdkconfig.ble` |
+| `client_<board>_ble` | Client + BLE-brug | `RIVR_ROLE_CLIENT=1`, `RIVR_FEATURE_BLE=1`, `sdkconfig.ble` |
 
 Ondersteunde boards: `esp32devkit_e22_900`, `lilygo_lora32_v21`, `heltec_lora32_v2`, `heltec_lora32_v3`, `lilygo_t3s3`, `lilygo_tbeam_sx1262`.
 
