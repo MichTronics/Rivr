@@ -199,13 +199,13 @@ typedef struct {
     uint32_t usb_rx_frames;    /**< USB-sourced frames entering bus             */
 } rivr_metrics_t;
 
-/* ── Compact BLE metrics payload ────────────────────────────────────────────
+/* ── BLE metrics payload ────────────────────────────────────────────────────
  * Sent as the body of a PKT_METRICS frame (pkt_type = 11) pushed directly to
- * connected BLE clients every 5 s.  Total frame = 23 (header) + 48 (payload)
- * + 2 (CRC-16) = 73 bytes — fits in one 128-byte-MTU BLE notification.
+ * connected BLE clients every 5 s.  Total frame = 23 (header) + 132 (payload)
+ * + 2 (CRC-16) = 157 bytes — fits in one 247-byte-MTU BLE notification.
  *
  * All multi-byte fields are little-endian (native on ESP32 / Xtensa).        */
-#define RIVR_MET_BLE_PAYLOAD_LEN  48u
+#define RIVR_MET_BLE_PAYLOAD_LEN  132u
 
 typedef struct __attribute__((packed)) {
     uint32_t node_id;       /**< [0-3]   g_my_node_id                        */
@@ -216,16 +216,37 @@ typedef struct __attribute__((packed)) {
     uint8_t  route_cache;   /**< [14]    live route-cache entries             */
     uint8_t  lnk_cnt;       /**< [15]    live neighbor count                  */
     uint8_t  lnk_best;      /**< [16]    best neighbor link score 0-100       */
-    int8_t   lnk_rssi;      /**< [17]    EWMA RSSI of best neighbor (dBm)    */
-    uint8_t  lnk_loss;      /**< [18]    avg packet-loss % across neighbors  */
-    uint8_t  relay_density; /**< [19]    viable relay neighbor count          */
-    uint32_t relay_skip;    /**< [20-23] opportunistic + score suppr. total  */
-    uint32_t rx_fail;       /**< [24-27] RX frame decode failures             */
-    uint32_t rx_dup;        /**< [28-31] RX dedupe drops                      */
-    uint32_t ble_conn;      /**< [32-35] cumulative BLE connections           */
-    uint32_t ble_rx;        /**< [36-39] frames received from BLE client      */
-    uint32_t ble_tx;        /**< [40-43] frames notified to BLE client        */
-    uint32_t ble_err;       /**< [44-47] BLE errors                           */
+    int8_t   lnk_rssi;      /**< [17]    EWMA RSSI of best neighbor (dBm)     */
+    uint8_t  lnk_loss;      /**< [18]    avg packet-loss % across neighbors   */
+    uint32_t relay_skip;    /**< [19-22] opportunistic + score suppr. total   */
+    uint32_t relay_delay;   /**< [23-26] cumulative relay holdoff ms          */
+    uint8_t  relay_density; /**< [27]    viable relay neighbor count          */
+    uint32_t relay_fwd;     /**< [28-31] relays that completed TX             */
+    uint32_t relay_sel;     /**< [32-35] relay candidates selected            */
+    uint32_t relay_can;     /**< [36-39] opportunistic relay cancellations    */
+    uint32_t rx_fail;       /**< [40-43] RX frame decode failures             */
+    uint32_t rx_dup;        /**< [44-47] RX dedupe drops                      */
+    uint32_t rx_ttl;        /**< [48-51] RX TTL drops                         */
+    uint32_t rx_bad_type;   /**< [52-55] invalid pkt_type drops               */
+    uint32_t rx_bad_hop;    /**< [56-59] invalid hop drops                    */
+    uint32_t tx_full;       /**< [60-63] TX queue full drops                  */
+    uint32_t dc_blk;        /**< [64-67] duty-cycle blocked sends             */
+    uint32_t no_route;      /**< [68-71] no-route drops                       */
+    uint32_t loop_drop_total; /**< [72-75] cumulative loop-detect drops       */
+    uint32_t rad_rst;       /**< [76-79] radio hard resets                    */
+    uint32_t rad_txfail;    /**< [80-83] radio TX failures                    */
+    uint32_t rad_crc;       /**< [84-87] radio CRC failures                   */
+    uint32_t rc_hit;        /**< [88-91] route-cache hits                     */
+    uint32_t rc_miss;       /**< [92-95] route-cache misses                   */
+    uint32_t ack_tx;        /**< [96-99] ACK frames transmitted               */
+    uint32_t ack_rx;        /**< [100-103] ACK frames received                */
+    uint32_t retry_att;     /**< [104-107] retry attempts                     */
+    uint32_t retry_ok;      /**< [108-111] successful retries                 */
+    uint32_t retry_fail;    /**< [112-115] failed retries                     */
+    uint32_t ble_conn;      /**< [116-119] cumulative BLE connections         */
+    uint32_t ble_rx;        /**< [120-123] frames received from BLE client    */
+    uint32_t ble_tx;        /**< [124-127] frames notified to BLE client      */
+    uint32_t ble_err;       /**< [128-131] BLE errors                         */
 } rivr_met_ble_payload_t;
 
 _Static_assert(sizeof(rivr_met_ble_payload_t) == RIVR_MET_BLE_PAYLOAD_LEN,
