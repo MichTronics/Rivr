@@ -53,42 +53,68 @@ congestion-aware relay suppression automatically.
 
 ## The story behind Rivr
 
-Rivr started with a simple curiosity.
+Rivr didn't start as a big plan or a startup idea.
+It started the way many radio projects start: on a workbench with a few LoRa modules and a lot of curiosity.
 
-Like many people interested in radio and wireless communication, I began experimenting with LoRa
-modules and mesh networks. Projects like Meshtastic and MeshCore showed that it was possible to
-build decentralized communication networks with very little hardware. But while experimenting with
-these systems, I kept asking myself the same question:
+I've always been fascinated by radio communication and decentralized systems. As a radio amateur
+(PD4MV) I enjoy experimenting with ways devices can communicate without relying on centralized
+infrastructure.
 
-> *What if we could push this concept much further?*
+When LoRa mesh projects like Meshtastic and MeshCore started appearing, I immediately began
+experimenting with them. They proved that long-range decentralized communication was possible with
+very little hardware.
 
-Most LoRa mesh projects are designed around a fairly simple idea: packets follow a predefined
-route through the network. But real radio environments are messy. Signals fade, nodes move, links
-change, and sometimes the "best route" isn't actually the best one at all.
+But while building and testing networks with ESP32 boards and SX1262 radios, I kept running into
+the same thought:
 
-That's where the idea for Rivr started to form.
+> *What if a LoRa mesh network could behave more like a living system instead of a fixed routing table?*
 
-Instead of treating a network like a fixed set of roads, I began thinking about it more like a
-**river system**. Water doesn't follow a single rigid path — it flows through multiple channels,
-adapts to obstacles, and finds the best way forward dynamically.
+Real radio environments are unpredictable.
+Signals fade. Nodes move. Noise appears. Links disappear.
 
-That metaphor became the foundation for the project.
+Yet most LoRa mesh implementations treat the network like a static road system:
 
-Rivr is designed as a flexible mesh communication layer that allows packets to flow through the
-network in a smarter way. Rather than forcing a single path, the network adapts to real-world
-radio conditions and chooses the best relay nodes dynamically.
+```
+A → B → C → D
+```
 
-> **The name Rivr comes directly from that idea: a network where information flows like a river.**
+One path. One route.
 
-What started as small experiments with ESP32 boards and LoRa radios quickly turned into a larger
-project exploring routing algorithms, adaptive relays, and new ways to build decentralized
-communication networks.
+But radio doesn't really work like that.
 
-Rivr is still evolving, but the goal remains the same: to build a next-generation long-range mesh
-communication platform that is simple to use, powerful to experiment with, and open for everyone
-who wants to explore wireless networking.
+During many evenings of experimenting, logging packets, and debugging strange behavior on the air,
+the idea slowly evolved into a different model:
 
-Michel van Veen (MichTronics - PD4MV)
+> *A network where packets flow dynamically through the mesh, adapting to real radio conditions.*
+
+More like water flowing through a river system.
+
+Water doesn't follow a single rigid path — it spreads, adapts, and finds the best route forward.
+
+That idea became the core philosophy behind the project.
+
+**And that's where the name Rivr comes from.**
+
+Rivr is my attempt to explore what a next-generation LoRa mesh architecture could look like:
+
+- deterministic embedded behavior
+- airtime-aware networking
+- adaptive relay selection
+- resilient packet propagation
+- and a programmable runtime for packet processing
+
+What started as small experiments with ESP32 boards has grown into a much larger exploration of
+embedded networking, routing algorithms, and decentralized communication.
+
+Rivr is still evolving, and the goal is simple:
+
+> Build a mesh networking platform that is powerful enough for research and experimentation,
+> but simple enough for anyone with a LoRa board to start using.
+
+If you enjoy experimenting with radio, embedded systems, or distributed networks — you're very
+welcome to join the journey.
+
+*Michel van Veen — MichTronics — PD4MV*
 
 ---
 
