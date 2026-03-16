@@ -888,6 +888,7 @@ void app_main(void)
             disp.uptime_s = now / 1000u;
             disp.ble_active = rivr_ble_is_active();
             disp.ble_connected = rivr_ble_is_connected();
+            disp.ble_paired = rivr_ble_has_bond();
             disp.ble_passkey = rivr_ble_passkey();
 
             /* Rate-limit the GetRssiInst SPI call: once per 500 ms is more
