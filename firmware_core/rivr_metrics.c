@@ -249,11 +249,32 @@ void rivr_metrics_ble_push(const rivr_live_stats_t *live,
     pl.lnk_best      = live->lnk_best;
     pl.lnk_rssi      = live->lnk_best_rssi;
     pl.lnk_loss      = live->lnk_avg_loss;
-    pl.relay_density  = live->relay_density;
     pl.relay_skip    = g_rivr_metrics.flood_fwd_cancelled_opport_total
                        + g_rivr_metrics.flood_fwd_score_suppressed_total;
+    pl.relay_delay   = g_rivr_metrics.relay_delay_ms_total;
+    pl.relay_density = live->relay_density;
+    pl.relay_fwd     = g_rivr_metrics.relay_forwarded_total;
+    pl.relay_sel     = g_rivr_metrics.flood_fwd_attempted_total;
+    pl.relay_can     = g_rivr_metrics.flood_fwd_cancelled_opport_total;
     pl.rx_fail       = g_rivr_metrics.rx_decode_fail;
     pl.rx_dup        = g_rivr_metrics.rx_dedupe_drop;
+    pl.rx_ttl        = g_rivr_metrics.rx_ttl_drop;
+    pl.rx_bad_type   = g_rivr_metrics.rx_invalid_type;
+    pl.rx_bad_hop    = g_rivr_metrics.rx_invalid_hop;
+    pl.tx_full       = g_rivr_metrics.tx_queue_full;
+    pl.dc_blk        = g_rivr_metrics.duty_blocked;
+    pl.no_route      = g_rivr_metrics.drop_no_route;
+    pl.loop_drop_total = g_rivr_metrics.loop_detect_drop_total;
+    pl.rad_rst       = g_rivr_metrics.radio_hard_reset;
+    pl.rad_txfail    = g_rivr_metrics.radio_tx_fail;
+    pl.rad_crc       = g_rivr_metrics.radio_rx_crc_fail;
+    pl.rc_hit        = g_rivr_metrics.route_cache_hit_total;
+    pl.rc_miss       = g_rivr_metrics.route_cache_miss_total;
+    pl.ack_tx        = g_rivr_metrics.ack_tx_total;
+    pl.ack_rx        = g_rivr_metrics.ack_rx_total;
+    pl.retry_att     = g_rivr_metrics.retry_attempt_total;
+    pl.retry_ok      = g_rivr_metrics.retry_success_total;
+    pl.retry_fail    = g_rivr_metrics.retry_fail_total;
     pl.ble_conn      = g_rivr_metrics.ble_connections;
     pl.ble_rx        = g_rivr_metrics.ble_rx_frames;
     pl.ble_tx        = g_rivr_metrics.ble_tx_frames;
@@ -274,7 +295,7 @@ void rivr_metrics_ble_push(const rivr_live_stats_t *live,
     hdr.pkt_id      = seq;
     hdr.payload_len = (uint8_t)sizeof(pl);
 
-    /* Frame buffer: header(23) + payload(48) + CRC(2) = 73 bytes */
+    /* Frame buffer: header(23) + payload(132) + CRC(2) = 157 bytes */
     uint8_t frame[23u + RIVR_MET_BLE_PAYLOAD_LEN + 2u];
     int len = protocol_encode(&hdr, (const uint8_t *)&pl,
                               (uint8_t)sizeof(pl),
