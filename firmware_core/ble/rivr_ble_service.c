@@ -1,253 +1,253 @@
 /**
  * @file  rivr_ble_service.c
- * @brief Rivr BLE GATT service: RX write handler + TX notify.
- *
- * SERVICE DESIGN (Nordic UART Service UUIDs for universal app compatibility)
- * ──────────────────────────────────────────────────────────────────────────
- *  Service  6E400001-B5A3-F393-E0A9-E50E24DCCA9E
- *    TX chr 6E400003-B5A3-F393-E0A9-E50E24DCCA9E  Notify  (node → phone)
- *    RX chr 6E400002-B5A3-F393-E0A9-E50E24DCCA9E  Write   (phone → node)
- *
- * RX PATH  (phone → node)
- * ────────────────────────
- *  1. Phone writes a binary Rivr frame to the RX characteristic.
- *  2. rivr_chr_access_cb() copies it into an rf_rx_frame_t.
- *  3. rb_try_push(&rf_rx_ringbuf, &frame) injects it into the shared
- *     receive ring buffer — identical to a frame arriving from LoRa.
- *  4. On the next main-loop iteration, sources_rf_rx_drain() processes it
- *     through protocol_decode, dedupe, routing, and the RIVR engine.
- *
- * TX PATH  (node → phone)
- * ────────────────────────
- *  rivr_ble_service_notify() is called from sources_rf_rx_drain() whenever
- *  a well-formed, non-deduplicated frame arrives from the radio.  The phone
- *  gets a forwarded copy of all live mesh traffic + any originated frames.
- *
- * THREAD SAFETY
- * ─────────────
- *  rivr_chr_access_cb   — NimBLE host task (producer to rf_rx_ringbuf)
- *  rivr_ble_service_notify — main-loop task (calls ble_gatts_notify_custom
- *                             which acquires NimBLE's internal lock)
- *  rf_rx_ringbuf is an SPSC atomic ring buffer — no mutex needed.
+ * @brief Rivr BLE GATT service: RX write handler + TX notify (Bluedroid).
  */
 
 #include "rivr_ble_service.h"
+#include "rivr_ble_service_internal.h"
 #include "rivr_config.h"
 
 #if RIVR_FEATURE_BLE
 
 #include <string.h>
+
 #include "esp_log.h"
+#include "esp_gatt_common_api.h"
 
-/* NimBLE headers */
-#include "nimble/nimble_port.h"
-#include "host/ble_hs.h"
-#include "host/ble_gap.h"
-#include "host/ble_gatt.h"
-#include "os/os_mbuf.h"
-
-/* Rivr firmware headers */
-#include "../radio_sx1262.h"   /* rf_rx_ringbuf, rf_rx_frame_t, RF_MAX_PAYLOAD_LEN */
-#include "../rivr_metrics.h"   /* g_rivr_metrics.ble_*                             */
+#include "../radio_sx1262.h"
 #include "../rivr_log.h"
-#include "../timebase.h"       /* tb_millis()                                      */
+#include "../rivr_metrics.h"
+#include "../timebase.h"
 #include "../ringbuf.h"
 
 #define TAG "RIVR_BLE_SVC"
+#define RIVR_BLE_APP_ID 0x56
 
-/* ── 128-bit UUIDs (stored little-endian as required by NimBLE) ──────────── *
- *  6E400001-B5A3-F393-E0A9-E50E24DCCA9E → bytes[0] = 0x9E, bytes[15] = 0x6E */
-
-/* Service UUID: 6E400001-... */
-static const ble_uuid128_t s_rivr_svc_uuid =
-    BLE_UUID128_INIT(0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
-                     0x93, 0xf3, 0xa3, 0xb5, 0x01, 0x00, 0x40, 0x6e);
-
-/* RX characteristic: 6E400002-... (Write / Write Without Response, phone → node) */
-static const ble_uuid128_t s_rivr_rx_uuid =
-    BLE_UUID128_INIT(0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
-                     0x93, 0xf3, 0xa3, 0xb5, 0x02, 0x00, 0x40, 0x6e);
-
-/* TX characteristic: 6E400003-... (Notify, node → phone) */
-static const ble_uuid128_t s_rivr_tx_uuid =
-    BLE_UUID128_INIT(0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
-                     0x93, 0xf3, 0xa3, 0xb5, 0x03, 0x00, 0x40, 0x6e);
-
-/* ── Attribute handle cache ──────────────────────────────────────────────── */
-
-/** Handle for the TX characteristic value attribute.
- *  Populated by NimBLE after ble_gatts_add_svcs() completes.
- *  Used by rivr_ble_service_notify() to address the correct attribute. */
-static uint16_t s_tx_chr_val_handle = 0u;
-
-/* ── GATT access callback (called from NimBLE host task) ─────────────────── */
-
-/**
- * @brief Combined GATT access callback for both characteristics.
- *
- * TX characteristic: read operations return 0 bytes (notify-only).
- * RX characteristic: write operations push the payload into rf_rx_ringbuf.
- */
-static int rivr_chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
-                               struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    (void)conn_handle;
-    (void)attr_handle;
-    (void)arg;
-
-    switch (ctxt->op) {
-
-    case BLE_GATT_ACCESS_OP_READ_CHR:
-        /* TX characteristic supports only notify — no readable value. */
-        return 0;
-
-    case BLE_GATT_ACCESS_OP_WRITE_CHR: {
-        /* ── Phone → node: copy mbuf into rf_rx_ringbuf ──────────────── */
-        uint16_t pkt_len = OS_MBUF_PKTLEN(ctxt->om);
-
-        if (pkt_len == 0u || pkt_len > RF_MAX_PAYLOAD_LEN) {
-            RIVR_LOGW(TAG, "BLE rx: frame length %u out of range (max=%u)",
-                      (unsigned)pkt_len, (unsigned)RF_MAX_PAYLOAD_LEN);
-            g_rivr_metrics.ble_errors++;
-            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-        }
-
-        rf_rx_frame_t frame;
-        memset(&frame, 0, sizeof(frame));
-
-        /* Copy from OS mbuf chain into flat buffer */
-        uint16_t clen = 0u;
-        int rc = ble_hs_mbuf_to_flat(ctxt->om, frame.data,
-                                     sizeof(frame.data), &clen);
-        if (rc != 0) {
-            RIVR_LOGW(TAG, "BLE rx: mbuf flatten failed (rc=%d)", rc);
-            g_rivr_metrics.ble_errors++;
-            return BLE_ATT_ERR_UNLIKELY;
-        }
-
-        frame.len        = (uint8_t)clen;
-        frame.rssi_dbm   = 0;      /* BLE has no RSSI equivalent here    */
-        frame.snr_db     = 0;
-        frame.rx_mono_ms = tb_millis();
-        frame.from_id    = 0u;     /* 0 = local/BLE origin; not a relay  */
-        frame.iface      = 1u;     /* RIVR_IFACE_BLE — identifies transport
-                                    * to the bus for dispatch + dup cache  */
-
-        /* Push into the shared SPSC receive ring buffer.
-         * Producer = this function (NimBLE task).
-         * Consumer = sources_rf_rx_drain() (main-loop task). */
-        if (!rb_try_push(&rf_rx_ringbuf, &frame)) {
-            RIVR_LOGW(TAG, "BLE rx: rf_rx_ringbuf full — frame dropped");
-            g_rivr_metrics.ble_errors++;
-            /* Return success to the client anyway — the drop is our problem */
-        } else {
-            g_rivr_metrics.ble_rx_frames++;
-            RIVR_LOGI(TAG, "BLE rx: %u bytes pushed to rf_rx_ringbuf",
-                      (unsigned)clen);
-        }
-        return 0;
-    }
-
-    default:
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-}
-
-/* ── GATT service table ──────────────────────────────────────────────────── */
-
-static const struct ble_gatt_svc_def s_rivr_gatt_svcs[] = {
-    {
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = &s_rivr_svc_uuid.u,
-        .characteristics = (struct ble_gatt_chr_def[]) {
-            {
-                /* TX characteristic — node → phone (Notify).
-                 * BLE_GATT_CHR_F_READ_AUTHEN requires an authenticated
-                 * (MITM-protected) encrypted link before NimBLE permits the
-                 * client to subscribe (CCCD write).  _ENC alone is satisfied
-                 * by a Just-Works bond and would not enforce passkey entry. */
-                .uuid       = &s_rivr_tx_uuid.u,
-                .access_cb  = rivr_chr_access_cb,
-                .val_handle = &s_tx_chr_val_handle,
-                .flags      = BLE_GATT_CHR_F_NOTIFY
-#if RIVR_BLE_PASSKEY != 0
-                            | BLE_GATT_CHR_F_READ_AUTHEN
-#endif
-                ,
-            },
-            {
-                /* RX characteristic — phone → node (Write / Write-NR).
-                 * BLE_GATT_CHR_F_WRITE_AUTHEN rejects frames unless the link
-                 * was established with MITM passkey — returns
-                 * ATT_ERR_INSUFFICIENT_AUTHENTICATION (0x05).              */
-                .uuid      = &s_rivr_rx_uuid.u,
-                .access_cb = rivr_chr_access_cb,
-                .flags     = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP
-#if RIVR_BLE_PASSKEY != 0
-                           | BLE_GATT_CHR_F_WRITE_AUTHEN
-#endif
-                ,
-            },
-            { 0 }  /* characteristic list terminator */
-        },
-    },
-    { 0 }  /* service list terminator */
+enum {
+    IDX_SVC,
+    IDX_RX_CHAR_DECL,
+    IDX_RX_CHAR_VAL,
+    IDX_TX_CHAR_DECL,
+    IDX_TX_CHAR_VAL,
+    IDX_TX_CCCD,
+    IDX_NB,
 };
 
-/* ── Public API ──────────────────────────────────────────────────────────── */
+static const uint16_t s_primary_service_uuid = ESP_GATT_UUID_PRI_SERVICE;
+static const uint16_t s_char_decl_uuid = ESP_GATT_UUID_CHAR_DECLARE;
+static const uint16_t s_cccd_uuid = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
 
-int rivr_ble_service_register(void)
+static const uint8_t s_svc_uuid[16] = {
+    0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
+    0x93, 0xf3, 0xa3, 0xb5, 0x01, 0x00, 0x40, 0x6e,
+};
+static const uint8_t s_rx_uuid[16] = {
+    0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
+    0x93, 0xf3, 0xa3, 0xb5, 0x02, 0x00, 0x40, 0x6e,
+};
+static const uint8_t s_tx_uuid[16] = {
+    0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0,
+    0x93, 0xf3, 0xa3, 0xb5, 0x03, 0x00, 0x40, 0x6e,
+};
+
+static const uint8_t s_rx_props =
+    ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
+static const uint8_t s_tx_props = ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+static const uint8_t s_cccd_default[2] = {0x00, 0x00};
+static const uint8_t s_dummy_val[1] = {0x00};
+
+#if RIVR_BLE_PASSKEY != 0
+#define RIVR_BLE_RX_PERM   ESP_GATT_PERM_WRITE_ENC_MITM
+#define RIVR_BLE_TX_PERM   ESP_GATT_PERM_READ_ENC_MITM
+#define RIVR_BLE_CCCD_PERM (ESP_GATT_PERM_READ_ENC_MITM | ESP_GATT_PERM_WRITE_ENC_MITM)
+#else
+#define RIVR_BLE_RX_PERM   ESP_GATT_PERM_WRITE
+#define RIVR_BLE_TX_PERM   ESP_GATT_PERM_READ
+#define RIVR_BLE_CCCD_PERM (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE)
+#endif
+
+static const esp_gatts_attr_db_t s_gatt_db[IDX_NB] = {
+    [IDX_SVC] = {
+        {ESP_GATT_AUTO_RSP},
+        {
+            ESP_UUID_LEN_16, (uint8_t *)&s_primary_service_uuid,
+            ESP_GATT_PERM_READ,
+            sizeof(s_svc_uuid), sizeof(s_svc_uuid), (uint8_t *)s_svc_uuid,
+        },
+    },
+    [IDX_RX_CHAR_DECL] = {
+        {ESP_GATT_AUTO_RSP},
+        {
+            ESP_UUID_LEN_16, (uint8_t *)&s_char_decl_uuid,
+            ESP_GATT_PERM_READ,
+            sizeof(uint8_t), sizeof(uint8_t), (uint8_t *)&s_rx_props,
+        },
+    },
+    [IDX_RX_CHAR_VAL] = {
+        {ESP_GATT_AUTO_RSP},
+        {
+            ESP_UUID_LEN_128, (uint8_t *)s_rx_uuid,
+            RIVR_BLE_RX_PERM,
+            RF_MAX_PAYLOAD_LEN, sizeof(s_dummy_val), (uint8_t *)s_dummy_val,
+        },
+    },
+    [IDX_TX_CHAR_DECL] = {
+        {ESP_GATT_AUTO_RSP},
+        {
+            ESP_UUID_LEN_16, (uint8_t *)&s_char_decl_uuid,
+            ESP_GATT_PERM_READ,
+            sizeof(uint8_t), sizeof(uint8_t), (uint8_t *)&s_tx_props,
+        },
+    },
+    [IDX_TX_CHAR_VAL] = {
+        {ESP_GATT_AUTO_RSP},
+        {
+            ESP_UUID_LEN_128, (uint8_t *)s_tx_uuid,
+            RIVR_BLE_TX_PERM,
+            RF_MAX_PAYLOAD_LEN, sizeof(s_dummy_val), (uint8_t *)s_dummy_val,
+        },
+    },
+    [IDX_TX_CCCD] = {
+        {ESP_GATT_AUTO_RSP},
+        {
+            ESP_UUID_LEN_16, (uint8_t *)&s_cccd_uuid,
+            RIVR_BLE_CCCD_PERM,
+            sizeof(uint16_t), sizeof(s_cccd_default), (uint8_t *)s_cccd_default,
+        },
+    },
+};
+
+static uint16_t s_handle_table[IDX_NB];
+static esp_gatt_if_t s_gatts_if = ESP_GATT_IF_NONE;
+static uint16_t s_conn_id = 0xFFFFu;
+static bool s_service_ready = false;
+static bool s_notify_enabled = false;
+
+static void rivr_ble_service_handle_rx_write(const esp_ble_gatts_cb_param_t *param)
 {
-    int rc;
+    const struct gatts_write_evt_param *w = &param->write;
 
-    /* Count the required attribute handles */
-    rc = ble_gatts_count_cfg(s_rivr_gatt_svcs);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "ble_gatts_count_cfg failed: %d", rc);
-        return rc;
-    }
-
-    /* Register the service table */
-    rc = ble_gatts_add_svcs(s_rivr_gatt_svcs);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "ble_gatts_add_svcs failed: %d", rc);
-        return rc;
-    }
-
-    RIVR_LOGI(TAG, "GATT service registered (TX handle will be assigned on sync)");
-    return 0;
-}
-
-void rivr_ble_service_notify(uint16_t conn_handle,
-                              const uint8_t *data, uint8_t len)
-{
-    if (conn_handle == BLE_HS_CONN_HANDLE_NONE) return;
-    if (s_tx_chr_val_handle == 0u) return;  /* service not yet synced */
-    if (len == 0u) return;
-
-    /* Allocate an OS mbuf and copy the frame in.
-     * ble_hs_mbuf_from_flat() returns NULL if the NimBLE buffer pool is
-     * exhausted (memory pressure).  We count this as a BLE error and skip. */
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(data, (uint16_t)len);
-    if (!om) {
-        RIVR_LOGW(TAG, "BLE notify: mbuf alloc failed (len=%u)", (unsigned)len);
+    if (w->len == 0u || w->len > RF_MAX_PAYLOAD_LEN) {
+        RIVR_LOGW(TAG, "BLE rx: frame length %u out of range (max=%u)",
+                  (unsigned)w->len, (unsigned)RF_MAX_PAYLOAD_LEN);
         g_rivr_metrics.ble_errors++;
         return;
     }
 
-    /* ble_gatts_notify_custom() transfers ownership of @p om to NimBLE.
-     * Non-zero return means the client unsubscribed or the connection was
-     * torn down — count it for diagnostics but do not crash. */
-    int rc = ble_gatts_notify_custom(conn_handle, s_tx_chr_val_handle, om);
-    if (rc == 0) {
-        g_rivr_metrics.ble_tx_frames++;
-    } else {
-        /* BLE_HS_ENOTCONN or BLE_HS_ATT_ERR(BLE_ATT_ERR_ATTR_NOT_FOUND):
-         * connection dropped between the check and the send. */
+    rf_rx_frame_t frame;
+    memset(&frame, 0, sizeof(frame));
+    memcpy(frame.data, w->value, w->len);
+    frame.len = (uint8_t)w->len;
+    frame.rssi_dbm = 0;
+    frame.snr_db = 0;
+    frame.rx_mono_ms = tb_millis();
+    frame.from_id = 0u;
+    frame.iface = 1u;
+
+    if (!rb_try_push(&rf_rx_ringbuf, &frame)) {
+        RIVR_LOGW(TAG, "BLE rx: rf_rx_ringbuf full — frame dropped");
         g_rivr_metrics.ble_errors++;
-        RIVR_LOGD(TAG, "BLE notify: send failed (rc=%d conn=0x%04x)",
-                  rc, (unsigned)conn_handle);
+        return;
     }
+
+    g_rivr_metrics.ble_rx_frames++;
+    RIVR_LOGI(TAG, "BLE rx: %u bytes pushed to rf_rx_ringbuf", (unsigned)w->len);
+}
+
+int rivr_ble_service_register(void)
+{
+    esp_err_t err = esp_ble_gatts_app_register(RIVR_BLE_APP_ID);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ble_gatts_app_register failed: %s", esp_err_to_name(err));
+    }
+    return (int)err;
+}
+
+void rivr_ble_service_set_connection(esp_gatt_if_t gatts_if, uint16_t conn_id)
+{
+    s_gatts_if = gatts_if;
+    s_conn_id = conn_id;
+}
+
+void rivr_ble_service_clear_connection(void)
+{
+    s_conn_id = 0xFFFFu;
+    s_notify_enabled = false;
+}
+
+bool rivr_ble_service_is_ready(void)
+{
+    return s_service_ready;
+}
+
+void rivr_ble_service_handle_gatts_event(esp_gatts_cb_event_t event,
+                                         esp_gatt_if_t gatts_if,
+                                         esp_ble_gatts_cb_param_t *param)
+{
+    switch (event) {
+    case ESP_GATTS_REG_EVT:
+        if (param->reg.status != ESP_GATT_OK) {
+            ESP_LOGE(TAG, "GATTS reg failed: %d", param->reg.status);
+            return;
+        }
+        s_gatts_if = gatts_if;
+        esp_ble_gatts_create_attr_tab(s_gatt_db, gatts_if, IDX_NB, 0);
+        break;
+
+    case ESP_GATTS_CREAT_ATTR_TAB_EVT:
+        if (param->add_attr_tab.status != ESP_GATT_OK) {
+            ESP_LOGE(TAG, "attr table create failed: %d", param->add_attr_tab.status);
+            return;
+        }
+        if (param->add_attr_tab.num_handle != IDX_NB) {
+            ESP_LOGE(TAG, "attr table handle count mismatch: got=%u expected=%u",
+                     (unsigned)param->add_attr_tab.num_handle, (unsigned)IDX_NB);
+            return;
+        }
+        memcpy(s_handle_table, param->add_attr_tab.handles, sizeof(s_handle_table));
+        esp_ble_gatts_start_service(s_handle_table[IDX_SVC]);
+        s_service_ready = true;
+        RIVR_LOGI(TAG, "GATT service ready");
+        break;
+
+    case ESP_GATTS_WRITE_EVT:
+        if (param->write.handle == s_handle_table[IDX_RX_CHAR_VAL]) {
+            rivr_ble_service_handle_rx_write(param);
+        } else if (param->write.handle == s_handle_table[IDX_TX_CCCD] &&
+                   param->write.len >= 2u) {
+            uint16_t cccd = (uint16_t)param->write.value[0] |
+                            ((uint16_t)param->write.value[1] << 8);
+            s_notify_enabled = (cccd & 0x0001u) != 0u;
+            RIVR_LOGI(TAG, "BLE notify %s", s_notify_enabled ? "enabled" : "disabled");
+        }
+        break;
+
+    case ESP_GATTS_DISCONNECT_EVT:
+        rivr_ble_service_clear_connection();
+        break;
+
+    default:
+        break;
+    }
+}
+
+void rivr_ble_service_notify(uint16_t conn_handle, const uint8_t *data, uint8_t len)
+{
+    (void)conn_handle;
+
+    if (s_gatts_if == ESP_GATT_IF_NONE || s_conn_id == 0xFFFFu) return;
+    if (!s_service_ready || !s_notify_enabled || !data || len == 0u) return;
+
+    esp_err_t err = esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id,
+                                                s_handle_table[IDX_TX_CHAR_VAL],
+                                                len, (uint8_t *)data, false);
+    if (err == ESP_OK) {
+        g_rivr_metrics.ble_tx_frames++;
+        return;
+    }
+
+    g_rivr_metrics.ble_errors++;
+    RIVR_LOGD(TAG, "BLE notify failed: %s", esp_err_to_name(err));
 }
 
 #endif /* RIVR_FEATURE_BLE */
