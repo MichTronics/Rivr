@@ -31,10 +31,10 @@ Build the host tools and run the bundled replay:
 cargo build -p rivr_host
 
 # Compile a RIVR program and display the AST
-cargo run -p rivr_host --bin rivrc -- rivr_replay.jsonl
+cargo run -p rivr_host --bin rivrc -- tests/rivr_replay.jsonl
 
 # Replay a captured traffic log through the Rivr engine
-cargo run -p rivr_host -- rivr_replay.jsonl
+cargo run -p rivr_host -- tests/rivr_replay.jsonl
 ```
 
 Expected output ends with a line like:
