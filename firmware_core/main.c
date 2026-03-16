@@ -708,7 +708,7 @@ static void start_display_task(void)
 /**
  * start_transport_interfaces - Start BLE and USB-UART SLIP bridge interfaces.
  *
- * BLE:  starts NimBLE in 120-second boot-window mode; auto-deactivates when
+ * BLE:  starts the BLE stack in 120-second boot-window mode; auto-deactivates when
  *       the window expires (polled by rivr_ble_tick in the main loop).
  *       No-op when RIVR_FEATURE_BLE=0 (stubs in rivr_ble.h).
  * USB:  installs the UART driver for the USB-UART bridge.

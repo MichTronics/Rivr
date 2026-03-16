@@ -104,9 +104,9 @@
 #endif
 
 /**
- * BLE provisioning / companion app pairing (reserved for future use).
- * When enabled (future), the NimBLE stack will be initialised and a
- * provisioning GATT service will be advertised at startup.
+ * BLE transport bridge for the companion app.
+ * When enabled, the ESP-IDF BLE stack is initialised and the NUS-style
+ * GATT service is advertised at startup.
  */
 #ifndef RIVR_FEATURE_BLE
 #  define RIVR_FEATURE_BLE          0

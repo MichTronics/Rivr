@@ -24,7 +24,7 @@
  */
 typedef enum {
     RIVR_IFACE_LORA  = 0,  /**< SX1262 / SX1276 LoRa radio                   */
-    RIVR_IFACE_BLE   = 1,  /**< NimBLE GATT characteristic write              */
+    RIVR_IFACE_BLE   = 1,  /**< BLE GATT characteristic write                 */
     RIVR_IFACE_USB   = 2,  /**< USB-UART SLIP bridge (RIVR_FEATURE_USB_BRIDGE)*/
     RIVR_IFACE_WIFI  = 3,  /**< Future: 802.11 AP/STA bridge                  */
     RIVR_IFACE_LOCAL = 4,  /**< Frame originated by this node's program layer */
