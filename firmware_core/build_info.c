@@ -29,7 +29,7 @@ void build_info_print_banner(void)
 {
     /* Single line, no ESP_LOG prefix, \r\n for serial monitors that need CR. */
     printf("[RIVR] env=%s sha=%s built=%s %s"
-           " role=%s radio=%s freq=%" PRIu32 " SF%u BW%ukHz CR4/%u"
+           " role=%s radio=%s freq=%" PRIu32 " SF%u BW%skHz CR4/%u"
            " cc=%s flags=%s%s\r\n",
            RIVR_BUILD_ENV,
            RIVR_GIT_SHA,
@@ -38,7 +38,7 @@ void build_info_print_banner(void)
            k_radio,
            (uint32_t)RIVR_RF_FREQ_HZ,
            (unsigned)RF_SPREADING_FACTOR,
-           (unsigned)RF_BANDWIDTH_KHZ,
+           RF_BANDWIDTH_DISPLAY_STR,
            (unsigned)RF_CODING_RATE,
            RIVR_COMPILER_VER,
            k_fabric,
@@ -61,6 +61,7 @@ int build_info_write_json(char *buf, size_t buf_len)
         "\"radio\":\"%s\","
         "\"freq\":%" PRIu32 ","
         "\"sf\":%u,"
+        "\"bw_hz\":%u,"
         "\"bw_khz\":%u,"
         "\"cr\":\"4/%u\","
         "\"fabric\":%u,"
@@ -115,6 +116,7 @@ int build_info_write_json(char *buf, size_t buf_len)
         k_radio,
         (uint32_t)RIVR_RF_FREQ_HZ,
         (unsigned)RF_SPREADING_FACTOR,
+        (unsigned)RF_BANDWIDTH_HZ,
         (unsigned)RF_BANDWIDTH_KHZ,
         (unsigned)RF_CODING_RATE,
         (unsigned)RIVR_FABRIC_REPEATER,
@@ -200,6 +202,7 @@ int build_info_write_supportpack(char    *buf,
         "\"radio\":\"%s\","
         "\"freq\":%" PRIu32 ","
         "\"sf\":%u,"
+        "\"bw_hz\":%u,"
         "\"bw_khz\":%u,"
         "\"cr\":\"4/%u\","
         "\"fabric\":%u,"
@@ -264,6 +267,7 @@ int build_info_write_supportpack(char    *buf,
         k_role, k_radio,
         (uint32_t)RIVR_RF_FREQ_HZ,
         (unsigned)RF_SPREADING_FACTOR,
+        (unsigned)RF_BANDWIDTH_HZ,
         (unsigned)RF_BANDWIDTH_KHZ,
         (unsigned)RF_CODING_RATE,
         (unsigned)RIVR_FABRIC_REPEATER,

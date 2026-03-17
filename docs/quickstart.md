@@ -132,7 +132,7 @@ rivr> supportpack
 |---|---|
 | Frequency | 869.480 MHz (EU868 g3 sub-band) |
 | Spreading factor | SF8 |
-| Bandwidth | 125 kHz |
+| Bandwidth | 62.5 kHz (`RF_BANDWIDTH_HZ=62500`) |
 | Coding rate | CR 4/8 |
 | Preamble length | 8 symbols |
 | Max TX power | +30 dBm (E22) / +20 dBm (LilyGo) |

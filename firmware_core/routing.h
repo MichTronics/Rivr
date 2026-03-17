@@ -50,7 +50,7 @@
 #include "protocol.h"
 #include "route_cache.h"   /* route_cache_t, route_cache_lookup() */
 #include "hal/feature_flags.h"  /* RIVR_ROLE_REPEATER for budget scaling */
-#include "rivr_config.h"        /* RF_SPREADING_FACTOR, RF_BANDWIDTH_KHZ  */
+#include "rivr_config.h"        /* RF_SPREADING_FACTOR, RF_BANDWIDTH_HZ   */
 
 #ifdef __cplusplus
 extern "C" {
@@ -504,11 +504,11 @@ uint32_t routing_forward_delay_ms(uint32_t src_id, uint16_t pkt_id, uint8_t pkt_
 /**
  * @brief Rough Time-on-Air estimate in microseconds (no radio_sx1262.h dependency).
  *
- * Parameterised by RF_SPREADING_FACTOR and RF_BANDWIDTH_KHZ to match
- * RF_TOA_APPROX_US across all variants (e.g. BW=62 kHz for the E22-900).
+ * Parameterised by RF_SPREADING_FACTOR and RF_BANDWIDTH_HZ to match
+ * RF_TOA_APPROX_US across all variants (e.g. BW=62500 Hz for the E22-900).
  * Used by the forward budget without pulling in the radio driver header.
  *
- *   T_sym_us   = 2^SF * 1000 / BW_kHz
+ *   T_sym_us   = 2^SF * 1e6 / BW_Hz
  *   t_preamble = 49 * T_sym_us / 4   (= 12.25 × T_sym)
  *   n_payload  = floor((8×PL + 43) / 32) × 8   [CR4/8]
  *   ToA        = t_preamble + n_payload × T_sym_us
@@ -518,7 +518,8 @@ uint32_t routing_forward_delay_ms(uint32_t src_id, uint16_t pkt_id, uint8_t pkt_
  */
 static inline uint32_t routing_toa_estimate_us(uint8_t payload_len)
 {
-    const uint32_t t_sym = (1u << RF_SPREADING_FACTOR) * 1000u / RF_BANDWIDTH_KHZ;
+    const uint32_t t_sym =
+        (uint32_t)(((uint64_t)1u << RF_SPREADING_FACTOR) * 1000000ull / RF_BANDWIDTH_HZ);
     return (49u * t_sym / 4u) +
            (((8u * (uint32_t)payload_len + 43u) / 32u) * 8u * t_sym);
 }

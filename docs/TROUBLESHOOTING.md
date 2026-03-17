@@ -219,11 +219,11 @@ The EU868 1 %/hour hard cap is active. Every blocked frame increments `dc_blk`.
 Estimate required airtime:
   frames/hour × toa_ms = total_ms
 
-At SF8/BW125: CHAT ~92 ms, BEACON ~70 ms
+At SF8/BW62.5: CHAT ~184 ms, BEACON ~140 ms
 36 000 ms / hour = 1 % budget
 
-100 CHAT/hour × 92 ms = 9 200 ms — fine (0.26%)
-500 CHAT/hour × 92 ms = 46 000 ms — exceeds budget
+100 CHAT/hour × 184 ms = 18 400 ms — fine (0.51%)
+500 CHAT/hour × 184 ms = 92 000 ms — exceeds budget
 ```
 
 **Fixes:**

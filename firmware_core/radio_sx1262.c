@@ -322,8 +322,8 @@ void radio_init(void)
      * radio_hard_reset() skips this step to avoid double-registration. */
     gpio_isr_handler_add(PIN_SX1262_DIO1, radio_isr, NULL);
 
-    RIVR_LOGI(TAG, "radio_init: done (SF%u BW%ukHz @ %luHz)",
-             RF_SPREADING_FACTOR, RF_BANDWIDTH_KHZ, (unsigned long)RF_FREQ_HZ);
+    RIVR_LOGI(TAG, "radio_init: done (SF%u BW%skHz @ %luHz)",
+             RF_SPREADING_FACTOR, RF_BANDWIDTH_DISPLAY_STR, (unsigned long)RF_FREQ_HZ);
 }
 
 void radio_start_rx(void)

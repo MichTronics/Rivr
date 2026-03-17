@@ -24,7 +24,7 @@
 //   - 30-second reception windows for host-side outage detection
 //   - A running frame count alongside the heartbeat uptime counter
 //
-// Resource budget (SF8, BW 125 kHz, 50-byte frame, ~280 ms ToA):
+// Resource budget (SF8, BW 62.5 kHz, 50-byte frame, ~560 ms ToA):
 //   Telemetry relay: 10 % over 5-minute window → 30 s max airtime
 //   Heartbeat:       ~50 ms every 5 min → < 0.01 % daily
 
