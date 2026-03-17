@@ -144,19 +144,29 @@ jobs:
 
       # ── 6. Build Rust rivr_core for Xtensa ESP32 ─────────────────────────
       #
-      # export-esp.sh prepends Xtensa GCC and LLVM tool directories to PATH.
-      # These contain the xtensa-esp32-elf-ld linker that rustc calls when
-      # compiling for xtensa-esp32-espidf.  Without them, cargo builds fail
-      # with E0463 even though RUSTUP_TOOLCHAIN=esp is set correctly.
-      # Sourcing export-esp.sh inside this step gives rustc a complete PATH
-      # — the same environment as a local `source ~/export-esp.sh && cargo build`.
+      # Use --no-default-features to disable the `std` feature (which needs a
+      # pre-built std sysroot that espup does not ship on CI).  --features ffi
+      # enables alloc + C-ABI exports — all that is needed in firmware.
+      #
+      # Three sysroot crates must be compiled from rust-src (which espup
+      # installs automatically):
+      #   core        — always required for no_std
+      #   alloc       — required by the `alloc` feature (Vec, String, etc.)
+      #   panic_abort — required because workspace Cargo.toml sets
+      #                 `panic = "abort"` in both dev and release profiles;
+      #                 the linker will not find libpanic_abort.rlib otherwise
+      #
+      # export-esp.sh prepends the Xtensa GCC linker directory to PATH, which
+      # rustc needs to link the final .a for xtensa-esp32-espidf.
       - name: Build Rust rivr_core (xtensa-esp32-espidf)
         run: |
           source "$HOME/export-esp.sh"
           cargo build -p rivr_core \
             --target xtensa-esp32-espidf \
+            --no-default-features \
             --features ffi \
-            --release
+            --release \
+            -Zbuild-std=core,alloc,panic_abort
 
       # ── 7. Build firmware with PlatformIO ────────────────────────────────
       - name: Build firmware (${{ matrix.pio_env }})
