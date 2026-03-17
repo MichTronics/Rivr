@@ -8,7 +8,8 @@
 # ║    2. Each job caches pip and PlatformIO layers                          ║
 # ║    3. Rust rivr_core is cross-compiled for Xtensa ESP32 before PIO       ║
 # ║    4. scripts/package_firmware.py assembles a user-ready ZIP per variant ║
-# ║       containing: binaries, merged image, flash scripts, README          ║
+# ║       containing: binaries, exact flash-layout JSON, merged image,       ║
+# ║       flash scripts, README                                              ║
 # ║    5. A follow-up job collects all ZIPs and publishes the GitHub Release ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
@@ -176,6 +177,7 @@ jobs:
       #
       # scripts/package_firmware.py:
       #   - Copies bootloader.bin, partitions.bin, firmware.bin (→ rivr_<variant>.bin)
+      #   - Writes rivr_<variant>.json with exact flash settings + offsets
       #   - Generates rivr_<variant>_full.bin via esptool merge_bin
       #   - Writes flash.sh (Linux/macOS) and flash.bat (Windows)
       #   - Writes README.txt with flashing instructions
