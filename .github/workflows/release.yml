@@ -38,17 +38,53 @@ jobs:
           # pio_env   → PlatformIO environment name in platformio.ini
           # artifact  → release artifact stem: rivr_<artifact>.zip
 
+          # ── ESP32 DevKit + E22 900 MHz ────────────────────────────────────
           - pio_env: client_esp32devkit_e22_900
             artifact: client_esp32_e22_900
-
-          - pio_env: client_lilygo_tbeam_sx1262
-            artifact: client_esp32_sx1262
-
-          - pio_env: client_heltec_lora32_v2
-            artifact: client_heltec_v2
-
+          - pio_env: client_esp32devkit_e22_900_ble
+            artifact: client_esp32_e22_900_ble
           - pio_env: repeater_esp32devkit_e22_900
             artifact: relay_esp32_e22_900
+
+          # ── LilyGo LoRa32 v2.1 ───────────────────────────────────────────
+          - pio_env: client_lilygo_lora32_v21
+            artifact: client_lilygo_lora32_v21
+          - pio_env: client_lilygo_lora32_v21_ble
+            artifact: client_lilygo_lora32_v21_ble
+          - pio_env: repeater_lilygo_lora32_v21
+            artifact: relay_lilygo_lora32_v21
+
+          # ── Heltec LoRa32 v3 ─────────────────────────────────────────────
+          - pio_env: client_heltec_lora32_v3
+            artifact: client_heltec_v3
+          - pio_env: client_heltec_lora32_v3_ble
+            artifact: client_heltec_v3_ble
+          - pio_env: repeater_heltec_lora32_v3
+            artifact: relay_heltec_v3
+
+          # ── Heltec LoRa32 v2 ─────────────────────────────────────────────
+          - pio_env: client_heltec_lora32_v2
+            artifact: client_heltec_v2
+          - pio_env: client_heltec_lora32_v2_ble
+            artifact: client_heltec_v2_ble
+          - pio_env: repeater_heltec_lora32_v2
+            artifact: relay_heltec_v2
+
+          # ── LilyGo T-Beam SX1262 ─────────────────────────────────────────
+          - pio_env: client_lilygo_tbeam_sx1262
+            artifact: client_lilygo_tbeam_sx1262
+          - pio_env: client_lilygo_tbeam_sx1262_ble
+            artifact: client_lilygo_tbeam_sx1262_ble
+          - pio_env: repeater_lilygo_tbeam_sx1262
+            artifact: relay_lilygo_tbeam_sx1262
+
+          # ── LilyGo T3-S3 ─────────────────────────────────────────────────
+          - pio_env: client_lilygo_t3s3
+            artifact: client_lilygo_t3s3
+          - pio_env: client_lilygo_t3s3_ble
+            artifact: client_lilygo_t3s3_ble
+          - pio_env: repeater_lilygo_t3s3
+            artifact: relay_lilygo_t3s3
 
     steps:
       # ── 1. Checkout ──────────────────────────────────────────────────────
