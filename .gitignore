@@ -46,3 +46,4 @@ tests/*_harness
 *.obj
 tests/policy_test
 Rivr_Companion/
+rivr_website/
