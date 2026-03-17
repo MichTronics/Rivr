@@ -9,7 +9,31 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  firmware-matrix:
+    name: Firmware matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: matrix
+        name: Load firmware matrix
+        run: |
+          printf 'matrix=%s\n' "$(
+            python3 - <<'PY'
+            import json
+            from pathlib import Path
+
+            print(json.dumps(json.loads(Path('.github/firmware-matrix.json').read_text())))
+            PY
+          )" >> "$GITHUB_OUTPUT"
+
   # ─── Rust: format, lint, test, FFI build ────────────────────────────────────
   rust:
     name: Rust checks
@@ -147,30 +171,64 @@ jobs:
       - name: Compare against golden snapshot
         run: bash tests/ci_determinism_check.sh tests/golden/replay_sha256.txt
 
-  # ── ESP32 firmware variants ───────────────────────────────────────────────
-  # Requires self-hosted runner tagged "esp32-runner" with ESP-IDF v5.3+.
-  # Remove the `if: false` guard and provision a runner to enable.
-  esp32-firmware:
-    name: ESP32 firmware variants (self-hosted)
-    runs-on: [self-hosted, esp32-runner]
-    if: false
+  # ── Firmware variants on GitHub-hosted runners ───────────────────────────
+  firmware:
+    name: Firmware ${{ matrix.pio_env }}
+    runs-on: ubuntu-latest
+    needs: firmware-matrix
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.firmware-matrix.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
-      - name: Build client – esp32devkit / E22-900
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore firmware build cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+          key: firmware-${{ matrix.pio_env }}-${{ runner.os }}-${{ hashFiles('.github/firmware-matrix.json', 'platformio.ini', 'variants/**/*.ini', 'Cargo.lock', 'firmware_core/CMakeLists.txt', 'sdkconfig/**', 'sdkconfig*') }}
+          restore-keys: |
+            firmware-${{ matrix.pio_env }}-${{ runner.os }}-
+            firmware-${{ runner.os }}-
+
+      - name: Install PlatformIO and esptool
         run: |
-          idf.py -B build_client_e22 -G Ninja build \
-            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.esp32_hw;sdkconfig.client_esp32devkit_e22_900"
-      - name: Build repeater – esp32devkit / E22-900
+          pip install --upgrade pip
+          pip install platformio esptool
+
+      - name: Install Espressif Rust toolchain via espup
         run: |
-          idf.py -B build_repeater_e22 -G Ninja build \
-            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.esp32_hw;sdkconfig.repeater_esp32devkit_e22_900"
-      - name: Build client – LilyGo LoRa32 v2.1
+          cargo install espup --locked
+          espup install
+          source "$HOME/export-esp.sh"
+          [ -n "$LIBCLANG_PATH" ] && echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
+          [ -n "$CLANG_PATH" ] && echo "CLANG_PATH=$CLANG_PATH" >> "$GITHUB_ENV"
+          ESP_TOOLCHAIN=$(rustup toolchain list | awk '/^esp/ {print $1; exit}')
+          echo "RUSTUP_TOOLCHAIN=$ESP_TOOLCHAIN" >> "$GITHUB_ENV"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        shell: bash
+
+      - name: Build Rust rivr_core (${{ matrix.rust_target }})
         run: |
-          idf.py -B build_client_lilygo -G Ninja build \
-            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.esp32_hw;sdkconfig.client_lilygo_lora32_v21"
-      - name: Build repeater – LilyGo LoRa32 v2.1
+          source "$HOME/export-esp.sh"
+          cargo build -p rivr_core \
+            --target ${{ matrix.rust_target }} \
+            --no-default-features \
+            --features ffi \
+            --release \
+            -Zbuild-std=core,alloc,panic_abort
+        shell: bash
+
+      - name: Build firmware (${{ matrix.pio_env }})
         run: |
-          idf.py -B build_repeater_lilygo -G Ninja build \
-            SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.esp32_hw;sdkconfig.repeater_lilygo_lora32_v21"
-      - name: ESP32 size regression check
-        run: bash tests/ci_size_check.sh tests/baselines/esp32_sizes.txt 5
+          pio run -e ${{ matrix.pio_env }}

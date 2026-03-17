@@ -313,7 +313,7 @@ rivr_sign --key key0.pem --key-id 0 --seq 1 examples/chat_relay.rivr > payload.b
 
 ## Companion app
 
-[**Rivr Companion**](https://github.com/MichTronics/rivr-companion) is a Flutter app for Android, Linux, and Windows.
+**Rivr Companion** is a Flutter app for Android, Linux, and Windows.
 It connects to a node over USB serial or Bluetooth LE and provides:
 
 - Live chat view
@@ -321,12 +321,7 @@ It connects to a node over USB serial or Bluetooth LE and provides:
 - Mesh topology and routing table
 - Real-time `@MET` metric dashboard and `@SUPPORTPACK` export
 
-```bash
-git clone https://github.com/MichTronics/rivr-companion.git
-cd rivr-companion && flutter pub get && flutter run
-```
-
-See the [rivr-companion repository](https://github.com/MichTronics/rivr-companion) for platform prerequisites.
+Download the latest release from the [Companion page](https://rivr.app/companion) on the Rivr website.
 
 ---
 
@@ -426,7 +421,7 @@ Rivr/
 └── Cargo.toml              — Rust workspace (rivr_core + rivr_host)
 ```
 
-The companion app has moved to its own repository: [MichTronics/rivr-companion](https://github.com/MichTronics/rivr-companion).
+Pre-built Companion releases are available on the [Rivr website](https://rivr.app/companion).
 
 ---
 
