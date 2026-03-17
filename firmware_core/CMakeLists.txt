@@ -86,10 +86,29 @@ idf_component_register(
 # ── Link the pre-built Rust rivr_core static library ─────────────────────────
 # After idf_component_register(), the __idf_firmware_core target exists and we
 # can link the pre-built Rust .a directly to it.
-# Search order: workspace cargo target/ tree first, rivr_core/target/ fallback.
-set(_RIVR_ROOTS
-    "${CMAKE_SOURCE_DIR}/target/xtensa-esp32-espidf/release"
-    "${CMAKE_SOURCE_DIR}/target/xtensa-esp32-espidf/debug"
+#
+# Prefer the Rust target triple that matches the current ESP-IDF target so S3
+# boards pick up the S3 build before falling back to generic search locations.
+set(_RIVR_RUST_TARGETS)
+if(IDF_TARGET STREQUAL "esp32")
+    list(APPEND _RIVR_RUST_TARGETS "xtensa-esp32-espidf")
+elseif(IDF_TARGET STREQUAL "esp32s3")
+    list(APPEND _RIVR_RUST_TARGETS "xtensa-esp32s3-espidf")
+endif()
+list(APPEND _RIVR_RUST_TARGETS
+    "xtensa-esp32-espidf"
+    "xtensa-esp32s3-espidf"
+)
+list(REMOVE_DUPLICATES _RIVR_RUST_TARGETS)
+
+set(_RIVR_ROOTS)
+foreach(_rust_target IN LISTS _RIVR_RUST_TARGETS)
+    list(APPEND _RIVR_ROOTS
+        "${CMAKE_SOURCE_DIR}/target/${_rust_target}/release"
+        "${CMAKE_SOURCE_DIR}/target/${_rust_target}/debug"
+    )
+endforeach()
+list(APPEND _RIVR_ROOTS
     "${CMAKE_SOURCE_DIR}/target/release"
     "${CMAKE_SOURCE_DIR}/target/debug"
     "${CMAKE_SOURCE_DIR}/rivr_core/target/release"
@@ -106,7 +125,7 @@ if(NOT DEFINED RIVR_CORE_LIB)
     message(FATAL_ERROR
         "librivr_core.a not found. Build it first: "
         "cargo +esp build -p rivr_core "
-        "--target xtensa-esp32-espidf --features ffi [--release]")
+        "--target xtensa-${IDF_TARGET}-espidf --features ffi [--release]")
 endif()
 
 message(STATUS "Using rivr_core static library: ${RIVR_CORE_LIB}")
