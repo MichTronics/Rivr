@@ -144,18 +144,16 @@ jobs:
 
       # ── 6. Build Rust rivr_core for Xtensa ESP32 ─────────────────────────
       #
-      # Build with the same features as a local build (std enabled by default).
-      # CI has no pre-built xtensa-esp32-espidf sysroot, so -Zbuild-std compiles
-      # std from the rust-src component (installed automatically by espup).
-      # This produces an identical binary to a local `cargo +esp build` with
-      # the esp-idf std available.
+      # espup installs a pre-built sysroot for xtensa-esp32-espidf alongside
+      # the Xtensa compiler fork. With RUSTUP_TOOLCHAIN=esp set in the
+      # environment, cargo finds the sysroot automatically — exactly the same
+      # as a local `cargo +esp build`. No -Zbuild-std is needed or wanted.
       - name: Build Rust rivr_core (xtensa-esp32-espidf)
         run: |
           cargo build -p rivr_core \
             --target xtensa-esp32-espidf \
             --features ffi \
-            --release \
-            -Zbuild-std
+            --release
 
       # ── 7. Build firmware with PlatformIO ────────────────────────────────
       - name: Build firmware (${{ matrix.pio_env }})
