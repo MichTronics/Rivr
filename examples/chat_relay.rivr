@@ -19,8 +19,8 @@
 //
 // EU868 g3 sub-band parameters:
 //   Frequency : 869.480 MHz
-//   Modulation: SF8, BW 125 kHz, CR 4/8
-//   ToA (50B) : ~280 ms
+//   Modulation: SF8, BW 62.5 kHz, CR 4/8
+//   ToA (50B) : ~560 ms
 //   Duty cycle budgets (percentage of 5-minute sliding window):
 //     chat      10 % → 30 s airtime / window
 //     data       5 % → 15 s airtime / window

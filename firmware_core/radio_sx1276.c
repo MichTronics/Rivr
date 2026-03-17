@@ -351,9 +351,9 @@ void radio_init(void)
      */
     gpio_isr_handler_add(PIN_SX1262_DIO1, radio_isr, NULL);
 
-    RIVR_LOGI(TAG, "radio_init: done  SF%u BW%u kHz  freq %lu Hz",
+    RIVR_LOGI(TAG, "radio_init: done  SF%u BW%s kHz  freq %lu Hz",
              (unsigned)RF_SPREADING_FACTOR,
-             (unsigned)RF_BANDWIDTH_KHZ,
+             RF_BANDWIDTH_DISPLAY_STR,
              (unsigned long)RF_FREQ_HZ);
 }
 

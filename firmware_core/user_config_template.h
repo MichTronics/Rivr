@@ -92,11 +92,11 @@
 /* ══════════════════════════════════════════════════════════════════════════
  * 5. LoRa MODULATION PARAMETERS
  *    All nodes on the mesh MUST use the same SF, BW, and CR.
- *    Default: SF8, BW 125 kHz, CR 4/8 — balanced range and throughput.
+ *    Default: SF8, BW 62.5 kHz, CR 4/8 — slower but more robust links.
  * ══════════════════════════════════════════════════════════════════════════ */
 
 /* #define RF_SPREADING_FACTOR  8   */  /* 7–12; higher = more range, lower data rate */
-/* #define RF_BANDWIDTH_KHZ     125 */  /* kHz; 125 is standard for LoRa mesh */
+/* #define RF_BANDWIDTH_HZ      62500 */ /* Hz; exact 62.5 kHz LoRa BW */
 /* #define RF_CODING_RATE       8   */  /* CR denominator: 5=4/5 … 8=4/8 */
 
 /* ══════════════════════════════════════════════════════════════════════════

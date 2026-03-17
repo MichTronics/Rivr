@@ -24,6 +24,7 @@ extern "C" {
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rivr_config.h"
 #include "esp_attr.h"     /* IRAM_ATTR */
 #include "ringbuf.h"
 #include "timebase.h"
@@ -38,23 +39,11 @@ extern "C" {
  * Set BEFORE including this header (e.g. via the -include force-include).
  * ─── Common values ───────────────────────────────────────────────────────
  *   SF: 7..12         higher = longer range, slower, more airtime
- *   BW: 125 kHz       standard EU868; 250/500 for higher throughput
+ *   BW: 62.5 kHz      default Rivr profile; higher values trade range for throughput
  *   CR: 8 (= 4/8)     highest redundancy; 5 (= 4/5) for least overhead
  *   Power (SX1262): -9..22 dBm; E22 external PA adds ~8 dBm on top       */
-#ifndef RF_SPREADING_FACTOR
-#  define RF_SPREADING_FACTOR  8u     /**< SF7..SF12 */
-#endif
-#ifndef RF_BANDWIDTH_KHZ
-#  define RF_BANDWIDTH_KHZ     125u   /**< 7/10/15/20/31/41/62/125/250/500 kHz */
-#endif
-#ifndef RF_CODING_RATE
-#  define RF_CODING_RATE       8u     /**< denominator of 4/N — 5..8 */
-#endif
 #ifndef RF_PREAMBLE_LEN
 #  define RF_PREAMBLE_LEN      8u
-#endif
-#ifndef RF_TX_POWER_DBM
-#  define RF_TX_POWER_DBM      22     /**< SX1262: -9..22; SX1276: 2..20 dBm */
 #endif
 /* RF_FREQ_HZ — actual chip register value; falls back to RIVR_RF_FREQ_HZ so
  * a single -DRIVR_RF_FREQ_HZ=… updates both the boot banner AND the radio. */
@@ -68,28 +57,28 @@ extern "C" {
 
 /**
  * Symbol period in microseconds for the configured SF and BW.
- *   T_sym_us = 2^SF * 1000 / BW_kHz
- * Uses RF_SPREADING_FACTOR and RF_BANDWIDTH_KHZ, both of which are set by
- * the variant platformio.ini (or default to SF=8, BW=125).  Note: BW values
- * like 62 (62.5 kHz) incur a <1% rounding error, which is acceptable.
+ *   T_sym_us = 2^SF * 1e6 / BW_Hz
+ * Uses RF_SPREADING_FACTOR and RF_BANDWIDTH_HZ, both of which are set by
+ * the variant platformio.ini (or default to SF=8, BW=62.5 kHz).
  */
-#define RF_TOA_T_SYM_US  ((1u << RF_SPREADING_FACTOR) * 1000u / RF_BANDWIDTH_KHZ)
+#define RF_TOA_T_SYM_US \
+    ((uint32_t)(((uint64_t)1u << RF_SPREADING_FACTOR) * 1000000ull / RF_BANDWIDTH_HZ))
 
 /**
  * Time-on-Air in microseconds for a payload of `pl` bytes.
- * Parameterised by RF_SPREADING_FACTOR and RF_BANDWIDTH_KHZ so it stays
- * correct when either is changed (e.g. BW=62 kHz for the E22-900 variant).
+ * Parameterised by RF_SPREADING_FACTOR and RF_BANDWIDTH_HZ so it stays
+ * correct when either is changed (e.g. BW=62500 Hz for the E22-900 variant).
  * Formula: SX1262 datasheet §6.1.4, CR=4/8, explicit header, CRC on, LDRO off.
  *
- *   T_sym      = 2^SF * 1000 / BW_kHz            (= RF_TOA_T_SYM_US)
+ *   T_sym      = 2^SF * 1e6 / BW_Hz              (= RF_TOA_T_SYM_US)
  *   t_preamble = (N_pre + 4.25) × T_sym = 12.25 × T_sym  [49 * T_sym / 4]
  *   n_payload  = floor((8×PL + 43) / 32) × 8     [symbols, CR4/8]
  *   t_payload  = n_payload × T_sym
  *   ToA        = t_preamble + t_payload
  *
- * Verified sample values at SF8 / BW125 kHz:
- *   PL=15 → 107 ms  |  PL=20 → 123 ms  |  PL=30 → 156 ms  |  PL=50 → 238 ms
- * At SF8 / BW62 kHz all values are approximately 2× the BW125 figures.
+ * Verified sample values at SF8 / BW62.5 kHz (encoded as 62):
+ *   PL=15 → 214 ms  |  PL=20 → 246 ms  |  PL=30 → 312 ms  |  PL=50 → 476 ms
+ * At SF8 / BW125 kHz all values are approximately half these figures.
  */
 #define RF_TOA_APPROX_US(pl) \
     ((49u * (uint32_t)RF_TOA_T_SYM_US / 4u) + \

@@ -438,7 +438,7 @@ All three are already included in `radio_init()` in `firmware_core/radio_sx1262.
 |---|---|
 | Frequency | 869.480 MHz |
 | Spreading factor | SF8 |
-| Bandwidth | 125 kHz (BW byte `0x04`) |
+| Bandwidth | 62.5 kHz (`RF_BANDWIDTH_HZ=62500`, BW byte `0x03`) |
 | Coding rate | 4/8 |
 | Output power | +22 dBm (≈ +30 dBm after E22 PA) |
 | Preamble | 8 symbols |

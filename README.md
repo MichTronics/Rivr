@@ -200,7 +200,7 @@ Monitor at 115200 baud:
 ~/.platformio/penv/bin/pio device monitor
 ```
 
-Default air parameters: **869.480 MHz · SF8 · BW 125 kHz · CR 4/8 · preamble 8**
+Default air parameters: **869.480 MHz · SF8 · BW 62.5 kHz (`RF_BANDWIDTH_HZ=62500`) · CR 4/8 · preamble 8**
 Override at build time: `build_flags = -DRIVR_RF_FREQ_HZ=915000000`
 
 See [docs/FLASHING.md](docs/FLASHING.md) for all board variants and wiring tables.

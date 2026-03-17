@@ -171,7 +171,7 @@ Type 'help' for full command list.
 
 ## Changing radio parameters
 
-All parameters default to EU868 g3 (869.480 MHz, SF8, BW 125 kHz, CR 4/8).
+The primary E22-900 preset defaults to EU868 g3 (869.480 MHz, SF8, BW 62.5 kHz via `RF_BANDWIDTH_HZ=62500`, CR 4/8).
 To change them, copy `user_config_template.h` to your variant's `config.h` and
 uncomment the relevant lines, or add `-D` flags in `platformio.ini`:
 

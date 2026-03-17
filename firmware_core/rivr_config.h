@@ -24,7 +24,7 @@
  * RADIO
  *   RIVR_RF_FREQ_HZ          Centre frequency in Hz
  *   RF_SPREADING_FACTOR      LoRa SF (7–12)
- *   RF_BANDWIDTH_KHZ         LoRa BW in kHz
+ *   RF_BANDWIDTH_HZ          LoRa BW in Hz
  *   RF_CODING_RATE           LoRa CR denominator (5=4/5 … 8=4/8)
  *   RF_TX_POWER_DBM          TX power at chip output (SX1262: −9…22 dBm)
  *
@@ -140,13 +140,97 @@
 #endif
 
 /**
- * @brief LoRa bandwidth in kHz.
+ * @brief LoRa bandwidth in Hz.
  *
- * Supported: 7, 10, 15, 20, 31, 41, 62, 125, 250, 500
- * 125 kHz is the standard mesh setting.
+ * Supported exact values: 7800, 10400, 15600, 20800, 31250, 41700,
+ * 62500, 125000, 250000, 500000.
+ *
+ * Prefer RF_BANDWIDTH_HZ for exact values. RF_BANDWIDTH_KHZ remains accepted
+ * for backward compatibility and is mapped to the nearest supported exact
+ * LoRa bandwidth.
  */
-#ifndef RF_BANDWIDTH_KHZ
-#  define RF_BANDWIDTH_KHZ  125
+#if !defined(RF_BANDWIDTH_HZ) && defined(RF_BANDWIDTH_KHZ)
+#  if   RF_BANDWIDTH_KHZ == 7
+#    define RF_BANDWIDTH_HZ  7800u
+#  elif RF_BANDWIDTH_KHZ == 10
+#    define RF_BANDWIDTH_HZ 10400u
+#  elif RF_BANDWIDTH_KHZ == 15
+#    define RF_BANDWIDTH_HZ 15600u
+#  elif RF_BANDWIDTH_KHZ == 20
+#    define RF_BANDWIDTH_HZ 20800u
+#  elif RF_BANDWIDTH_KHZ == 31
+#    define RF_BANDWIDTH_HZ 31250u
+#  elif RF_BANDWIDTH_KHZ == 41
+#    define RF_BANDWIDTH_HZ 41700u
+#  elif RF_BANDWIDTH_KHZ == 62
+#    define RF_BANDWIDTH_HZ 62500u
+#  elif RF_BANDWIDTH_KHZ == 125
+#    define RF_BANDWIDTH_HZ 125000u
+#  elif RF_BANDWIDTH_KHZ == 250
+#    define RF_BANDWIDTH_HZ 250000u
+#  elif RF_BANDWIDTH_KHZ == 500
+#    define RF_BANDWIDTH_HZ 500000u
+#  else
+#    error "RF_BANDWIDTH_KHZ: unsupported legacy value"
+#  endif
+#endif
+
+#ifndef RF_BANDWIDTH_HZ
+#  define RF_BANDWIDTH_HZ  62500u
+#endif
+
+#if   RF_BANDWIDTH_HZ == 7800u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ  7u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "7.8"
+#elif RF_BANDWIDTH_HZ == 10400u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ 10u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "10.4"
+#elif RF_BANDWIDTH_HZ == 15600u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ 15u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "15.6"
+#elif RF_BANDWIDTH_HZ == 20800u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ 20u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "20.8"
+#elif RF_BANDWIDTH_HZ == 31250u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ 31u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "31.25"
+#elif RF_BANDWIDTH_HZ == 41700u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ 41u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "41.7"
+#elif RF_BANDWIDTH_HZ == 62500u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ 62u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "62.5"
+#elif RF_BANDWIDTH_HZ == 125000u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ 125u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "125"
+#elif RF_BANDWIDTH_HZ == 250000u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ 250u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "250"
+#elif RF_BANDWIDTH_HZ == 500000u
+#  ifndef RF_BANDWIDTH_KHZ
+#    define RF_BANDWIDTH_KHZ 500u
+#  endif
+#  define RF_BANDWIDTH_DISPLAY_STR "500"
+#else
+#  error "RF_BANDWIDTH_HZ: unsupported — use a standard LoRa bandwidth"
 #endif
 
 /**

@@ -29,7 +29,7 @@ or E22-900M33S modules (SX1262, high-power PA).
 // firmware_core/radio_sx1262.c defaults
 Frequency   : 869.480 MHz
 Spreading Factor : SF8
-Bandwidth   : 125 kHz
+Bandwidth   : 62.5 kHz (`RF_BANDWIDTH_HZ=62500`)
 Coding Rate : CR 4/8 (4/8 = 0.5 code rate)
 Preamble    : 8 symbols
 TX power    : 22 dBm (SX1262 SetTxParams)
@@ -37,14 +37,14 @@ TX power    : 22 dBm (SX1262 SetTxParams)
 
 ### Air-time for typical RIVR frames
 
-| Frame type | Bytes | SF8/BW125/CR4-8 ToA |
+| Frame type | Bytes | SF8/BW62.5/CR4-8 ToA |
 |---|---|---|
-| BEACON (min) | 35 | ~70 ms |
-| CHAT (short, 20-byte payload) | 46 | ~92 ms |
-| CHAT (max, 231-byte payload) | 257 | ~360 ms |
-| ROUTE_REQ / ROUTE_RPL | 24–35 | ~55–70 ms |
+| BEACON (min) | 35 | ~140 ms |
+| CHAT (short, 20-byte payload) | 46 | ~184 ms |
+| CHAT (max, 231-byte payload) | 257 | ~720 ms |
+| ROUTE_REQ / ROUTE_RPL | 24–35 | ~110–140 ms |
 
-> ToA values are approximate at SF8/BW125. Use the Semtech LoRa Calculator or the
+> ToA values are approximate at SF8/BW62.5. Use the Semtech LoRa Calculator or the
 > `RIVR_TOA_APPROX_US` macro for budget planning.
 
 ---
@@ -172,7 +172,7 @@ If remaining budget < toa of next frame:
 
 ### Budget planning guide
 
-At SF8/BW125/CR4-8 each CHAT frame ≈ 92 ms ToA.
+At SF8/BW62.5/CR4-8 each CHAT frame ≈ 184 ms ToA.
 
 | Scenario | Frames/hour | ToA/hour | Duty | Status |
 |---|---|---|---|---|
@@ -194,14 +194,14 @@ At SF8/BW125/CR4-8 each CHAT frame ≈ 92 ms ToA.
 To change spreading factor or bandwidth, edit `radio_sx1262.c` `radio_init()`:
 
 ```c
-// SF7 / BW 125 kHz — faster, shorter range
-radio_set_modulation_params(h, 7, LORA_BW_125, LORA_CR_4_8, 0);
+// SF7 / BW 62.5 kHz — faster than SF8, uses SX1262 BW byte 0x03
+radio_set_modulation_params(h, 7, 0x03, LORA_CR_4_8, 0);
 
-// SF10 / BW 125 kHz — slower, longer range, ~4× longer ToA
-radio_set_modulation_params(h, 10, LORA_BW_125, LORA_CR_4_8, 0);
+// SF10 / BW 62.5 kHz — slower, longer range, ~4× longer ToA
+radio_set_modulation_params(h, 10, 0x03, LORA_CR_4_8, 0);
 
 // SF8 / BW 250 kHz — same range as SF8/125 but ~2× faster
-radio_set_modulation_params(h, 8, LORA_BW_250, LORA_CR_4_8, 0);
+radio_set_modulation_params(h, 8, 0x05, LORA_CR_4_8, 0);
 ```
 
 > **Important:** All nodes in a network must use identical modulation parameters; LoRa

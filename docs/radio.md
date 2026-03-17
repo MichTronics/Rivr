@@ -32,7 +32,7 @@ All nodes on the same mesh **must use identical air parameters**.
 |---|---|---|
 | Frequency | 869.480 MHz | `RIVR_RF_FREQ_HZ` |
 | Spreading factor | SF8 | `RF_SPREADING_FACTOR` |
-| Bandwidth | 125 kHz | `RF_BANDWIDTH_KHZ` |
+| Bandwidth | 62.5 kHz (`62500`) | `RF_BANDWIDTH_HZ` |
 | Coding rate | CR 4/8 | `RF_CODING_RATE` |
 | Preamble | 8 symbols | (fixed) |
 | TX power (chip) | +5 dBm | `RF_TX_POWER_DBM` |
@@ -43,7 +43,7 @@ Change radio parameters in your variant's `platformio.ini` (shared `[rf_e22_900]
 [rf_e22_900]
 build_flags =
     -DRF_SPREADING_FACTOR=8
-    -DRF_BANDWIDTH_KHZ=125
+    -DRF_BANDWIDTH_HZ=62500
     -DRF_CODING_RATE=8
     -DRF_TX_POWER_DBM=5
     -DRIVR_RF_FREQ_HZ=869480000
@@ -66,9 +66,9 @@ build_flags =
 
 ## Time-on-air
 
-Time-on-air (ToA) is the duration a frame occupies the air.  With the default
-parameters (SF8, BW 125 kHz, CR 4/8) a maximum-length Rivr frame (256 bytes)
-takes approximately **380 ms**.
+Time-on-air (ToA) is the duration a frame occupies the air. With the primary
+E22 preset (SF8, BW 62.5 kHz, CR 4/8) a maximum-length Rivr frame (256 bytes)
+takes approximately **760 ms**.
 
 ToA determines:
 - How much duty-cycle budget a frame consumes

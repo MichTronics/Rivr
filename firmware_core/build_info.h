@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "hal/feature_flags.h"  /* RIVR_SIM_MODE, RIVR_ROLE_CLIENT, RIVR_FABRIC_REPEATER … */
+#include "rivr_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -80,22 +81,6 @@ extern "C" {
 #  define _RIVR_SIM_TAG ""
 #endif
 
-/* ── Radio profile constants (mirrored from radio_sx1262.h without pulling
- *    the full header into every consumer of build_info.h) ──────────────── */
-
-#ifndef RIVR_RF_FREQ_HZ
-#  define RIVR_RF_FREQ_HZ 869480000UL
-#endif
-#ifndef RF_SPREADING_FACTOR
-#  define RF_SPREADING_FACTOR 8u
-#endif
-#ifndef RF_BANDWIDTH_KHZ
-#  define RF_BANDWIDTH_KHZ 125u
-#endif
-#ifndef RF_CODING_RATE
-#  define RF_CODING_RATE 8u
-#endif
-
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
 /**
@@ -103,7 +88,7 @@ extern "C" {
  *
  * Format (one line, no ESP_LOG prefix):
  *   [RIVR] env=client_esp32devkit_e22_900 sha=cf379aa built=Feb 27 2026 14:05:32
- *          role=client radio=SX1262 freq=869480000 SF8 BW125kHz CR4/8
+ *          role=client radio=SX1262 freq=869480000 SF8 BW62.5kHz CR4/8
  *          cc=gcc-14.2.0 flags=+fabric
  *
  * Called ONCE from app_main() after rivr_embed_init().
