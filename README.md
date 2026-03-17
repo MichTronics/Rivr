@@ -321,7 +321,7 @@ It connects to a node over USB serial or Bluetooth LE and provides:
 - Mesh topology and routing table
 - Real-time `@MET` metric dashboard and `@SUPPORTPACK` export
 
-Download the latest release from the [Companion page](https://rivr.app/companion) on the Rivr website.
+Download the latest release from the [Companion page](https://rivr.co.nl/companion) on the Rivr website.
 
 ---
 
@@ -421,7 +421,7 @@ Rivr/
 └── Cargo.toml              — Rust workspace (rivr_core + rivr_host)
 ```
 
-Pre-built Companion releases are available on the [Rivr website](https://rivr.app/companion).
+Pre-built Companion releases are available on the [Rivr website](https://rivr.co.nl/companion).
 
 ---
 
