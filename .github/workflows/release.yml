@@ -63,6 +63,14 @@ jobs:
           - pio_env: repeater_heltec_lora32_v3
             artifact: relay_heltec_v3
 
+          # ── Heltec LoRa32 v4 ─────────────────────────────────────────────
+          - pio_env: client_heltec_lora32_v4
+            artifact: client_heltec_v4
+          - pio_env: client_heltec_lora32_v4_ble
+            artifact: client_heltec_v4_ble
+          - pio_env: repeater_heltec_lora32_v4
+            artifact: relay_heltec_v4
+
           # ── Heltec LoRa32 v2 ─────────────────────────────────────────────
           - pio_env: client_heltec_lora32_v2
             artifact: client_heltec_v2
