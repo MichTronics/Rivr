@@ -61,12 +61,13 @@ def copy_binaries(build_dir: Path, pkg_dir: Path, variant: str) -> dict:
 
 
 def merge_image(pkg_dir: Path, variant: str, files: dict) -> Path:
-    """Run esptool merge_bin to produce a single flashable image."""
+    """Run esptool merge-bin to produce a single flashable image."""
     full_bin = pkg_dir / f"rivr_{variant}_full.bin"
     subprocess.run(
         [
             sys.executable, "-m", "esptool",
-            "merge_bin",
+            "--chip", "esp32",
+            "merge-bin",
             "-o", str(full_bin),
             BOOTLOADER_ADDR, str(files["bootloader.bin"]),
             PARTITIONS_ADDR, str(files["partitions.bin"]),
