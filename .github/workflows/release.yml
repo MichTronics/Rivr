@@ -144,12 +144,15 @@ jobs:
 
       # ── 6. Build Rust rivr_core for Xtensa ESP32 ─────────────────────────
       #
-      # espup installs a pre-built sysroot for xtensa-esp32-espidf alongside
-      # the Xtensa compiler fork. With RUSTUP_TOOLCHAIN=esp set in the
-      # environment, cargo finds the sysroot automatically — exactly the same
-      # as a local `cargo +esp build`. No -Zbuild-std is needed or wanted.
+      # export-esp.sh prepends Xtensa GCC and LLVM tool directories to PATH.
+      # These contain the xtensa-esp32-elf-ld linker that rustc calls when
+      # compiling for xtensa-esp32-espidf.  Without them, cargo builds fail
+      # with E0463 even though RUSTUP_TOOLCHAIN=esp is set correctly.
+      # Sourcing export-esp.sh inside this step gives rustc a complete PATH
+      # — the same environment as a local `source ~/export-esp.sh && cargo build`.
       - name: Build Rust rivr_core (xtensa-esp32-espidf)
         run: |
+          source "$HOME/export-esp.sh"
           cargo build -p rivr_core \
             --target xtensa-esp32-espidf \
             --features ffi \
