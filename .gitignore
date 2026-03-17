@@ -6,6 +6,8 @@ build/
 sdkconfig
 sdkconfig.*
 !sdkconfig/
+!sdkconfig.client_*
+!sdkconfig.repeater_*
 managed_components/
 dependencies.lock
 
