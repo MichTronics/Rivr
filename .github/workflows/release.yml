@@ -43,14 +43,8 @@ jobs:
       - id: matrix
         name: Load firmware matrix
         run: |
-          printf 'matrix=%s\n' "$(
-            python3 - <<'PY'
-            import json
-            from pathlib import Path
-
-            print(json.dumps(json.loads(Path('.github/firmware-matrix.json').read_text())))
-            PY
-          )" >> "$GITHUB_OUTPUT"
+          MATRIX=$(python3 -c "import json,pathlib; print(json.dumps(json.loads(pathlib.Path('.github/firmware-matrix.json').read_text())))")
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.artifact }}
