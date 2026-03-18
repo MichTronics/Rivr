@@ -798,9 +798,9 @@ void app_main(void)
          * so the ISR only sets a flag; we do the actual SPI read here. */
         radio_service_rx();
 
-        /* ─ 0b. Check for radio recovery timeouts ─
-         * Detects RX silence (chip hung in RX) and triggers a guarded reset
-         * if the radio has been silent for >RADIO_RX_SILENCE_MS. */
+        /* ─ 0b. Check for prolonged RX silence ─
+         * Updates observability metrics if the radio has been silent for
+         * >RADIO_RX_SILENCE_MS, but does not reset on silence alone. */
 #if !RIVR_SIM_MODE
         radio_check_timeouts();
 #endif

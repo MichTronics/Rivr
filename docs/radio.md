@@ -157,7 +157,7 @@ The firmware includes automatic radio recovery to handle hardware faults:
 | BUSY pin stuck | 3 consecutive `wait_busy()` failures | Full SX1262 re-init |
 | TX timeout | HW IRQ Timeout flag | Re-init + backoff |
 | TX deadline exceeded | SW poll 2×ToA + 100 ms | Re-init |
-| RX silence > 60 s | Watchdog in main loop | `radio_start_rx()` restart |
+| RX silence > 60 s | Watchdog in main loop | Metric + WARN log only |
 | Spurious DIO1 IRQ | 5 consecutive no-frame reads | Re-init |
 
 All recovery events are counted:

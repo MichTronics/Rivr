@@ -135,16 +135,16 @@ stops sending beacons or data frames, the reverse-path route is not refreshed.
 
 | `@MET` key | Field name | Meaning |
 |---|---|---|
-| `rad_rst` | `radio_hard_reset` | Hard-reset counter (busy_stuck, tx_timeout, rx_silence triggers) |
+| `rad_rst` | `radio_hard_reset` | Hard-reset counter (busy_stuck, tx_timeout, spurious_irq triggers) |
 | `rst_bkof` | `radio_reset_backoff` | Resets denied by backoff; rising = reset storm |
-| `rx_tout` | `radio_rx_timeout` | RX silence > 60 s detected |
+| `rx_tout` | `radio_rx_timeout` | RX silence > 60 s detected (observability only; no reset) |
 
 ### Symptom: `rad_rst` incrementing repeatedly
 
 The radio watchdog (`radio_guard_reset()`) fires when:
 - BUSY pin stuck for > 3 consecutive TX attempts → `busy_stuck`
 - TX hardware timeout × 3 streak → `tx_timeout`
-- RX silent for > 60 s → `rx_timeout`
+- 5 spurious DIO1 events in a row → `spurious_irq`
 
 **Diagnosis flow:**
 
@@ -156,7 +156,7 @@ rad_stall rising?
         → Yes: TX path issue — check TXEN, SX1262 PaConfig, antenna
         → No
             rx_tout rising?
-              → Yes: no packets in 60 s — normal if isolated; check antenna
+              → Yes: no packets or IRQs in 60 s — informational only; check traffic level, antenna, and link budget
 ```
 
 ### Symptom: `rst_bkof` rising (reset denied by backoff)
