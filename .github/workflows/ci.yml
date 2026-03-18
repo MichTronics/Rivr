@@ -201,6 +201,7 @@ jobs:
           pip install platformio esptool
 
       - name: Install Espressif Rust toolchain via espup
+        if: ${{ matrix.rust_target != 'thumbv7em-none-eabihf' }}
         run: |
           cargo install espup --locked
           espup install
@@ -212,15 +213,28 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
         shell: bash
 
+      - name: Install ARM Rust target for nRF52
+        if: ${{ matrix.rust_target == 'thumbv7em-none-eabihf' }}
+        run: rustup target add thumbv7em-none-eabihf
+
       - name: Build Rust rivr_core (${{ matrix.rust_target }})
         run: |
-          source "$HOME/export-esp.sh"
-          cargo build -p rivr_core \
-            --target ${{ matrix.rust_target }} \
-            --no-default-features \
-            --features ffi \
-            --release \
-            -Zbuild-std=core,alloc,panic_abort
+          if [[ "${{ matrix.rust_target }}" == "thumbv7em-none-eabihf" ]]; then
+            cargo +stable build -p rivr_core \
+              --target ${{ matrix.rust_target }} \
+              --no-default-features \
+              --features ffi \
+              --release \
+              -Zbuild-std=core,alloc,panic_abort
+          else
+            source "$HOME/export-esp.sh"
+            cargo build -p rivr_core \
+              --target ${{ matrix.rust_target }} \
+              --no-default-features \
+              --features ffi \
+              --release \
+              -Zbuild-std=core,alloc,panic_abort
+          fi
         shell: bash
 
       - name: Build firmware (${{ matrix.pio_env }})

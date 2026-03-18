@@ -104,6 +104,16 @@
       "pio_env": "repeater_lilygo_t3s3",
       "artifact": "relay_lilygo_t3s3",
       "rust_target": "xtensa-esp32s3-espidf"
+    },
+    {
+      "pio_env": "client_heltec_t114",
+      "artifact": "client_heltec_t114",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "repeater_heltec_t114",
+      "artifact": "relay_heltec_t114",
+      "rust_target": "thumbv7em-none-eabihf"
     }
   ]
 }
