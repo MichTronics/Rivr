@@ -98,6 +98,15 @@
 #  define RIVR_ROLE_GATEWAY 0
 #endif
 
+/* Keep repeater build variants aligned with the fabric relay gate. */
+#if RIVR_BUILD_REPEATER && !RIVR_FABRIC_REPEATER
+#  error "RIVR: RIVR_BUILD_REPEATER=1 requires RIVR_FABRIC_REPEATER=1."
+#endif
+
+#if RIVR_ROLE_CLIENT && RIVR_FABRIC_REPEATER
+#  error "RIVR: RIVR_ROLE_CLIENT=1 requires RIVR_FABRIC_REPEATER=0."
+#endif
+
 /** @} */
 
 /* ══════════════════════════════════════════════════════════════════════════
