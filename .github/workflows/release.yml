@@ -79,14 +79,9 @@ jobs:
           pip install --upgrade pip
           pip install platformio esptool
 
-      # ── 4. Install Espressif Rust toolchain (Xtensa) ─────────────────────
-      #
-      # espup installs the Xtensa Rust compiler fork and writes export-esp.sh.
-      # We source it to get LIBCLANG_PATH, then explicitly discover the installed
-      # esp toolchain name via `rustup toolchain list` and write it to GITHUB_ENV.
-      # This is resilient to espup versions that no longer write RUSTUP_TOOLCHAIN
-      # into export-esp.sh (which would otherwise leave cargo on stable/no Xtensa).
+      # ── 4. Install Espressif Rust toolchain (Xtensa) or ARM target ──────
       - name: Install Espressif Rust toolchain via espup
+        if: ${{ matrix.rust_target != 'thumbv7em-none-eabihf' }}
         run: |
           cargo install espup --locked
           espup install
@@ -99,6 +94,10 @@ jobs:
           echo "RUSTUP_TOOLCHAIN=$ESP_TOOLCHAIN" >> "$GITHUB_ENV"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
         shell: bash
+
+      - name: Install ARM Rust target for nRF52
+        if: ${{ matrix.rust_target == 'thumbv7em-none-eabihf' }}
+        run: rustup target add thumbv7em-none-eabihf
 
       # ── 5. Restore build cache ────────────────────────────────────────────
       #
@@ -115,31 +114,25 @@ jobs:
             firmware-${{ matrix.pio_env }}-${{ runner.os }}-
             firmware-${{ runner.os }}-
 
-      # ── 6. Build Rust rivr_core for the matching Xtensa target ───────────
-      #
-      # Use --no-default-features to disable the `std` feature (which needs a
-      # pre-built std sysroot that espup does not ship on CI).  --features ffi
-      # enables alloc + C-ABI exports — all that is needed in firmware.
-      #
-      # Three sysroot crates must be compiled from rust-src (which espup
-      # installs automatically):
-      #   core        — always required for no_std
-      #   alloc       — required by the `alloc` feature (Vec, String, etc.)
-      #   panic_abort — required because workspace Cargo.toml sets
-      #                 `panic = "abort"` in both dev and release profiles;
-      #                 the linker will not find libpanic_abort.rlib otherwise
-      #
-      # export-esp.sh prepends the Xtensa GCC linker directory to PATH, which
-      # rustc needs to link the final .a for the selected xtensa target.
+      # ── 6. Build Rust rivr_core for the matching target ──────────────────
       - name: Build Rust rivr_core (${{ matrix.rust_target }})
         run: |
-          source "$HOME/export-esp.sh"
-          cargo build -p rivr_core \
-            --target ${{ matrix.rust_target }} \
-            --no-default-features \
-            --features ffi \
-            --release \
-            -Zbuild-std=core,alloc,panic_abort
+          if [[ "${{ matrix.rust_target }}" == "thumbv7em-none-eabihf" ]]; then
+            cargo +stable build -p rivr_core \
+              --target ${{ matrix.rust_target }} \
+              --no-default-features \
+              --features ffi \
+              --release \
+              -Zbuild-std=core,alloc,panic_abort
+          else
+            source "$HOME/export-esp.sh"
+            cargo build -p rivr_core \
+              --target ${{ matrix.rust_target }} \
+              --no-default-features \
+              --features ffi \
+              --release \
+              -Zbuild-std=core,alloc,panic_abort
+          fi
         shell: bash
 
       # ── 7. Build firmware with PlatformIO ────────────────────────────────
