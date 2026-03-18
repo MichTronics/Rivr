@@ -134,8 +134,9 @@ Incoming packets are validated for length, CRC, TTL, and type before entering th
 pipeline. The decode path is covered by a fuzz-testing harness.
 
 ### Radio robustness
-The SX1262 driver detects and automatically recovers from BUSY lockups, RX silence, SPI
-communication faults, and TX timeouts — without requiring a full reboot.
+The SX1262 driver detects and automatically recovers from BUSY lockups, spurious IRQ/SPI
+faults, and TX timeouts — without requiring a full reboot. Prolonged RX silence is exposed
+as telemetry instead of forcing a reset.
 
 ### Mesh safety
 Rivr includes loop detection, TTL-based propagation limits, packet-level deduplication,

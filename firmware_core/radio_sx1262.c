@@ -123,7 +123,7 @@ static uint8_t s_spurious_irq_streak = 0;
 #define RADIO_RESET_BACKOFF_MS     5000u
 /** Consecutive BUSY-stuck stalls in radio_transmit() before forced reset. */
 #define RADIO_BUSY_STUCK_MAX          3u
-/** RX radio silence threshold: no DIO1 event for this long → soft reset. */
+/** RX radio silence threshold: no DIO1 event for this long → metric + WARN log. */
 #define RADIO_RX_SILENCE_MS       60000u
 
 /** True once radio_guard_reset() has fired at least once. */
@@ -369,12 +369,11 @@ typedef enum {
     RADIO_RESET_REASON_BUSY_STUCK    = 0,  /**< BUSY pin stuck high before TX       */
     RADIO_RESET_REASON_TX_TIMEOUT    = 1,  /**< TX HW timeout or SW deadline streak  */
     RADIO_RESET_REASON_SPURIOUS_IRQ  = 2,  /**< Spurious DIO1 event streak           */
-    RADIO_RESET_REASON_RX_TIMEOUT    = 3,  /**< RX-silence watchdog tripped          */
     RADIO_RESET_REASON__COUNT               /**< Sentinel — keep last                */
 } radio_reset_reason_t;
 
 static const char * const s_reset_reason_labels[RADIO_RESET_REASON__COUNT] = {
-    "busy_stuck", "tx_timeout", "spurious_irq", "rx_timeout"
+    "busy_stuck", "tx_timeout", "spurious_irq"
 };
 
 /**
@@ -411,7 +410,6 @@ static void radio_guard_reset(radio_reset_reason_t reason)
         case RADIO_RESET_REASON_BUSY_STUCK:   g_rivr_metrics.radio_reset_busy_stuck++;   break;
         case RADIO_RESET_REASON_TX_TIMEOUT:   g_rivr_metrics.radio_reset_tx_timeout++;   break;
         case RADIO_RESET_REASON_SPURIOUS_IRQ: g_rivr_metrics.radio_reset_spurious_irq++; break;
-        case RADIO_RESET_REASON_RX_TIMEOUT:   g_rivr_metrics.radio_reset_rx_timeout++;   break;
         default: break;
     }
     s_reset_happened = true;
@@ -422,12 +420,12 @@ static void radio_guard_reset(radio_reset_reason_t reason)
 }
 
 /**
- * @brief Check for RX-silence timeout; call once per main-loop iteration.
+ * @brief Check for prolonged RX silence; call once per main-loop iteration.
  *
  * If the radio has been in continuous-RX for longer than RADIO_RX_SILENCE_MS
- * without any DIO1 event, the chip is likely locked up.  A guarded hard
- * reset is triggered.  Backoff prevents repeated resets under persistent
- * silence (e.g., antenna off).
+ * without any DIO1 event, increment the observability counter and emit one
+ * WARN log. This no longer triggers a radio reset because ordinary mesh
+ * silence is not treated as a hardware fault.
  */
 void radio_check_timeouts(void)
 {
@@ -445,11 +443,10 @@ void radio_check_timeouts(void)
     if ((now - s_last_rx_event_ms) >= RADIO_RX_SILENCE_MS) {
         g_rivr_metrics.radio_rx_timeout++;
         RIVR_LOGW(TAG,
-            "RX silent %" PRIu32 "ms – soft reset (total=%" PRIu32 ")",
+            "RX silent %" PRIu32 "ms – no reset (total=%" PRIu32 ")",
             (uint32_t)(now - s_last_rx_event_ms),
             g_rivr_metrics.radio_rx_timeout);
         s_last_rx_event_ms = now;   /* prevent immediate re-trigger */
-        radio_guard_reset(RADIO_RESET_REASON_RX_TIMEOUT);
     }
 }
 

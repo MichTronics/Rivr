@@ -7,8 +7,8 @@
  *        streak=3 → hard reset; radio_reset_busy_stuck updated
  *  TC-2  Backoff blocks re-reset within RADIO_RESET_BACKOFF_MS (5 s)
  *  TC-3  Backoff expires after cooldown; reset fires again
- *  TC-4  RX silence ≥ RADIO_RX_SILENCE_MS → radio_rx_timeout + guarded reset;
- *        radio_reset_rx_timeout updated
+ *  TC-4  RX silence ≥ RADIO_RX_SILENCE_MS → radio_rx_timeout increments only;
+ *        no guarded reset is triggered
  *  TC-5  TX HW timeout × 3 streak → guarded reset; tx_timeout_total updated;
  *        radio_reset_tx_timeout updated
  *  TC-6  TX SW deadline exceeded → tx_deadline_total increments;
@@ -238,10 +238,10 @@ static void tc3_backoff_expires(void)
     CHECK(g_rivr_metrics.radio_reset_busy_stuck == 2u);  /* both resets same reason */
 }
 
-/* ── TC-4: RX silence timeout triggers radio_rx_timeout ─────────────────── */
+/* ── TC-4: RX silence timeout is observable but not fatal ───────────────── */
 static void tc4_rx_silence_timeout(void)
 {
-    printf("TC-4  RX silence ≥ 60 s → radio_rx_timeout + guarded reset; radio_reset_rx_timeout updated\n");
+    printf("TC-4  RX silence ≥ 60 s → radio_rx_timeout only; no guarded reset\n");
     setup();
 
     /* Start continuous RX (arms s_last_rx_event_ms = current time) */
@@ -256,8 +256,8 @@ static void tc4_rx_silence_timeout(void)
     tst_advance_ms(2u);
     radio_check_timeouts();
     CHECK(g_rivr_metrics.radio_rx_timeout == 1u);
-    CHECK(g_rivr_metrics.radio_hard_reset == 1u);        /* guard reset fired */
-    CHECK(g_rivr_metrics.radio_reset_rx_timeout == 1u);  /* per-reason counter */
+    CHECK(g_rivr_metrics.radio_hard_reset == 0u);        /* silence no longer resets */
+    CHECK(g_rivr_metrics.radio_reset_rx_timeout == 0u);  /* compatibility counter stays zero */
     CHECK(g_rivr_metrics.radio_reset_busy_stuck == 0u);  /* other reasons: zero */
 
     /* Second call immediately after: s_last_rx_event_ms was reset → no re-trigger */
