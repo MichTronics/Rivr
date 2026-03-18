@@ -8,37 +8,36 @@
  * │  Radio: Semtech SX1262, +22 dBm onboard PA                             │
  * │  USB  : Native USB (nRF52 USBD) via USB CDC-ACM                        │
  * │                                                                         │
- * │  NOTE: Verify every pin against the official Heltec T114 schematic     │
- * │  before flashing.  These assignments are based on the published v1.0   │
- * │  hardware reference; revision B may differ.                            │
+ * │  Pin mapping hardware-verified against MeshCore project:               │
+ * │  https://github.com/meshcore-dev/MeshCore/tree/main/variants/heltec_t114│
  * └─────────────────────────────────────────────────────────────────────────┘
  *
- * SX1262 SPI wiring (nRF52840 GPIO port 0):
- *   SCK   = P0.16
- *   MOSI  = P0.14
- *   MISO  = P0.15
- *   NSS   = P0.13  (chip select, active low)
- *   BUSY  = P0.12  (SX1262 busy flag, active high)
- *   RESET = P0.11  (NRST, active low)
- *   DIO1  = P0.17  (IRQ: TxDone | RxDone | Timeout)
+ * SX1262 SPI wiring (nRF52840 GPIO):
+ *   SCK   = P0.19  (Arduino pin 19 = PIN_SPI_SCK)
+ *   MOSI  = P0.22  (Arduino pin 22 = PIN_SPI_MOSI)
+ *   MISO  = P0.23  (Arduino pin 23 = PIN_SPI_MISO)
+ *   NSS   = P0.24  (chip select, active low)
+ *   BUSY  = P0.17  (SX1262 busy flag, active high)
+ *   RESET = P0.25  (NRST, active low)
+ *   DIO1  = P0.20  (IRQ: TxDone | RxDone | Timeout)
  */
 
 #pragma once
 
 /* ── SX1262 SPI / control pins ────────────────────────────────────────── */
-#define PIN_SX1262_SCK      16   /* P0.16 – SPIM SCK      */
-#define PIN_SX1262_MOSI     14   /* P0.14 – SPIM MOSI     */
-#define PIN_SX1262_MISO     15   /* P0.15 – SPIM MISO     */
-#define PIN_SX1262_NSS      13   /* P0.13 – chip select   */
-#define PIN_SX1262_BUSY     12   /* P0.12 – busy flag     */
-#define PIN_SX1262_RESET    11   /* P0.11 – hardware reset */
-#define PIN_SX1262_DIO1     17   /* P0.17 – IRQ line      */
+#define PIN_SX1262_SCK      19   /* P0.19 – SPIM SCK      */
+#define PIN_SX1262_MOSI     22   /* P0.22 – SPIM MOSI     */
+#define PIN_SX1262_MISO     23   /* P0.23 – SPIM MISO     */
+#define PIN_SX1262_NSS      24   /* P0.24 – chip select   */
+#define PIN_SX1262_BUSY     17   /* P0.17 – busy flag     */
+#define PIN_SX1262_RESET    25   /* P0.25 – hardware reset */
+#define PIN_SX1262_DIO1     20   /* P0.20 – IRQ line      */
 
-/* RF switch: T114 has no external RF switch, DIO2 drives the internal one */
+/* RF switch: T114 uses DIO2 as internal RF switch (no external GPIO needed) */
 #define RIVR_RFSWITCH_ENABLE   0
 
 /* ── Status LED ───────────────────────────────────────────────────────── */
-#define PIN_LED_STATUS       7   /* P0.07 – onboard LED (active high)     */
+#define PIN_LED_STATUS      35   /* P1.03 – onboard LED (active LOW)      */
 
 /* ── Radio driver selection ───────────────────────────────────────────── */
 #define RIVR_RADIO_SX1262    1

@@ -39,12 +39,26 @@
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 #define TAG "RADIO"
 
+/* ── RX silence watchdog ─────────────────────────────────────────────────── */
+#define RADIO_RX_SILENCE_MS  60000u
+static uint32_t        s_last_rx_event_ms = 0u;
+static volatile bool   s_in_rx            = false;
+
 /* ── DIO1 ISR flag (set from ISR, cleared in main loop) ─────────────────── */
 static volatile atomic_bool s_dio1_pending = ATOMIC_VAR_INIT(false);
 
-static void radio_isr(void)
+/* no-arg trampoline for Arduino attachInterrupt (DIO1 rising edge) */
+static void s_radio_isr_trampoline(void)
 {
     atomic_store_explicit(&s_dio1_pending, true, memory_order_release);
+}
+
+/* Satisfies radio_sx1262.h declaration; actual ISR registration uses the
+ * no-arg trampoline above via platform_dio1_attach_isr(). */
+void radio_isr(void *arg)
+{
+    (void)arg;
+    s_radio_isr_trampoline();
 }
 
 /* ── RX ring buffer (shared with rivr_layer via radio_sx1262.h) ──────────── */
@@ -113,10 +127,19 @@ static void sx_set_standby(void)
     platform_sx1262_wait_busy(50);
 }
 
+/* ── Ring buffers (owned by this module; extern'd in radio_sx1262.h) ───────── */
+static rf_rx_frame_t   s_rx_storage[RF_RX_RINGBUF_CAP];
+static rf_tx_request_t s_tx_storage[RF_TX_QUEUE_CAP];
+rb_t rf_rx_ringbuf;
+rb_t rf_tx_queue;
+
 /* ── radio_init ───────────────────────────────────────────────────────────── */
 
 void radio_init(void)
 {
+    rb_init(&rf_rx_ringbuf, s_rx_storage, RF_RX_RINGBUF_CAP, sizeof(rf_rx_frame_t));
+    rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
+
     platform_sx1262_reset();
 
     sx_set_standby();
@@ -190,7 +213,7 @@ void radio_init(void)
     sx_write_reg(0x08AC, 0x96);
 
     /* Attach DIO1 ISR */
-    platform_dio1_attach_isr(radio_isr);
+    platform_dio1_attach_isr(s_radio_isr_trampoline);
 
     RIVR_LOGI(TAG, "radio_init: SX1262 ready (%u Hz, SF%u, BW%u, CR4/%u, +%u dBm)",
         (unsigned)RIVR_RF_FREQ_HZ, (unsigned)RF_SPREADING_FACTOR,
@@ -206,6 +229,8 @@ void radio_start_rx(void)
     /* SetRx: timeout = 0xFFFFFF = continuous */
     uint8_t d[3] = {0xFF, 0xFF, 0xFF};
     sx_write_cmd(0x82, d, 3);
+    s_in_rx = true;
+    s_last_rx_event_ms = tb_millis();
 }
 
 /* ── radio_service_rx ─────────────────────────────────────────────────────── */
@@ -233,7 +258,6 @@ void radio_service_rx(void)
         uint8_t buf_offset = rxstat[1];
 
         if (pkt_len == 0 || pkt_len > RF_MAX_PAYLOAD_LEN) {
-            rivr_metrics_inc(RIVR_METRIC_RX_DROP_LEN);
             goto restart_rx;
         }
 
@@ -249,13 +273,7 @@ void radio_service_rx(void)
         frame.rssi_dbm = (int8_t)(-(pstat[0] >> 1));
         frame.snr_db   = (int8_t)((int8_t)pstat[1] >> 2);
 
-        rf_rx_frame_t *slot = rf_rx_ringbuf_push();
-        if (slot) {
-            *slot = frame;
-            rivr_metrics_inc(RIVR_METRIC_RX_FRAMES);
-        } else {
-            rivr_metrics_inc(RIVR_METRIC_RX_DROP_BUF);
-        }
+        rb_try_push(&rf_rx_ringbuf, &frame);
     }
 
     if (irq & 0x0040) {  /* Timeout — restart continuous RX */
@@ -270,19 +288,19 @@ restart_rx:
 
 /* ── radio_transmit ───────────────────────────────────────────────────────── */
 
-bool radio_transmit(const uint8_t *data, uint8_t len)
+bool radio_transmit(const rf_tx_request_t *req)
 {
-    if (!data || len == 0 || len > RF_MAX_PAYLOAD_LEN) {
+    if (!req || req->len == 0) {
         return false;
     }
 
     sx_set_standby();
     platform_sx1262_set_rxen(false);
 
-    sx_write_buf(0, data, len);
+    sx_write_buf(0, req->data, req->len);
 
     /* SetPacketParams — update payload length */
-    { uint8_t d[6] = {0x00, 0x08, 0x00, len, 0x01, 0x00};
+    { uint8_t d[6] = {0x00, 0x08, 0x00, req->len, 0x01, 0x00};
       sx_write_cmd(0x8C, d, 6); }
 
     /* ClearIrqStatus */
@@ -303,16 +321,38 @@ bool radio_transmit(const uint8_t *data, uint8_t len)
         }
         if ((tb_millis() - t0) > 2000u) {
             RIVR_LOGE(TAG, "TX timeout");
-            rivr_metrics_inc(RIVR_METRIC_TX_TIMEOUT);
+            g_rivr_metrics.radio_tx_fail++;
             radio_start_rx();
             return false;
         }
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 
-    rivr_metrics_inc(RIVR_METRIC_TX_FRAMES);
     radio_start_rx();
     return true;
+}
+
+/* ── radio_check_timeouts ───────────────────────────────────────────────── */
+
+void radio_check_timeouts(void)
+{
+    uint32_t now = tb_millis();
+
+    if (s_last_rx_event_ms == 0u) {
+        s_last_rx_event_ms = now;
+        return;
+    }
+
+    if (!s_in_rx) return;
+
+    if ((now - s_last_rx_event_ms) >= RADIO_RX_SILENCE_MS) {
+        g_rivr_metrics.radio_rx_timeout++;
+        RIVR_LOGW(TAG,
+            "RX silent %" PRIu32 "ms – no reset (total=%" PRIu32 ")",
+            (uint32_t)(now - s_last_rx_event_ms),
+            g_rivr_metrics.radio_rx_timeout);
+        s_last_rx_event_ms = now;
+    }
 }
 
 #endif /* RIVR_PLATFORM_NRF52840 */
