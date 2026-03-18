@@ -31,6 +31,7 @@
 #include "rivr_metrics.h"
 
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdio.h>
 
 #ifdef __cplusplus
