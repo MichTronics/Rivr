@@ -224,8 +224,7 @@ jobs:
               --target ${{ matrix.rust_target }} \
               --no-default-features \
               --features ffi \
-              --release \
-              -Zbuild-std=core,alloc,panic_abort
+              --release
           else
             source "$HOME/export-esp.sh"
             cargo build -p rivr_core \
