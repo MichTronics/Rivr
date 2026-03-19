@@ -95,7 +95,7 @@
                 ]
             },
             "defines": [
-                "RIVR_GIT_SHA=\"4599a86c\"",
+                "RIVR_GIT_SHA=\"69ac67df\"",
                 "PLATFORMIO=60119",
                 "ARDUINO_NRF52840_FEATHER",
                 "NRF52840_XXAA",
