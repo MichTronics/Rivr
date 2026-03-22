@@ -268,26 +268,33 @@ def is_nrf52_env(pio_env: str) -> bool:
 
 
 def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
-    """Package an nRF52 variant: flat firmware.bin only, with UF2/drag-and-drop instructions."""
-    fw_src = build_dir / "firmware.bin"
-    if not fw_src.exists():
-        print(f"ERROR: expected build artefact not found: {fw_src}", file=sys.stderr)
+    """Package an nRF52 variant.
+
+    The Adafruit nRF52 Arduino BSP produces:
+      firmware.hex  – Intel HEX for J-Link / nrfjprog
+      firmware.zip  – adafruit-nrfutil DFU package (OTA / serial bootloader)
+    There is no standalone firmware.bin in the build directory.
+    """
+    hex_src = build_dir / "firmware.hex"
+    dfu_src = build_dir / "firmware.zip"
+
+    if not hex_src.exists():
+        print(f"ERROR: expected build artefact not found: {hex_src}", file=sys.stderr)
         sys.exit(1)
 
     pkg_dir.mkdir(parents=True, exist_ok=True)
     print(f"\n── Packaging {variant} (nRF52840) ───────────────────────────────")
 
-    # Copy flat firmware binary
-    fw_dst = pkg_dir / f"rivr_{variant}.bin"
-    shutil.copy(fw_src, fw_dst)
-    print(f"  copied  firmware.bin  →  {fw_dst}")
+    # Intel HEX – used with J-Link / nrfjprog / OpenOCD
+    hex_dst = pkg_dir / f"rivr_{variant}.hex"
+    shutil.copy(hex_src, hex_dst)
+    print(f"  copied  firmware.hex  →  {hex_dst}")
 
-    # Copy UF2 if present (Adafruit BSP produces it alongside firmware.bin)
-    uf2_src = build_dir / "firmware.uf2"
-    if uf2_src.exists():
-        uf2_dst = pkg_dir / f"rivr_{variant}.uf2"
-        shutil.copy(uf2_src, uf2_dst)
-        print(f"  copied  firmware.uf2  →  {uf2_dst}")
+    # adafruit-nrfutil DFU zip – used for serial / USB bootloader flashing
+    if dfu_src.exists():
+        dfu_dst = pkg_dir / f"rivr_{variant}_dfu.zip"
+        shutil.copy(dfu_src, dfu_dst)
+        print(f"  copied  firmware.zip  →  {dfu_dst}")
 
     # Sidecar JSON (minimal — no ESP flash segments)
     manifest = {
@@ -299,21 +306,25 @@ def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"  created {manifest_path}")
 
-    # flash.sh for nRF52 via nrfjprog or adafruit-nrfutil
+    # flash.sh for nRF52 via adafruit-nrfutil (DFU zip) or nrfjprog (HEX)
     sh_content = (
         "#!/usr/bin/env bash\n"
         f"# Flash Rivr firmware – {variant} (nRF52840)\n"
-        "# Option A: adafruit-nrfutil over USB serial bootloader\n"
+        "# Option A: adafruit-nrfutil over USB serial bootloader (DFU zip)\n"
         "# Usage: ./flash.sh [PORT]   (default: /dev/ttyACM0)\n"
         "set -e\n"
         'PORT="${1:-/dev/ttyACM0}"\n'
         "\n"
         "if command -v adafruit-nrfutil &>/dev/null; then\n"
         '  echo "Flashing via adafruit-nrfutil to $PORT …"\n'
-        f"  adafruit-nrfutil dfu serial -pkg rivr_{variant}.bin -p \"$PORT\" -b 115200\n"
+        f"  adafruit-nrfutil dfu serial -pkg rivr_{variant}_dfu.zip -p \"$PORT\" -b 115200\n"
+        "elif command -v nrfjprog &>/dev/null; then\n"
+        '  echo "Flashing via nrfjprog (J-Link) …"\n'
+        f"  nrfjprog --program rivr_{variant}.hex --chiperase --reset\n"
         "else\n"
-        '  echo "adafruit-nrfutil not found. Install with: pip install adafruit-nrfutil"\n'
-        '  echo "Or drag rivr_{variant}.uf2 to the T114 UF2 bootloader drive."\n'
+        '  echo "Neither adafruit-nrfutil nor nrfjprog found."\n'
+        '  echo "  adafruit-nrfutil: pip install adafruit-nrfutil"\n'
+        '  echo "  nrfjprog: https://www.nordicsemi.com/Products/Development-tools/nRF-Command-Line-Tools"\n'
         "  exit 1\n"
         "fi\n"
     )
@@ -330,23 +341,20 @@ def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
         "\n"
         "Files in this package\n"
         "---------------------\n"
-        f"  rivr_{variant}.bin      Firmware binary\n"
-        f"  rivr_{variant}.uf2      UF2 drag-and-drop image (if present)\n"
-        f"  rivr_{variant}.json     Metadata\n"
-        f"  flash.sh                Linux/macOS flash script\n"
+        f"  rivr_{variant}.hex          Intel HEX for J-Link / nrfjprog\n"
+        f"  rivr_{variant}_dfu.zip      adafruit-nrfutil DFU package (serial bootloader)\n"
+        f"  rivr_{variant}.json         Metadata\n"
+        f"  flash.sh                    Linux/macOS flash script\n"
         "\n"
-        "Flashing – drag and drop (easiest)\n"
-        "-----------------------------------\n"
-        "  1. Double-click the RESET button on the board to enter UF2 bootloader.\n"
-        "     A USB drive called 'T114Boot' (or similar) will appear.\n"
-        f"  2. Copy rivr_{variant}.uf2 onto that drive.\n"
-        "  3. The board will reboot and run the new firmware automatically.\n"
-        "\n"
-        "Flashing – adafruit-nrfutil (Linux/macOS)\n"
-        "-----------------------------------------\n"
+        "Flashing – adafruit-nrfutil / serial bootloader (easiest)\n"
+        "----------------------------------------------------------\n"
         "  1. Install: pip install adafruit-nrfutil\n"
-        "  2. chmod +x flash.sh\n"
-        "  3. ./flash.sh /dev/ttyACM0   (replace with your port)\n"
+        "  2. Double-click RESET to enter the serial DFU bootloader.\n"
+        "  3. chmod +x flash.sh && ./flash.sh /dev/ttyACM0\n"
+        "\n"
+        "Flashing – J-Link / nrfjprog\n"
+        "-----------------------------\n"
+        "  nrfjprog --program rivr_{variant}.hex --chiperase --reset\n"
         "\n"
         "Support\n"
         "-------\n"
