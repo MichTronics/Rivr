@@ -1,7 +1,6 @@
 /**
  * @file  variants/heltec_t114/main_nrf52.cpp
- * @brief Arduino entry-point for the Rivr firmware on the Heltec T114
- *        (nRF52840 + SX1262).
+ * @brief Arduino entry-point for the Rivr firmware on nRF52840 variants.
  *
  * ARCHITECTURE
  * ────────────
@@ -60,6 +59,7 @@ extern "C" {
 #include "rivr_layer/rivr_sinks.h"
 #include "rivr_layer/rivr_cli.h"
 #include "firmware_core/rivr_bus/rivr_bus.h"
+#include "firmware_core/ble/rivr_ble.h"  /* stubs when RIVR_FEATURE_BLE=0 */
 } /* extern "C" */
 
 #define TAG              "MAIN"
@@ -72,6 +72,9 @@ extern "C" {
 #endif
 #ifndef RIVR_NET_ID
 #  define RIVR_NET_ID   0u
+#endif
+#ifndef RIVR_PLATFORM_NAME
+#  define RIVR_PLATFORM_NAME "nRF52840"
 #endif
 
 /* ── nRF52840 FICR device ID registers (factory-programmed unique ID) ────── */
@@ -156,8 +159,8 @@ static void rivr_main_task(void *pvParameters)
     /* ── 0. Crash recovery report (no-op on nRF52 first boot) ────────────── */
     rivr_panic_check_prev();
 
-    RIVR_LOGI(TAG, "=== RIVR Embedded Node booting (nRF52840) ===");
-    RIVR_LOGI(TAG, "Platform: Heltec T114 / nRF52840 (Arduino BSP)");
+    RIVR_LOGI(TAG, "=== RIVR Embedded Node booting (%s) ===", RIVR_PLATFORM_NAME);
+    RIVR_LOGI(TAG, "Platform: %s / nRF52840 (Arduino BSP)", RIVR_PLATFORM_NAME);
 
     /* ── 1. Hardware peripherals ─────────────────────────────────────────── */
     platform_init();
@@ -179,7 +182,12 @@ static void rivr_main_task(void *pvParameters)
     /* NVS not available on nRF52 — compile-time defaults always used */
     rivr_nvs_load_identity();     /* no-op: nvs_open returns ESP_FAIL */
 
-    /* ── 3. RIVR engine ──────────────────────────────────────────────────── */
+    /* ── 3. BLE transport (nRF52 Bluefruit backend) ──────────────────────── */
+    /* Must be called after g_my_node_id is set so the device name includes   */
+    /* the node ID.  No-op when RIVR_FEATURE_BLE=0 (stub in rivr_ble.h).     */
+    rivr_ble_init();
+
+    /* ── 4. RIVR engine ──────────────────────────────────────────────────── */
     rivr_policy_init();
     rivr_fabric_init();
     rivr_embed_init();
@@ -232,6 +240,9 @@ static void rivr_main_task(void *pvParameters)
 
         /* RIVR processing tick */
         rivr_tick();
+
+        /* BLE timeout state machine — no-op when RIVR_FEATURE_BLE=0 */
+        rivr_ble_tick(tb_millis());
 
         /* TX drain with duty-cycle gate */
         tx_drain_loop();
