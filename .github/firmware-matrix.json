@@ -111,8 +111,28 @@
       "rust_target": "thumbv7em-none-eabihf"
     },
     {
+      "pio_env": "client_heltec_t114_ble",
+      "artifact": "client_heltec_t114_ble",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
       "pio_env": "repeater_heltec_t114",
       "artifact": "relay_heltec_t114",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "client_seeed_t1000_e",
+      "artifact": "client_seeed_t1000_e",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "client_seeed_t1000_e_ble",
+      "artifact": "client_seeed_t1000_e_ble",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "repeater_seeed_t1000_e",
+      "artifact": "relay_seeed_t1000_e",
       "rust_target": "thumbv7em-none-eabihf"
     }
   ]
