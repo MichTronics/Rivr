@@ -264,7 +264,7 @@ def create_zip(pkg_dir: Path, variant: str) -> Path:
 
 def is_nrf52_env(pio_env: str) -> bool:
     """Return True for nRF52 PlatformIO environments (flat .bin, no bootloader)."""
-    return "_t114" in pio_env or "_nrf52" in pio_env
+    return "_t114" in pio_env or "_t1000_e" in pio_env or "_nrf52" in pio_env
 
 
 def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
