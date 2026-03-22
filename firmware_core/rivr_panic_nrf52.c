@@ -11,6 +11,7 @@
 
 #include "rivr_panic.h"
 #include "timebase.h"
+#include <nrf.h>
 #include <stdio.h>
 #include <string.h>
 

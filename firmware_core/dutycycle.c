@@ -70,10 +70,10 @@ bool dutycycle_check(dc_ctx_t *dc, uint32_t now_ms, uint32_t toa_us)
     dc->blocked_count++;
     g_rivr_metrics.duty_blocked++;
     dc->total_blocked_us += toa_us;
-    ESP_LOGW(TAG, "duty-cycle blocked: used=%lluus budget=%lluus toa=%uus",
+    ESP_LOGW(TAG, "duty-cycle blocked: used=%lluus budget=%lluus toa=%luus",
              (unsigned long long)dc->used_us,
              (unsigned long long)DC_BUDGET_US,
-             toa_us);
+             (unsigned long)toa_us);
     return false;
 }
 
@@ -134,9 +134,9 @@ uint64_t dutycycle_remaining_us(const dc_ctx_t *dc)
 void dutycycle_print_stats(const dc_ctx_t *dc)
 {
     RIVR_LOGI(TAG,
-             "used=%llu/%llu us | blocked=%u (%llu us total)",
+             "used=%llu/%llu us | blocked=%lu (%llu us total)",
              (unsigned long long)dc->used_us,
              (unsigned long long)DC_BUDGET_US,
-             dc->blocked_count,
+             (unsigned long)dc->blocked_count,
              (unsigned long long)dc->total_blocked_us);
 }

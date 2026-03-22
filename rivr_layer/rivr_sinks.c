@@ -235,7 +235,8 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
             g_rivr_metrics.tx_queue_full++;
             ESP_LOGW(TAG, "rf_tx: queue full (fallback also failed) – dropped");
         } else {
-            RIVR_LOGI(TAG, "rf_tx: queued %u bytes (toa=%u us)", req.len, req.toa_us);
+            RIVR_LOGI(TAG, "rf_tx: queued %u bytes (toa=%lu us)",
+                     req.len, (unsigned long)req.toa_us);
             UPDATE_TXQ_PEAK();
             g_tx_frame_count++;            /* Track originated TX separately from relayed traffic so that a
              * heavy relay storm cannot exhaust the forward budget and silence
@@ -256,10 +257,11 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
     bool pushed = rb_try_push(&rf_tx_queue, &req);
     if (!pushed) {
         g_rivr_metrics.tx_queue_full++;
-        ESP_LOGW(TAG, "rf_tx: queue full – frame dropped (toa=%u us)", req.toa_us);
+        ESP_LOGW(TAG, "rf_tx: queue full – frame dropped (toa=%lu us)",
+                 (unsigned long)req.toa_us);
     } else {
-        RIVR_LOGI(TAG, "rf_tx: queued %u bytes (toa_approx=%u us, type=0x%02x)",
-                 req.len, req.toa_us, req.data[0]);
+        RIVR_LOGI(TAG, "rf_tx: queued %u bytes (toa_approx=%lu us, type=0x%02x)",
+                 req.len, (unsigned long)req.toa_us, req.data[0]);
         UPDATE_TXQ_PEAK();
         g_tx_frame_count++;
     }

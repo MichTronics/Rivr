@@ -71,6 +71,8 @@ extern "C" {
 
 #if defined(RIVR_RADIO_SX1276) && RIVR_RADIO_SX1276
 #  define _RIVR_RADIO_TAG "SX1276"
+#elif defined(RIVR_RADIO_LR1110) && RIVR_RADIO_LR1110
+#  define _RIVR_RADIO_TAG "LR1110"
 #else
 #  define _RIVR_RADIO_TAG "SX1262"
 #endif

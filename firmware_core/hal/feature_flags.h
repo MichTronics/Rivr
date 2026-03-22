@@ -19,6 +19,7 @@
  * │ RIVR_FABRIC_REPEATER         │  0      │ Congestion fabric enabled    │
  * │ RIVR_RADIO_SX1262            │  1      │ Use SX1262/E22 driver        │
  * │ RIVR_RADIO_SX1276            │  0      │ Use SX1276/RFM95 driver      │
+ * │ RIVR_RADIO_LR1110            │  0      │ Use LR1110 driver            │
  * │ RIVR_FEATURE_ENCRYPTION      │  0      │ PSK frame encryption         │
  * │ RIVR_FEATURE_COMPRESSION     │  0      │ Payload compression (future) │
  * │ RIVR_FEATURE_BLE             │  0      │ BLE provisioning (future)    │
@@ -38,7 +39,8 @@
  *
  * RADIO GUARD
  * ───────────
- * Exactly one of RIVR_RADIO_SX1262 / RIVR_RADIO_SX1276 must be set.
+ * Exactly one of RIVR_RADIO_SX1262 / RIVR_RADIO_SX1276 / RIVR_RADIO_LR1110
+ * must be set.
  * A static_assert fires if neither is set in a non-simulation build.
  */
 
@@ -81,6 +83,11 @@
 /** Use SX1276 / HopeRF RFM95 driver (firmware_core/radio_sx1276.c). */
 #ifndef RIVR_RADIO_SX1276
 #  define RIVR_RADIO_SX1276      0
+#endif
+
+/** Use LR1110 driver (firmware_core/radio_lr1110_nrf52.cpp). */
+#ifndef RIVR_RADIO_LR1110
+#  define RIVR_RADIO_LR1110      0
 #endif
 
 /* ── Optional feature flags ─────────────────────────────────────────────── */
@@ -303,8 +310,8 @@ _Static_assert(
 
 /* ── Compile-time guards ─────────────────────────────────────────────────── */
 
-#if RIVR_RADIO_SX1262 && RIVR_RADIO_SX1276
-#  error "RIVR: Both RIVR_RADIO_SX1262 and RIVR_RADIO_SX1276 are set — pick one."
+#if ((RIVR_RADIO_SX1262 ? 1 : 0) + (RIVR_RADIO_SX1276 ? 1 : 0) + (RIVR_RADIO_LR1110 ? 1 : 0)) > 1
+#  error "RIVR: Multiple radio drivers selected — pick exactly one."
 #endif
 
 #if RIVR_ROLE_CLIENT && RIVR_ROLE_REPEATER

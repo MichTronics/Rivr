@@ -43,7 +43,9 @@ typedef volatile int_fast32_t   atomic_int_fast32_t;
 typedef volatile uint32_t       atomic_uint32_t;
 
 /* ── Initializers ─────────────────────────────────────────────────────────── */
+#ifndef ATOMIC_VAR_INIT
 #define ATOMIC_VAR_INIT(v)  (v)
+#endif
 
 /* ── Generic atomic operations via GCC __atomic_* built-ins ──────────────── */
 #define atomic_store(obj, val)                     __atomic_store_n((obj), (val), __ATOMIC_SEQ_CST)
