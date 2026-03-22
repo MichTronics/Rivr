@@ -1,0 +1,10 @@
+{
+  "chip": "nrf52840",
+  "platform": "nrf52",
+  "segments": [
+    {
+      "address": "0x0000",
+      "file": "firmware"
+    }
+  ]
+}
