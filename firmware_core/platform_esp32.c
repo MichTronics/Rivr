@@ -30,6 +30,9 @@ void platform_init(void)
                         (1ULL << PIN_SX1262_RXEN)   |
                         (1ULL << PIN_SX1262_TXEN)   |
 #endif
+#ifdef PIN_VEXT_EN
+                        (1ULL << PIN_VEXT_EN)       |
+#endif
                         (1ULL << PIN_LED_STATUS),
         .mode         = GPIO_MODE_OUTPUT,
         .pull_up_en   = GPIO_PULLUP_DISABLE,
@@ -58,6 +61,11 @@ void platform_init(void)
 #if RIVR_RFSWITCH_ENABLE
     gpio_set_level(PIN_SX1262_RXEN,  0);
     gpio_set_level(PIN_SX1262_TXEN,  0);
+#endif
+#ifdef PIN_VEXT_EN
+    /* Drive VEXT_EN low to power the peripheral rail (OLED, GPS, etc.).     */
+    /* Active-low: Heltec V3 uses GPIO36 to gate VEXT through a P-FET.       */
+    gpio_set_level(PIN_VEXT_EN,      0);
 #endif
     gpio_set_level(PIN_LED_STATUS,   0);
 

@@ -27,6 +27,8 @@
  *  0x96  SetRegulatorMode(0=LDO, 1=DC-DC)
  *  0x97  SetDio3AsTcxoCtrl(voltage, delay[3])
  *  0x9D  SetDio2AsRfSwitchCtrl(enable)
+ *  0x0D  WriteRegister(addr[2], data...)
+ *  0x1D  ReadRegister(addr[2], NOP, data...)
  *  0x0E  WriteBuffer(offset, data...)
  *  0x1E  ReadBuffer(offset, NOP, data...)
  *  0x12  GetIrqStatus() → NOP + 2 bytes
@@ -304,6 +306,17 @@ static void radio_apply_config(void)
         };
         sx1262_cmd(0x08, irq_params, 8);   /* 0x08 = SetDioIrqParams */
         platform_sx1262_wait_busy(10);
+    }
+
+    /* WriteRegister 0x08AC = 0x96: RX boosted gain mode.
+     * Improves RX sensitivity by ~3 dB at ~2 mA additional current.
+     * 0x94 = power-saving (reset default), 0x96 = boosted.
+     * Used on all SX1262-based boards in MeshCore, Meshtastic, etc.
+     * Reference: SX1262 UM Section 9.6 (RegRxGain). */
+    {
+        uint8_t wr_params[3] = { 0x08, 0xAC, 0x96 };
+        sx1262_cmd(0x0D, wr_params, 3);   /* 0x0D = WriteRegister */
+        platform_sx1262_wait_busy(5);
     }
 }
 

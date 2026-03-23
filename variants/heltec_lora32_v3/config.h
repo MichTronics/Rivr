@@ -28,7 +28,7 @@
  *  ─────────────────── ─────────────── ─────────────
  *  OLED SDA            I²C SDA         17
  *  OLED SCL            I²C SCL         18
- *  VEXT_EN             Peripheral pwr  36   (active-low; not used by Rivr)
+ *  VEXT_EN             Peripheral pwr  36   (active-low; asserted in platform_init)
  *
  * ── Override guide ───────────────────────────────────────────────────────
  *  All macros below use #ifndef guards.  Override any macro on the command
@@ -75,6 +75,12 @@
 #endif
 #ifndef PIN_SX1262_DIO1
 #  define PIN_SX1262_DIO1  14
+#endif
+
+/* ── VEXT peripheral power (active-low, Heltec V3) ─────────────────────── */
+/* GPIO36 low = VEXT rail on → powers the OLED and external peripherals.    */
+#ifndef PIN_VEXT_EN
+#  define PIN_VEXT_EN  36
 #endif
 
 /* ── On-board SSD1306 OLED ────────────────────────────────────────────────
