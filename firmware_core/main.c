@@ -73,6 +73,7 @@
 #include "rivr_layer/rivr_cli.h"
 #include "firmware_core/display/display.h"
 #include "firmware_core/ble/rivr_ble.h"    /* BLE transport (stub when RIVR_FEATURE_BLE=0) */
+#include "firmware_core/ble/rivr_ble_companion.h"
 #include "firmware_core/rivr_bus/rivr_bus.h"      /* Multi-transport packet bus              */
 #include "firmware_core/iface/rivr_iface_usb.h"   /* USB-UART SLIP bridge (stub when USB=0) */
 
@@ -822,6 +823,7 @@ void app_main(void)
         /* ─ 3a. BLE activation-window timeout ─ */
 #if !RIVR_SIM_MODE
         rivr_ble_tick(now);
+        rivr_ble_companion_tick();
         /* ─ 3b. USB-UART SLIP bridge RX drain ─ */
         rivr_iface_usb_tick();  /* no-op when RIVR_FEATURE_USB_BRIDGE=0 */
 #endif

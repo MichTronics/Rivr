@@ -57,6 +57,7 @@ idf_component_register(
         # BLE transport (self-guards via #if RIVR_FEATURE_BLE; safe when BLE=0)
         "ble/rivr_ble.c"
         "ble/rivr_ble_service.c"
+        "ble/rivr_ble_companion.c"
         # Multi-transport packet bus
         "rivr_bus/rivr_bus.c"
         "rivr_bus/rivr_dup_cache.c"
