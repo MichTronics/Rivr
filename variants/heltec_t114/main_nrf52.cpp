@@ -60,6 +60,7 @@ extern "C" {
 #include "rivr_layer/rivr_cli.h"
 #include "firmware_core/rivr_bus/rivr_bus.h"
 #include "firmware_core/ble/rivr_ble.h"  /* stubs when RIVR_FEATURE_BLE=0 */
+#include "firmware_core/ble/rivr_ble_companion.h"
 } /* extern "C" */
 
 #define TAG              "MAIN"
@@ -243,6 +244,7 @@ static void rivr_main_task(void *pvParameters)
 
         /* BLE timeout state machine — no-op when RIVR_FEATURE_BLE=0 */
         rivr_ble_tick(tb_millis());
+        rivr_ble_companion_tick();
 
         /* TX drain with duty-cycle gate */
         tx_drain_loop();

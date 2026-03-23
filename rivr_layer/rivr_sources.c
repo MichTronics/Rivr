@@ -23,6 +23,7 @@
 #include "../firmware_core/rivr_metrics.h"
 #include "../firmware_core/rivr_log.h"
 #include "../firmware_core/rivr_ota.h"
+#include "../firmware_core/ble/rivr_ble_companion.h"
 #include "../firmware_core/policy.h"
 #include "../firmware_core/rivr_policy.h"
 #include "../firmware_core/retry_table.h"
@@ -375,6 +376,24 @@ uint32_t sources_rf_rx_drain(void)
             /* Persist callsign into the neighbour table entry for this node */
             routing_neighbor_set_callsign(&g_neighbor_table,
                                           pkt_hdr.src_id, callsign);
+            {
+                const neighbor_entry_t *entry =
+                    routing_neighbor_get(&g_neighbor_table, 0u);
+                for (uint8_t ni = 0u; ni < NEIGHBOR_TABLE_SIZE; ni++) {
+                    const neighbor_entry_t *candidate =
+                        routing_neighbor_get(&g_neighbor_table, ni);
+                    if (candidate && candidate->node_id == pkt_hdr.src_id) {
+                        entry = candidate;
+                        break;
+                    }
+                }
+                rivr_ble_companion_push_node(pkt_hdr.src_id,
+                                             callsign,
+                                             (int8_t)frame.rssi_dbm,
+                                             frame.snr_db,
+                                             pkt_hdr.hop,
+                                             entry ? routing_neighbor_link_score(entry, now_ms) : 0u);
+            }
             goto maybe_relay;
         }
 

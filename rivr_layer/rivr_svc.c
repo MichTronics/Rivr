@@ -15,6 +15,7 @@
 #include "rivr_svc.h"
 #include "rivr_embed.h"      /* g_my_node_id, g_rivr_metrics, etc. */
 #include "rivr_cli.h"        /* rivr_cli_on_chat_rx() (stub on non-client) */
+#include "../firmware_core/ble/rivr_ble_companion.h"
 #include "../firmware_core/rivr_log.h"
 #include <string.h>
 #include <stdio.h>
@@ -83,6 +84,7 @@ void handle_chat_message(const rivr_pkt_hdr_t *hdr,
     /* ── Serial console display (client builds) ──────────────────────────── */
     /* rivr_cli_on_chat_rx is a zero-cost stub on non-client variants. */
     rivr_cli_on_chat_rx(hdr->src_id, payload, len);
+    rivr_ble_companion_push_chat(hdr->src_id, payload, len);
 
     RIVR_LOGD(TAG, "[CHAT] src=0x%08lx len=%u rssi=%d",
               (unsigned long)hdr->src_id, (unsigned)len, (int)rssi_dbm);

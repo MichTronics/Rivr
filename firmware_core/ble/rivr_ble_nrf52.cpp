@@ -33,6 +33,7 @@
  */
 
 #include "rivr_ble.h"
+#include "rivr_ble_companion.h"
 #include "rivr_ble_service.h"
 #include "rivr_config.h"
 
@@ -112,6 +113,7 @@ static void disconnect_cb(uint16_t conn_handle, uint8_t reason)
 {
     (void)conn_handle;
     s_conn_handle = 0xFFFFu;
+    rivr_ble_companion_on_disconnect();
     RIVR_LOGI(TAG, "disconnected, reason=0x%02x", (unsigned)reason);
 
     /* Restart advertising if still within the activation window. */
@@ -138,6 +140,10 @@ static void rx_write_cb(uint16_t conn_handle,
         RIVR_LOGW(TAG, "rx: frame length %u out of range (max=%u)",
                   (unsigned)len, (unsigned)RF_MAX_PAYLOAD_LEN);
         g_rivr_metrics.ble_errors++;
+        return;
+    }
+
+    if (rivr_ble_companion_handle_rx(data, len)) {
         return;
     }
 

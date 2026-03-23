@@ -4,6 +4,7 @@
  */
 
 #include "rivr_ble_service.h"
+#include "rivr_ble_companion.h"
 #include "rivr_ble_service_internal.h"
 #include "rivr_config.h"
 
@@ -134,6 +135,10 @@ static void rivr_ble_service_handle_rx_write(const esp_ble_gatts_cb_param_t *par
         return;
     }
 
+    if (rivr_ble_companion_handle_rx(w->value, w->len)) {
+        return;
+    }
+
     rf_rx_frame_t frame;
     memset(&frame, 0, sizeof(frame));
     memcpy(frame.data, w->value, w->len);
@@ -223,6 +228,7 @@ void rivr_ble_service_handle_gatts_event(esp_gatts_cb_event_t event,
         break;
 
     case ESP_GATTS_DISCONNECT_EVT:
+        rivr_ble_companion_on_disconnect();
         rivr_ble_service_clear_connection();
         break;
 
