@@ -50,30 +50,80 @@ pub use runtime::{
 #[cfg(all(not(feature = "std"), not(test)))]
 mod embedded_rt {
     use core::alloc::{GlobalAlloc, Layout};
+    use core::cmp;
     use core::panic::PanicInfo;
+    use core::ptr;
 
     struct LibcAlloc;
+
+    const MALLOC_MIN_ALIGN: usize = core::mem::size_of::<usize>();
 
     unsafe impl GlobalAlloc for LibcAlloc {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
             unsafe extern "C" {
                 fn malloc(size: usize) -> *mut u8;
+                fn posix_memalign(memptr: *mut *mut u8, align: usize, size: usize) -> i32;
             }
-            unsafe { malloc(layout.size()) }
+
+            if layout.size() == 0 {
+                return layout.align() as *mut u8;
+            }
+
+            if layout.align() <= MALLOC_MIN_ALIGN {
+                return unsafe { malloc(layout.size()) };
+            }
+
+            let mut out: *mut u8 = ptr::null_mut();
+            let rc = unsafe { posix_memalign(&mut out as *mut *mut u8, layout.align(), layout.size()) };
+            if rc == 0 { out } else { ptr::null_mut() }
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
             unsafe extern "C" {
                 fn free(ptr: *mut u8);
             }
+
+            if ptr.is_null() {
+                return;
+            }
             unsafe { free(ptr) }
         }
 
-        unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, new_size: usize) -> *mut u8 {
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
             unsafe extern "C" {
                 fn realloc(ptr: *mut u8, size: usize) -> *mut u8;
             }
-            unsafe { realloc(ptr, new_size) }
+
+            if layout.size() == 0 {
+                let new_layout = match Layout::from_size_align(new_size, layout.align()) {
+                    Ok(l) => l,
+                    Err(_) => return ptr::null_mut(),
+                };
+                return unsafe { self.alloc(new_layout) };
+            }
+
+            if new_size == 0 {
+                unsafe { self.dealloc(ptr, layout) };
+                return layout.align() as *mut u8;
+            }
+
+            if layout.align() <= MALLOC_MIN_ALIGN {
+                return unsafe { realloc(ptr, new_size) };
+            }
+
+            // libc realloc does not guarantee preserving over-aligned allocations.
+            // For alignments above malloc's baseline, grow/shrink via alloc+copy+free.
+            let new_layout = match Layout::from_size_align(new_size, layout.align()) {
+                Ok(l) => l,
+                Err(_) => return ptr::null_mut(),
+            };
+            let new_ptr = unsafe { self.alloc(new_layout) };
+            if new_ptr.is_null() {
+                return ptr::null_mut();
+            }
+            unsafe { ptr::copy_nonoverlapping(ptr, new_ptr, cmp::min(layout.size(), new_size)) };
+            unsafe { self.dealloc(ptr, layout) };
+            new_ptr
         }
     }
 

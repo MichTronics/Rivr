@@ -123,10 +123,45 @@ foreach(_root IN LISTS _RIVR_ROOTS)
 endforeach()
 
 if(NOT DEFINED RIVR_CORE_LIB)
+    set(_RIVR_CARGO_TARGET "xtensa-${IDF_TARGET}-espidf")
+    message(STATUS
+        "librivr_core.a not found; attempting auto-build with cargo +esp "
+        "for target ${_RIVR_CARGO_TARGET}")
+
+    execute_process(
+        COMMAND cargo +esp build
+            -Zbuild-std=core,alloc
+            -p rivr_core
+                --target ${_RIVR_CARGO_TARGET}
+            --no-default-features
+                --features ffi
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RESULT_VARIABLE _RIVR_CARGO_RESULT
+        OUTPUT_VARIABLE _RIVR_CARGO_STDOUT
+        ERROR_VARIABLE _RIVR_CARGO_STDERR
+    )
+
+    foreach(_root IN LISTS _RIVR_ROOTS)
+        if(EXISTS "${_root}/librivr_core.a")
+            set(RIVR_CORE_LIB "${_root}/librivr_core.a")
+            break()
+        endif()
+    endforeach()
+
+    if((NOT DEFINED RIVR_CORE_LIB) OR (NOT _RIVR_CARGO_RESULT EQUAL 0))
+        message(FATAL_ERROR
+            "librivr_core.a not found and auto-build failed.\n"
+            "cargo +esp output:\n${_RIVR_CARGO_STDOUT}\n${_RIVR_CARGO_STDERR}\n"
+            "Build it manually: cargo +esp build -Zbuild-std=core,alloc -p rivr_core "
+            "--target ${_RIVR_CARGO_TARGET} --no-default-features --features ffi [--release]")
+    endif()
+endif()
+
+if(NOT DEFINED RIVR_CORE_LIB)
     message(FATAL_ERROR
         "librivr_core.a not found. Build it first: "
-        "cargo +esp build -p rivr_core "
-        "--target xtensa-${IDF_TARGET}-espidf --features ffi [--release]")
+        "cargo +esp build -Zbuild-std=core,alloc -p rivr_core "
+        "--target xtensa-${IDF_TARGET}-espidf --no-default-features --features ffi [--release]")
 endif()
 
 message(STATUS "Using rivr_core static library: ${RIVR_CORE_LIB}")
