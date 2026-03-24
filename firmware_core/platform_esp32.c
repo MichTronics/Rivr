@@ -10,6 +10,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"      /* esp_timer_get_time */
+#include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "rivr_log.h"
@@ -21,6 +22,17 @@ spi_device_handle_t g_spi_sx1262;
 void platform_init(void)
 {
     RIVR_LOGI(TAG, "platform_init: configuring GPIO and SPI");
+
+    /* ── NVS flash ── */
+    esp_err_t nvs_err = nvs_flash_init();
+    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES ||
+        nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "NVS partition dirty or version mismatch – erasing");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        nvs_err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(nvs_err);
+    RIVR_LOGI(TAG, "platform_init: NVS initialised");
 
     /* ── GPIO outputs ── */
     gpio_config_t out_cfg = {
