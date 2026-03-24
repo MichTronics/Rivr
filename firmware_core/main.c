@@ -780,8 +780,8 @@ void app_main(void)
     uint32_t loop_count         = 0;
     display_stats_t disp;       /* stats snapshot updated each iteration */
     memset(&disp, 0, sizeof(disp));
-    strncpy(disp.callsign, RIVR_CALLSIGN, sizeof(disp.callsign) - 1u);
-    disp.net_id = (uint16_t)RIVR_NET_ID;
+    strncpy(disp.callsign, g_callsign, sizeof(disp.callsign) - 1u);
+    disp.net_id = g_net_id;
 
     for (;;) {
         /* Capture start of active work (excludes vTaskDelay sleep time). */
@@ -944,6 +944,9 @@ void app_main(void)
         {
             /* Fill the snapshot from live globals — cheap reads, no alloc */
             disp.node_id  = g_my_node_id;
+            disp.net_id   = g_net_id;
+            strncpy(disp.callsign, g_callsign, sizeof(disp.callsign) - 1u);
+            disp.callsign[sizeof(disp.callsign) - 1u] = '\0';
             disp.uptime_s = now / 1000u;
             disp.ble_active = rivr_ble_is_active();
             disp.ble_connected = rivr_ble_is_connected();
