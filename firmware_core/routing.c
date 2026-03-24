@@ -209,6 +209,12 @@ void routing_neighbor_update(neighbor_table_t       *tbl,
     if (!tbl || !pkt || pkt->src_id == 0) return;
 
     uint8_t  new_hops   = (uint8_t)(pkt->hop + 1u);
+    /* Reject hop counts from corrupt or end-of-life packets (hop >= TTL max).
+     * routing_flood_forward already drops hop >= RIVR_PKT_DEFAULT_TTL as
+     * "corrupt", but there is no continue before routing_neighbor_update is
+     * reached, so guard here as well. */
+    if (new_hops > RIVR_PKT_DEFAULT_TTL) return;
+
     int8_t   oldest_idx = -1;
     uint32_t oldest_age = 0u;
 
