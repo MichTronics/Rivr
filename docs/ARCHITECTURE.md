@@ -325,7 +325,6 @@ All six supported boards have a `client_<board>_ble` environment in their
 1. Add `sdkconfig.ble` to the build: in `platformio.ini`:
    ```ini
    board_build.cmake_extra_args =
-       -DRIVR_CORE_EXPLICIT=1
        "-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.ble"
    ```
 2. Add the feature flag:

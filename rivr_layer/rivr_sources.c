@@ -173,6 +173,16 @@ uint32_t sources_rf_rx_drain(void)
             g_rivr_metrics.rx_decode_fail++;
             continue;
         }
+        /* ── net_id inbound filter ───────────────────────────────────────── *
+         * Drop frames whose net_id differs from ours.  net_id=0 is a        *
+         * wildcard (accepted from any network) for routing control frames    *
+         * (ROUTE_REQ/RPL/ACK) that use net_id=0.                            */
+        if (pkt_hdr.net_id != 0u && pkt_hdr.net_id != g_net_id) {
+            RIVR_LOGI(TAG, "rf_rx: net_id filter drop (pkt=0x%04x local=0x%04x)",
+                      (unsigned)pkt_hdr.net_id, (unsigned)g_net_id);
+            g_rivr_metrics.rx_net_id_drop++;
+            continue;
+        }
         /* \u2500\u2500 Display stats: count every valid RF reception \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 *
          * Updated before the dedupe check so g_rx_frame_count reflects total  *
          * unique wire receptions, not just non-duplicate ones.                */
