@@ -187,12 +187,13 @@ void rivr_ble_init(void)
     Bluefruit.Security.setIOCaps(true, false, false);   /* display-only */
     Bluefruit.Security.setMITM(true);
     {
-        /* nRF52 BSP ≥ 0.24 exposes setStaticPasskey(uint32_t).
-         * Earlier versions: implement via pairing request callback. */
-        uint32_t pk = (uint32_t)RIVR_BLE_PASSKEY;
-        Bluefruit.Security.setStaticPasskey(pk);
-        RIVR_LOGI(TAG, "BLE security: MITM passkey bonding enabled (PIN=%06lu)",
-                  (unsigned long)pk);
+        /* BLESecurity::setPIN() takes a 6-character ASCII string (no NUL in
+         * the 6 bytes), matching the BLE_GAP_PASSKEY_LEN requirement. */
+        char pk_str[7];
+        snprintf(pk_str, sizeof(pk_str), "%06lu", (unsigned long)(RIVR_BLE_PASSKEY));
+        Bluefruit.Security.setPIN(pk_str);
+        RIVR_LOGI(TAG, "BLE security: MITM passkey bonding enabled (PIN=%s)",
+                  pk_str);
     }
 #else
     RIVR_LOGI(TAG, "BLE security: open (no pairing)");
