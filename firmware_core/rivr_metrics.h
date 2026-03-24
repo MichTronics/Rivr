@@ -197,6 +197,7 @@ typedef struct {
     uint32_t bus_errors;       /**< Bus dispatch errors                         */
     uint32_t lora_rx_frames;   /**< LoRa-sourced frames entering bus            */
     uint32_t usb_rx_frames;    /**< USB-sourced frames entering bus             */
+    uint32_t rx_net_id_drop;   /**< inbound frames discarded: net_id mismatch   */
 } rivr_metrics_t;
 
 /* ── BLE metrics payload ────────────────────────────────────────────────────
