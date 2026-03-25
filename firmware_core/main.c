@@ -533,9 +533,11 @@ static void rivr_init_client(void)
 static void rivr_init_repeater(void)
 {
     RIVR_LOGI(TAG, "role: REPEATER"
+              " | callsign=%s"
               " | relay_budget=%u fwd/type/min"
               " | rc_cap=%u | retry_cap=%u"
               " | fabric=%s",
+              g_callsign,
               (unsigned)FWDBUDGET_MAX_FWD_ROLE,
               (unsigned)RCACHE_SIZE,
               (unsigned)RETRY_TABLE_SIZE,
