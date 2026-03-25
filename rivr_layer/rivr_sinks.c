@@ -76,7 +76,7 @@ void rf_tx_sink_cb(const rivr_value_t *v, void *user_ctx)
         req.data[1] = (uint8_t)(lmp & 0xFFu);
         req.data[2] = (uint8_t)(lmp >> 8u);
 
-        uint8_t plen = (slen >= payload_offset) ? (slen - payload_offset) : 0u;
+        uint8_t plen = (slen >= payload_offset) ? (uint8_t)(slen - payload_offset) : 0u;
         if (plen > RF_MAX_PAYLOAD_LEN - 3u) {
             plen = RF_MAX_PAYLOAD_LEN - 3u;
             ESP_LOGW(TAG, "rf_tx: payload truncated to %u bytes", plen);
