@@ -85,7 +85,8 @@ mod embedded_rt {
             if raw.is_null() {
                 return ptr::null_mut();
             }
-            let aligned_addr = (raw as usize + store_size + layout.align() - 1) & !(layout.align() - 1);
+            let aligned_addr =
+                (raw as usize + store_size + layout.align() - 1) & !(layout.align() - 1);
             let aligned = aligned_addr as *mut u8;
             // Safety: aligned is always at least store_size bytes past raw.
             unsafe { ptr::write(aligned.sub(store_size) as *mut usize, raw as usize) };
