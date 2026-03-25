@@ -48,5 +48,20 @@ tests/*_harness
 tests/policy_test
 Rivr_Companion/
 rivr_website/
+<<<<<<< HEAD
 .vscode/c_cpp_properties.json
 .vscode/launch.json
+=======
+<<<<<<< HEAD
+venv/lib64
+venv/pyvenv.cfg
+venv/bin/python
+venv/bin/python3
+venv/bin/python3.12
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+=======
+.vscode/launch.json
+.vscode/c_cpp_properties.json
+>>>>>>> c8c31a9 (feat: update .gitignore to include Visual Studio Code configuration files)
+>>>>>>> origin/main
