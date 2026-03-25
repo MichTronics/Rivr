@@ -74,8 +74,13 @@ mod embedded_rt {
             }
 
             let mut out: *mut u8 = ptr::null_mut();
-            let rc = unsafe { posix_memalign(&mut out as *mut *mut u8, layout.align(), layout.size()) };
-            if rc == 0 { out } else { ptr::null_mut() }
+            let rc =
+                unsafe { posix_memalign(&mut out as *mut *mut u8, layout.align(), layout.size()) };
+            if rc == 0 {
+                out
+            } else {
+                ptr::null_mut()
+            }
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
