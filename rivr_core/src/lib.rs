@@ -62,7 +62,6 @@ mod embedded_rt {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
             unsafe extern "C" {
                 fn malloc(size: usize) -> *mut u8;
-                fn posix_memalign(memptr: *mut *mut u8, align: usize, size: usize) -> i32;
             }
 
             if layout.size() == 0 {
@@ -73,17 +72,27 @@ mod embedded_rt {
                 return unsafe { malloc(layout.size()) };
             }
 
-            let mut out: *mut u8 = ptr::null_mut();
-            let rc =
-                unsafe { posix_memalign(&mut out as *mut *mut u8, layout.align(), layout.size()) };
-            if rc == 0 {
-                out
-            } else {
-                ptr::null_mut()
+            // Over-aligned allocation without posix_memalign (not available on all targets).
+            // Allocate extra space, manually align the pointer, and store the original
+            // malloc pointer in the word immediately before the aligned region so that
+            // dealloc can recover it and pass the correct pointer to free().
+            let store_size = core::mem::size_of::<usize>();
+            let total = match layout.size().checked_add(layout.align() - 1 + store_size) {
+                Some(n) => n,
+                None => return ptr::null_mut(),
+            };
+            let raw = unsafe { malloc(total) };
+            if raw.is_null() {
+                return ptr::null_mut();
             }
+            let aligned_addr = (raw as usize + store_size + layout.align() - 1) & !(layout.align() - 1);
+            let aligned = aligned_addr as *mut u8;
+            // Safety: aligned is always at least store_size bytes past raw.
+            unsafe { ptr::write(aligned.sub(store_size) as *mut usize, raw as usize) };
+            aligned
         }
 
-        unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
             unsafe extern "C" {
                 fn free(ptr: *mut u8);
             }
@@ -91,7 +100,15 @@ mod embedded_rt {
             if ptr.is_null() {
                 return;
             }
-            unsafe { free(ptr) }
+
+            if layout.align() <= MALLOC_MIN_ALIGN {
+                unsafe { free(ptr) };
+            } else {
+                // Recover the original malloc pointer stored before the aligned region.
+                let store_size = core::mem::size_of::<usize>();
+                let orig = unsafe { ptr::read(ptr.sub(store_size) as *const usize) } as *mut u8;
+                unsafe { free(orig) };
+            }
         }
 
         unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
@@ -116,8 +133,7 @@ mod embedded_rt {
                 return unsafe { realloc(ptr, new_size) };
             }
 
-            // libc realloc does not guarantee preserving over-aligned allocations.
-            // For alignments above malloc's baseline, grow/shrink via alloc+copy+free.
+            // For over-aligned allocations, grow/shrink via alloc+copy+free.
             let new_layout = match Layout::from_size_align(new_size, layout.align()) {
                 Ok(l) => l,
                 Err(_) => return ptr::null_mut(),
