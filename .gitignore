@@ -48,3 +48,5 @@ tests/*_harness
 tests/policy_test
 Rivr_Companion/
 rivr_website/
+.vscode/c_cpp_properties.json
+.vscode/launch.json
