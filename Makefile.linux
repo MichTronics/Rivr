@@ -1,165 +1,18 @@
 # =============================================================================
-# Makefile.linux — RIVR node for Raspberry Pi + E22-900M30S (SX1262)
+# Makefile.linux — compatibility shim (project root)
 # =============================================================================
+# The real build lives in variants/rpi_e22_900/Makefile.
+# This file just forwards so existing scripts/docs don't break.
 #
-# Usage:
-#   make -f Makefile.linux           # build everything
-#   make -f Makefile.linux clean     # remove build artefacts
-#
-# Prerequisites:
-#   sudo apt install gcc libgpiod-dev
-#   # Enable SPI in /boot/firmware/config.txt (or /boot/config.txt):
-#   #   dtparam=spi=on
-#   # Then reboot.
-#
-# Run (root or gpio/spi group membership required):
-#   sudo ./rivr
-#
-# Wiring (BCM numbers):
-#   NSS=8   BUSY=24  NRST=17  DIO1=25  RXEN=23  TXEN=22
-#   MISO=9  MOSI=10  SCK=11   → /dev/spidev0.0
+# Usage (unchanged):
+#   make -f Makefile.linux                  # client
+#   make -f Makefile.linux ROLE=repeater    # repeater
+#   make -f Makefile.linux clean
 
-CC       := gcc
-TARGET   := rivr
-OBJDIR   := build/linux
+.PHONY: all clean
 
-# ── Feature & platform flags ──────────────────────────────────────────────────
-DEFS  := -DRIVR_PLATFORM_LINUX=1
-DEFS += -DRIVR_SIM_MODE=0
-DEFS += -DRIVR_ROLE_CLIENT=1
-DEFS += -DRIVR_FEATURE_BLE=0
-DEFS += -DRIVR_FEATURE_USB_BRIDGE=0
-DEFS += -DRIVR_FEATURE_DISPLAY=0
-DEFS += -DFEATURE_DISPLAY=0
-DEFS += -DRIVR_RFSWITCH_ENABLE=1
-DEFS += -DRIVR_LOG_LEVEL=2
+all:
+	$(MAKE) -C variants/rpi_e22_900 ROLE=$(or $(ROLE),client) CALLSIGN=$(CALLSIGN)
 
-# Radio parameters — EU868 / E22-900M30S defaults
-DEFS += -DRIVR_RF_FREQ_HZ=869480000
-DEFS += -DRF_SPREADING_FACTOR=8
-DEFS += -DRF_BANDWIDTH_HZ=62500
-DEFS += -DRF_CODING_RATE=8
-DEFS += -DRF_TX_POWER_DBM=22
-
-# Build identity
-DEFS += -DRIVR_BUILD_ENV=\"linux_rpi_e22_900\"
-
-# Node callsign — override on the command line: make CALLSIGN=N0CALL -f Makefile.linux
-ifdef CALLSIGN
-DEFS += -DRIVR_CALLSIGN=\"$(CALLSIGN)\"
-endif
-
-# ── Include paths ─────────────────────────────────────────────────────────────
-# -I .                         → project root (#include "firmware_core/xxx.h")
-# -I firmware_core             → bare includes within firmware_core/ files
-# -I firmware_core/linux/include → ESP-IDF compatibility stubs
-# -include platform_linux.h   → pin definitions, overrides platform_esp32.h defaults
-INCS  := -I .
-INCS += -I firmware_core
-INCS += -I rivr_layer
-INCS += -I firmware_core/linux/include
-INCS += -include firmware_core/platform_linux.h
-
-# ── Compiler flags ────────────────────────────────────────────────────────────
-CFLAGS  := -std=gnu11 -Wall -Wextra -O2
-CFLAGS += -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable
-CFLAGS += $(DEFS) $(INCS)
-
-# ── Source files ──────────────────────────────────────────────────────────────
-# Linux-specific platform / radio / timing / panic
-SRCS  := firmware_core/main_linux.c
-SRCS += firmware_core/platform_linux.c
-SRCS += firmware_core/radio_sx1262_linux.c
-SRCS += firmware_core/timebase_linux.c
-SRCS += firmware_core/rivr_panic_linux.c
-
-# Core protocol & routing
-SRCS += firmware_core/routing.c
-SRCS += firmware_core/protocol.c
-SRCS += firmware_core/dutycycle.c
-SRCS += firmware_core/neighbor_table.c
-SRCS += firmware_core/route_cache.c
-SRCS += firmware_core/retry_table.c
-SRCS += firmware_core/pending_queue.c
-
-# Fabric, metrics, logging
-SRCS += firmware_core/rivr_fabric.c
-SRCS += firmware_core/rivr_metrics.c
-SRCS += firmware_core/rivr_log.c
-
-# Scheduling & timing
-SRCS += firmware_core/airtime_sched.c
-SRCS += firmware_core/beacon_sched.c
-
-# Policy engine
-SRCS += firmware_core/policy.c
-SRCS += firmware_core/rivr_policy.c
-
-# Build info & crypto
-SRCS += firmware_core/build_info.c
-SRCS += firmware_core/ed25519_verify.c
-SRCS += firmware_core/crypto/hmac_sha256.c
-
-# OTA (core logic + NVS-backed platform — NVS stub returns NOT_FOUND → default program)
-SRCS += firmware_core/rivr_ota_core.c
-SRCS += firmware_core/rivr_ota_platform.c
-
-# Radio HAL vtable
-SRCS += firmware_core/hal/radio_if.c
-
-# BLE (compile-guards itself to empty stubs when RIVR_FEATURE_BLE=0)
-SRCS += firmware_core/ble/rivr_ble.c
-SRCS += firmware_core/ble/rivr_ble_service.c
-SRCS += firmware_core/ble/rivr_ble_companion.c
-
-# Display (compile-guards itself to empty stubs when FEATURE_DISPLAY=0)
-SRCS += firmware_core/display/display.c
-
-# Multi-transport packet bus
-SRCS += firmware_core/rivr_bus/rivr_bus.c
-SRCS += firmware_core/rivr_bus/rivr_dup_cache.c
-SRCS += firmware_core/rivr_bus/rivr_dispatch.c
-
-# Transport interface adapters
-SRCS += firmware_core/iface/rivr_iface_lora.c
-SRCS += firmware_core/iface/rivr_iface_ble.c
-SRCS += firmware_core/iface/rivr_iface_usb.c
-
-# RIVR glue layer
-SRCS += rivr_layer/rivr_embed.c
-SRCS += rivr_layer/rivr_sinks.c
-SRCS += rivr_layer/rivr_sources.c
-SRCS += rivr_layer/rivr_svc.c
-SRCS += rivr_layer/rivr_cli.c
-
-# ── Rust core library ─────────────────────────────────────────────────────────
-RIVR_CORE_LIB := target/release/librivr_core.a
-
-# ── Derived object list ───────────────────────────────────────────────────────
-OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(SRCS))
-
-# ── System libraries ──────────────────────────────────────────────────────────
-LDLIBS := $(RIVR_CORE_LIB) -lgpiod -lpthread -lm
-
-# ── Default target ────────────────────────────────────────────────────────────
-.PHONY: all clean rivr_core
-
-all: rivr_core $(TARGET)
-
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
-	@echo "Build complete: $@"
-
-# ── Build Rust core library ───────────────────────────────────────────────────
-rivr_core:
-	cargo build --manifest-path rivr_core/Cargo.toml --release --features ffi
-
-# ── Compile C files ───────────────────────────────────────────────────────────
-$(OBJDIR)/%.o: %.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-# ── Clean ─────────────────────────────────────────────────────────────────────
 clean:
-	rm -rf $(OBJDIR) $(TARGET)
-	cargo clean --manifest-path rivr_core/Cargo.toml
+	$(MAKE) -C variants/rpi_e22_900 clean ROLE=$(or $(ROLE),client)

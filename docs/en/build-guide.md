@@ -445,6 +445,97 @@ All three are already included in `radio_init()` in `firmware_core/radio_sx1262.
 
 ---
 
+## Linux / Raspberry Pi (native SX1262)
+
+RIVR runs natively on a Raspberry Pi connected to an E22-900M30S (SX1262) module
+via SPI.  The full build lives in `variants/rpi_e22_900/`; `Makefile.linux` at the
+project root is a compatibility shim that forwards to it.
+
+### Prerequisites
+
+```bash
+sudo apt install gcc libgpiod-dev
+```
+
+Enable the SPI peripheral once (if not already done):
+
+```bash
+# Edit /boot/firmware/config.txt  (use /boot/config.txt on older Pi OS releases)
+dtparam=spi=on
+# Reboot after saving.
+```
+
+### Build
+
+```bash
+# Client node (default)
+make -f Makefile.linux
+# or equivalently:
+make -C variants/rpi_e22_900
+
+# Repeater node
+make -f Makefile.linux ROLE=repeater
+
+# With a custom callsign
+make -f Makefile.linux CALLSIGN=MYCALL
+
+# Clean (run once per role)
+make -f Makefile.linux clean
+make -f Makefile.linux clean ROLE=repeater
+```
+
+Output binaries (in the project root):
+
+| Role | Binary |
+|---|---|
+| Client | `./rivr` |
+| Repeater | `./rivr-repeater` |
+
+### Run
+
+```bash
+# Group membership for /dev/spidev0.0 and /dev/gpiochip0 required,
+# or prefix with sudo:
+sudo ./rivr              # client
+sudo ./rivr-repeater     # repeater
+```
+
+### GPIO / SPI wiring (BCM numbers)
+
+| Signal | BCM GPIO | Notes |
+|---|---|---|
+| SCK | 11 | SPI0 clock → `/dev/spidev0.0` |
+| MOSI | 10 | SPI0 data out |
+| MISO | 9 | SPI0 data in |
+| NSS (CS) | 8 (CE0) | Active low, hardware chip-select |
+| BUSY | 24 | SX1262 busy flag |
+| RESET | 17 | Active low |
+| DIO1 (IRQ) | 25 | TxDone / RxDone / Timeout |
+| RXEN | 23 | RF switch — HIGH = receive |
+| TXEN | 22 | RF switch — HIGH = transmit |
+
+Pin assignments are defined in `firmware_core/platform_linux.h` and are
+`#ifndef`-guarded, so any `-D` override at compile time wins.
+
+### Variant header
+
+RF and LoRa parameters for this variant live in `variants/rpi_e22_900/config.h`
+and are force-included by the build:
+
+| Parameter | Default |
+|---|---|
+| Frequency | 869.480 MHz (`RIVR_RF_FREQ_HZ`) |
+| Spreading factor | SF8 |
+| Bandwidth | 62.5 kHz |
+| Coding rate | 4/8 |
+| TX power | +22 dBm |
+
+Every macro is `#ifndef`-guarded.  To change a parameter for a given build,
+edit `variants/rpi_e22_900/config.h` or create a new variant directory with
+its own `config.h` and `Makefile`.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause / Fix |

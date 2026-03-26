@@ -16,7 +16,7 @@ over LoRa at the physical layer. Byte order is **little-endian** throughout.
 │  Offset │ Size │ Field       │ Description                    │
 ├─────────┼──────┼─────────────┼────────────────────────────────┤
 │    0    │  2   │ magic       │ 0x5256 LE = "RV"               │
-│    2    │  1   │ version     │ Protocol version (= 1)         │
+│    2    │  1   │ version     │ Protocol version; accepted range RIVR_PROTO_MIN–RIVR_PROTO_MAX (both 1) │
 │    3    │  1   │ pkt_type    │ PKT_* constant (see §3)        │
 │    4    │  1   │ flags       │ PKT_FLAG_* bitmask (see §4)    │
 │    5    │  1   │ ttl         │ Hops remaining (default 7)     │
@@ -56,8 +56,10 @@ discarded by all RIVR nodes.
 
 ### `version` (byte 2, u8)
 
-Protocol version. Currently `1`. Packets with an unrecognised version are
-silently discarded.
+Protocol version. Currently `1`. Nodes accept frames whose version byte falls
+in the half-open range `[RIVR_PROTO_MIN, RIVR_PROTO_MAX]` (both constants equal
+`1` in the current codebase). Frames outside this range are silently discarded
+and logged at DEBUG level as `DROP reason=proto_ver`.
 
 ### `pkt_type` (byte 3, u8)
 
