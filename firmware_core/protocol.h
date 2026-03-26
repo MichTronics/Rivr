@@ -58,7 +58,9 @@ extern "C" {
 /* ── Magic / version ─────────────────────────────────────────────────────── */
 
 #define RIVR_MAGIC         0x5256u   /**< "RV" little-endian u16             */
-#define RIVR_PROTO_VER     1u        /**< Protocol version byte              */
+#define RIVR_PROTO_VER     1u        /**< Current protocol version           */
+#define RIVR_PROTO_MIN     1u        /**< Oldest accepted protocol version   */
+#define RIVR_PROTO_MAX     RIVR_PROTO_VER /**< Newest accepted protocol version   */
 
 /* ── Packet-type constants ───────────────────────────────────────────────── */
 

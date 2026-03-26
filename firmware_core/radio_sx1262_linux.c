@@ -218,7 +218,19 @@ void radio_init(void)
             default:     bw = 0x03; break;
         }
         uint8_t ldro = (RF_SPREADING_FACTOR >= 11 && RF_BANDWIDTH_HZ <= 125000) ? 1 : 0;
-        uint8_t d[4] = {(uint8_t)RF_SPREADING_FACTOR, bw, (uint8_t)RF_CODING_RATE, ldro};
+        /* RF_CODING_RATE is the CR denominator (5..8).  SX1262 SetModulationParams
+         * uses a register encoding: CR4/5=0x01, CR4/6=0x02, CR4/7=0x03, CR4/8=0x04.
+         * Passing the raw denominator (e.g. 8) is wrong — the ESP32 driver maps
+         * this at compile time via _RF_CR_SX1262_REG; replicate that here. */
+        uint8_t cr_reg;
+        switch (RF_CODING_RATE) {
+            case 5:  cr_reg = 0x01u; break;
+            case 6:  cr_reg = 0x02u; break;
+            case 7:  cr_reg = 0x03u; break;
+            case 8:  cr_reg = 0x04u; break;
+            default: cr_reg = 0x01u; break;  /* fallback: CR4/5 */
+        }
+        uint8_t d[4] = {(uint8_t)RF_SPREADING_FACTOR, bw, cr_reg, ldro};
         sx_write_cmd(0x8B, d, 4);
     }
 

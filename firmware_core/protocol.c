@@ -5,7 +5,10 @@
 
 #include "protocol.h"
 #include "rivr_metrics.h"
+#include "rivr_log.h"
 #include <string.h>
+
+#define TAG "PROTO"
 
 /* ── CRC-16/CCITT ─────────────────────────────────────────────────────────── *
  *
@@ -138,7 +141,8 @@ int protocol_encode(const rivr_pkt_hdr_t *hdr,
  * Checks in order:
  *   1. buf length ≥ RIVR_PKT_MIN_FRAME (25 bytes).
  *   2. Magic word == RIVR_MAGIC ("RV").
- *   3. Version == RIVR_PROTO_VER (1).
+ *   3. Version in [RIVR_PROTO_MIN, RIVR_PROTO_MAX] (range-checked for
+ *      backward and forward compatibility).
  *   4. Packet type in [1, PKT_METRICS] (0 and >11 are undefined).
  *   5. payload_len ≤ RIVR_PKT_MAX_PAYLOAD (guards uint8_t wrap below).
  *   6. buf length ≥ RIVR_PKT_HDR_LEN + payload_len + RIVR_PKT_CRC_LEN.
@@ -152,9 +156,15 @@ static bool validate_wire_frame(const uint8_t *buf, uint8_t len,
     uint16_t magic = (uint16_t)(buf[0] | ((uint16_t)buf[1] << 8));
     if (magic != RIVR_MAGIC) return false;
 
-    /* Silently reject incompatible protocol versions to avoid log spam
-     * when a future-version peer is in range. */
-    if (buf[2] != RIVR_PROTO_VER) return false;
+    /* Accept versions in [RIVR_PROTO_MIN, RIVR_PROTO_MAX].
+     * Versions below RIVR_PROTO_MIN are too old (incompatible wire changes).
+     * Versions above RIVR_PROTO_MAX are newer than this build understands;
+     * drop safely to avoid misinterpreting unknown fields. */
+    if (buf[2] < RIVR_PROTO_MIN || buf[2] > RIVR_PROTO_MAX) {
+        RIVR_LOGD(TAG, "DROP reason=proto_ver rx=%u supported=%u-%u",
+                  (unsigned)buf[2], RIVR_PROTO_MIN, RIVR_PROTO_MAX);
+        return false;
+    }
 
     /* Type 0 is unassigned; values above PKT_METRICS are undefined.
      * Count these separately from CRC failures so operators can
@@ -179,6 +189,8 @@ static bool validate_wire_frame(const uint8_t *buf, uint8_t len,
     if (crc_calc != crc_wire) return false;
 
     *payload_len_out = payload_len;
+    RIVR_LOGD(TAG, "@RX ver=%u type=%u len=%u",
+              (unsigned)buf[2], (unsigned)buf[3], (unsigned)payload_len);
     return true;
 }
 
