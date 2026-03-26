@@ -351,7 +351,7 @@ See `examples/` for complete programs:
 
 ## 9. Adding a New Service
 
-1. Reserve a `PKT_*` constant in `firmware_core/protocol.h` (next is 11).
+1. Reserve a `PKT_*` constant in `firmware_core/protocol.h` (next is 12).
 2. Define payload length, field layout, and any unit/flag constants there.
 3. Declare the handler in `rivr_layer/rivr_svc.h`.
 4. Implement the handler in `rivr_layer/rivr_svc.c` following the same

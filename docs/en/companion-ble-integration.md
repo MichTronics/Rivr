@@ -164,14 +164,14 @@ Offset  Len  Field           Type     Notes
   3      1   pkt_type        u8       See packet type table below.
   4      1   flags           u8       Bitmask: 0x01=ACK_REQ, 0x02=RELAYED, 0x04=FALLBACK
   5      1   ttl             u8       Hops remaining. Default 7. Decrement on relay.
-  6      4   src_id          u32 LE   Originating node ID.
- 10      4   dst_id          u32 LE   Destination node ID. 0xFFFFFFFF = broadcast.
- 14      2   net_id          u16 LE   Network partition ID. 0x0000 = default.
- 16      1   hop_count       u8       Hops taken so far.
+  6      1   hop             u8       Hops taken so far. 0 at origin.
+  7      2   net_id          u16 LE   Network partition ID. 0x0000 = default.
+  9      4   src_id          u32 LE   Originating node ID.
+ 13      4   dst_id          u32 LE   Destination node ID. 0x00000000 = broadcast.
  17      2   seq             u16 LE   Per-source sequence counter (message ordering).
  19      2   pkt_id          u16 LE   Deduplication fingerprint (do not set — firmware fills).
  21      1   payload_len     u8       Number of application payload bytes that follow.
- 22      1   (reserved)      u8       Always 0.
+ 22      1   loop_guard      u8       OR-accumulating relay fingerprint. Set to 0 on originate.
  23     [N]  payload         bytes    Application-specific bytes (payload_len bytes).
  23+N    2   crc             u16 LE   CRC-16/CCITT over bytes [0 .. 23+N-1].
 ```
@@ -190,6 +190,7 @@ Offset  Len  Field           Type     Notes
 | 8 | `PKT_TELEMETRY` | Structured telemetry payload |
 | 9 | `PKT_MAILBOX` | Store-and-forward message |
 | 10 | `PKT_ALERT` | High-priority alert |
+| 11 | `PKT_METRICS` | Firmware diagnostics snapshot (BLE-only, TTL=1, never LoRa-relayed) |
 
 ### CRC algorithm
 
@@ -251,7 +252,7 @@ final sub = _ble.subscribeToCharacteristic(txChar).listen((data) {
 1. **Build a complete binary Rivr frame** including magic, all header fields, payload, and CRC.
 2. **Set `src_id`** to the phone's virtual node ID — pick a fixed random 32-bit value and persist
    it locally (do not generate a new ID each session).
-3. Set `dst_id` to `0xFFFFFFFF` for broadcast CHAT, or the target's node ID for unicast.
+3. Set `dst_id` to `0x00000000` for broadcast CHAT, or the target's node ID for unicast.
 4. Set `ttl` to 7 (default).  The node will decrement on relay.
 5. Set `seq` to an incrementing counter per `src_id`.
 6. **Leave `pkt_id` as 0** — the node's firmware does not use the phone's `pkt_id` for
