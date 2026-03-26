@@ -6,15 +6,15 @@
  *
  *   E22 pin | Signal | RPi GPIO (BCM) | Description
  *   --------|--------|----------------|-------------------------------
- *     6     | RXEN   | GPIO12         | RF switch: RX enable (active high)
- *     7     | TXEN   | GPIO13         | RF switch: TX enable (active high)
- *    13     | DIO1   | GPIO16         | IRQ: TxDone | RxDone | Timeout
- *    14     | BUSY   | GPIO20         | Chip busy flag (active high)
- *    15     | NRST   | GPIO18         | Reset (active low)
+ *     6     | RXEN   | GPIO23         | RF switch: RX enable (active high)
+ *     7     | TXEN   | GPIO22         | RF switch: TX enable (active high)
+ *    13     | DIO1   | GPIO25         | IRQ: TxDone | RxDone | Timeout
+ *    14     | BUSY   | GPIO24         | Chip busy flag (active high)
+ *    15     | NRST   | GPIO17         | Reset (active low)
  *    16     | MISO   | GPIO9          | SPI0 MISO
  *    17     | MOSI   | GPIO10         | SPI0 MOSI
  *    18     | SCK    | GPIO11         | SPI0 SCLK
- *    19     | NSS    | GPIO21         | Chip-select (manual, active low)
+ *    19     | NSS    | GPIO8          | Chip-select (manual, active low)
  *
  *  SPI device: /dev/spidev0.0  (SPI0, CE0 — CS unused by kernel, handled manually)
  *  GPIO chip:  /dev/gpiochip0  (BCM GPIO, standard on all Raspberry Pi models)
@@ -33,12 +33,12 @@ extern "C" {
 #include <stdbool.h>
 
 /* ── SX1262 SPI / control GPIO assignments (BCM numbers) ─────────────────── */
-#define PIN_SX1262_RXEN    12   /**< RF switch RX enable                      */
-#define PIN_SX1262_TXEN    13   /**< RF switch TX enable                      */
-#define PIN_SX1262_DIO1    16   /**< IRQ: TxDone | RxDone | Timeout           */
-#define PIN_SX1262_BUSY    20   /**< Chip BUSY flag (active high)              */
-#define PIN_SX1262_RESET   18   /**< NRST – active low                        */
-#define PIN_SX1262_NSS     21   /**< Manual chip-select (active low)           */
+#define PIN_SX1262_RXEN    23   /**< RF switch RX enable                      */
+#define PIN_SX1262_TXEN    22   /**< RF switch TX enable                      */
+#define PIN_SX1262_DIO1    25   /**< IRQ: TxDone | RxDone | Timeout           */
+#define PIN_SX1262_BUSY    24   /**< Chip BUSY flag (active high)              */
+#define PIN_SX1262_RESET   17   /**< NRST – active low                        */
+#define PIN_SX1262_NSS      8   /**< Manual chip-select (active low)           */
 
 /* SPI bus configuration */
 #define RIVR_LINUX_SPI_DEV  "/dev/spidev0.0"

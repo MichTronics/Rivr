@@ -108,24 +108,30 @@ static void sx_write_reg(uint16_t addr, uint8_t val)
 
 static void sx_write_buf(uint8_t offset, const uint8_t *data, uint8_t len)
 {
-    uint8_t hdr[2] = { 0x0E, offset };
-    uint8_t rx[2];
+    /* WriteBuffer (0x0E) + offset + payload must be one unbroken SPI
+     * transaction — CE0 must stay asserted for the full burst.
+     * Pack everything into a single buffer and send in one ioctl call. */
+    uint8_t buf[2 + 255];
+    uint8_t rx [2 + 255];
+    buf[0] = 0x0E;
+    buf[1] = offset;
+    memcpy(&buf[2], data, len);
     platform_sx1262_wait_busy(10);
-    platform_spi_cs_assert();
-    platform_spi_transfer(hdr, rx, 2);
-    platform_spi_transfer(data, rx, len);  /* dummy rx */
-    platform_spi_cs_release();
+    platform_spi_transfer(buf, rx, (uint16_t)(2u + len));
 }
 
 static void sx_read_buf(uint8_t offset, uint8_t *data, uint8_t len)
 {
-    uint8_t hdr[3] = { 0x1E, offset, 0x00 };
-    uint8_t rxhdr[3];
+    /* ReadBuffer (0x1E) + offset + NOP + rx bytes, all in one transaction. */
+    uint8_t tx[3 + 255];
+    uint8_t rx[3 + 255];
+    memset(tx, 0x00, 3u + len);
+    tx[0] = 0x1E;
+    tx[1] = offset;
+    tx[2] = 0x00;  /* NOP status byte */
     platform_sx1262_wait_busy(10);
-    platform_spi_cs_assert();
-    platform_spi_transfer(hdr, rxhdr, 3);
-    platform_spi_transfer(NULL, data, len);
-    platform_spi_cs_release();
+    platform_spi_transfer(tx, rx, (uint16_t)(3u + len));
+    memcpy(data, &rx[3], len);
 }
 
 static void sx_set_standby(void)
@@ -151,15 +157,39 @@ void radio_init(void)
     rb_init(&rf_tx_queue,   s_tx_storage, RF_TX_QUEUE_CAP,   sizeof(rf_tx_request_t));
 
     platform_sx1262_reset();
+    platform_sx1262_wait_busy(100);
 
+    /* Step 1: Standby (STDBY_RC) — must be first after reset */
     sx_set_standby();
 
-    /* SetPacketType = LoRa */
+    /* Step 2: SetDio3AsTcxoCtrl — MUST be before Calibrate so the SX1262
+     * powers the TCXO and waits for it to settle before calibrating.
+     * Voltage=1.8V (0x02), delay=5ms (0x000140 × 15.625µs). */
+    { uint8_t d[4] = {0x02, 0x00, 0x01, 0x40}; sx_write_cmd(0x97, d, 4); }
+
+    /* Step 3: SetRegulatorMode(DC-DC=1) — MUST be before Calibrate
+     * so calibration runs in the final power-supply configuration. */
+    { uint8_t d = 0x01; sx_write_cmd(0x96, &d, 1); }
+
+    /* Step 4: Calibrate(0xFF) — full calibration; TCXO must be running.
+     * BUSY stays high for ~3.5 ms (calibration) + TCXO settle (5 ms). */
+    { uint8_t d = 0xFF; sx_write_cmd(0x89, &d, 1); platform_sx1262_wait_busy(100); }
+
+    /* Step 5: Standby again — chip returns to STDBY_RC after calibration */
+    sx_set_standby();
+
+    /* Step 6: SetDio2AsRfSwitchCtrl(1) — DIO2 drives the SX1262-internal
+     * antenna switch automatically (high during TX, low during RX/STDBY).
+     * This does NOT conflict with the external RXEN/TXEN GPIOs, which
+     * control the E22-900M30S external PA/LNA. Both can be active at once. */
+    { uint8_t d = 0x01; sx_write_cmd(0x9D, &d, 1); }
+
+    /* Step 7: SetPacketType = LoRa */
     { uint8_t d = 0x01; sx_write_cmd(0x8A, &d, 1); }
 
-    /* SetRfFrequency */
+    /* Step 8: SetRfFrequency */
     {
-        uint32_t frf = (uint32_t)((double)RIVR_RF_FREQ_HZ / 32e6 * (1 << 25));
+        uint32_t frf = (uint32_t)(((uint64_t)RIVR_RF_FREQ_HZ << 25) / 32000000UL);
         uint8_t d[4] = {
             (uint8_t)(frf >> 24), (uint8_t)(frf >> 16),
             (uint8_t)(frf >>  8), (uint8_t)(frf)
@@ -167,29 +197,11 @@ void radio_init(void)
         sx_write_cmd(0x86, d, 4);
     }
 
-    /* SetPaConfig — 0x04,0x07,0x00,0x01 = SX1262, +22 dBm max */
+    /* Step 9: SetPaConfig — SX1262 HP-PA, +22 dBm max output on chip.
+     * paDutyCycle=0x04, hpMax=0x07, deviceSel=0x00 (SX1262), paLut=0x01. */
     { uint8_t d[4] = {0x04, 0x07, 0x00, 0x01}; sx_write_cmd(0x95, d, 4); }
 
-    /* SetTxParams */
-    { uint8_t d[2] = {(uint8_t)RF_TX_POWER_DBM, 0x04}; sx_write_cmd(0x8E, d, 2); }
-
-    /* SetDio2AsRfSwitchCtrl — also drives TXEN internally via DIO2 */
-    { uint8_t d = 0x01; sx_write_cmd(0x9D, &d, 1); }
-
-    /* SetDio3AsTcxoCtrl: 1.8 V, 5 ms — E22-900M30S has an XTAL, not TCXO.
-     * If the module has a TCXO this is required; otherwise it is harmless. */
-    { uint8_t d[4] = {0x02, 0x00, 0x00, 0xC8}; sx_write_cmd(0x97, d, 4); }
-
-    /* Calibrate all blocks */
-    { uint8_t d = 0x7F; sx_write_cmd(0x89, &d, 1); platform_sx1262_wait_busy(100); }
-
-    /* SetRegulatorMode: DC-DC */
-    { uint8_t d = 0x01; sx_write_cmd(0x96, &d, 1); }
-
-    /* SetBufferBaseAddress */
-    { uint8_t d[2] = {0x00, 0x00}; sx_write_cmd(0x8F, d, 2); }
-
-    /* SetModulationParams: SF, BW, CR, LDRO */
+    /* Step 10: SetModulationParams: SF, BW, CR, LDRO */
     {
         uint8_t bw;
         switch (RF_BANDWIDTH_HZ) {
@@ -210,16 +222,31 @@ void radio_init(void)
         sx_write_cmd(0x8B, d, 4);
     }
 
-    /* SetPacketParams: preamble=8, explicit header, max payload, CRC on */
+    /* Step 11: SetPacketParams: preamble=8, explicit header, max payload, CRC on */
     { uint8_t d[6] = {0x00, 0x08, 0x00, RF_MAX_PAYLOAD_LEN, 0x01, 0x00};
       sx_write_cmd(0x8C, d, 6); }
 
-    /* SetDioIrqParams: enable TxDone, RxDone, Timeout on DIO1 */
+    /* Step 12: SetTxParams: power, rampTime=40µs */
+    { uint8_t d[2] = {(uint8_t)RF_TX_POWER_DBM, 0x04}; sx_write_cmd(0x8E, d, 2); }
+
+    /* Step 13: SetBufferBaseAddress */
+    { uint8_t d[2] = {0x00, 0x00}; sx_write_cmd(0x8F, d, 2); }
+
+    /* Step 14: SetDioIrqParams: TxDone|RxDone|Timeout on DIO1 */
     { uint8_t d[8] = {0x02, 0x03, 0x02, 0x03, 0x00, 0x00, 0x00, 0x00};
       sx_write_cmd(0x08, d, 8); }
 
-    /* Fix SX1262 RX gain from datasheet errata (reg 0x08AC = 0x96) */
+    /* Step 15: Boosted RX gain (reg 0x08AC = 0x96, datasheet errata) */
     sx_write_reg(0x08AC, 0x96);
+
+    /* Diagnostic: read GetStatus to confirm SPI MISO is working.
+     * Chip mode field is bits [5:3]; 0x44 = STDBY_RC, 0x2C = STDBY_XOSC.
+     * 0x00 means MISO is floating or grounded — check wiring. */
+    {
+        uint8_t st[1] = {0};
+        sx_read_cmd(0xC0, st, 1);
+        RIVR_LOGI(TAG, "radio_init: GetStatus=0x%02X (0x44=STDBY_RC ok, 0x00=MISO broken)", st[0]);
+    }
 
     /* Start the DIO1 interrupt monitoring thread. */
     platform_dio1_attach_isr(s_radio_isr_trampoline);
@@ -346,7 +373,11 @@ bool radio_transmit(const rf_tx_request_t *req)
             break;
         }
         if ((tb_millis() - t0) > 2000u) {
-            RIVR_LOGE(TAG, "TX timeout");
+            uint8_t st[1] = {0};
+            sx_read_cmd(0xC0, st, 1);
+            RIVR_LOGE(TAG, "TX timeout — irq=0x%02X%02X GetStatus=0x%02X "
+                      "(0x00=MISO broken, 0xD2=TX state ok)",
+                      irq_bytes[0], irq_bytes[1], st[0]);
             g_rivr_metrics.radio_tx_fail++;
             RADIO_EXIT_CRITICAL();
             radio_start_rx();

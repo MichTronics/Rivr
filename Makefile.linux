@@ -16,7 +16,7 @@
 #   sudo ./rivr
 #
 # Wiring (BCM numbers):
-#   NSS=21  BUSY=20  NRST=18  DIO1=16  RXEN=12  TXEN=13
+#   NSS=8   BUSY=24  NRST=17  DIO1=25  RXEN=23  TXEN=22
 #   MISO=9  MOSI=10  SCK=11   → /dev/spidev0.0
 
 CC       := gcc

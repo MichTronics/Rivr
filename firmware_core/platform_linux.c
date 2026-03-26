@@ -45,12 +45,12 @@ static int s_spi_fd = -1;
 
 /* ── GPIO chip and lines ─────────────────────────────────────────────────── */
 static struct gpiod_chip *s_chip  = NULL;
-static struct gpiod_line *s_nss   = NULL;  /* GPIO21 – chip select           */
-static struct gpiod_line *s_reset = NULL;  /* GPIO18 – NRST                  */
-static struct gpiod_line *s_rxen  = NULL;  /* GPIO12 – RF switch RX enable   */
-static struct gpiod_line *s_txen  = NULL;  /* GPIO13 – RF switch TX enable   */
-static struct gpiod_line *s_busy  = NULL;  /* GPIO20 – BUSY (input)          */
-static struct gpiod_line *s_dio1  = NULL;  /* GPIO16 – DIO1 IRQ (input)      */
+/* NSS/GPIO8 = SPI0 CE0 — owned by the kernel spidev driver; do not claim. */
+static struct gpiod_line *s_reset = NULL;  /* GPIO17 – NRST                  */
+static struct gpiod_line *s_rxen  = NULL;  /* GPIO23 – RF switch RX enable   */
+static struct gpiod_line *s_txen  = NULL;  /* GPIO22 – RF switch TX enable   */
+static struct gpiod_line *s_busy  = NULL;  /* GPIO24 – BUSY (input)          */
+static struct gpiod_line *s_dio1  = NULL;  /* GPIO25 – DIO1 IRQ (input)      */
 
 /* ── DIO1 interrupt thread ───────────────────────────────────────────────── */
 static pthread_t   s_dio1_thread;
@@ -173,8 +173,8 @@ void platform_init(void)
         exit(1);
     }
 
-    /* ── Output lines (NSS high, RESET high, RXEN=0, TXEN=0 at init) ── */
-    s_nss   = open_output(PIN_SX1262_NSS,   1, "NSS");
+    /* ── Output lines (RESET high, RXEN=0, TXEN=0 at init) ── */
+    /* NSS/GPIO8 is CE0 — kernel spidev driver owns it; skip gpiod claim. */
     s_reset = open_output(PIN_SX1262_RESET, 1, "RESET");
     s_rxen  = open_output(PIN_SX1262_RXEN,  0, "RXEN");
     s_txen  = open_output(PIN_SX1262_TXEN,  0, "TXEN");
@@ -194,10 +194,10 @@ void platform_init(void)
     }
 
     RIVR_LOGI(TAG, "platform_init: done"
-              " (SPI=%s, chip=%s, NSS=GPIO%d, RESET=GPIO%d,"
+              " (SPI=%s, chip=%s, NSS=CE0(kernel), RESET=GPIO%d,"
               " RXEN=GPIO%d, TXEN=GPIO%d, BUSY=GPIO%d, DIO1=GPIO%d)",
               RIVR_LINUX_SPI_DEV, RIVR_LINUX_GPIO_CHIP,
-              PIN_SX1262_NSS, PIN_SX1262_RESET,
+              PIN_SX1262_RESET,
               PIN_SX1262_RXEN, PIN_SX1262_TXEN,
               PIN_SX1262_BUSY, PIN_SX1262_DIO1);
 }
@@ -206,12 +206,12 @@ void platform_init(void)
 
 void platform_spi_cs_assert(void)
 {
-    gpiod_line_set_value(s_nss, 0);
+    /* NSS is driven by the kernel spidev CE0 — no manual action needed. */
 }
 
 void platform_spi_cs_release(void)
 {
-    gpiod_line_set_value(s_nss, 1);
+    /* NSS is driven by the kernel spidev CE0 — no manual action needed. */
 }
 
 void platform_spi_transfer(const uint8_t *tx, uint8_t *rx, uint16_t len)
