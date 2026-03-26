@@ -139,8 +139,9 @@ received frame length causes the packet to be discarded.
 | `PKT_TELEMETRY`| 8     | Structured sensor reading                 | 11 bytes fixed — see [services.md](services.md#4-telemetry-pkt_telemetry--8) |
 | `PKT_MAILBOX`  | 9     | Store-and-forward message                 | 7-byte header + UTF-8 body — see [services.md](services.md#5-mailbox-pkt_mailbox--9) |
 | `PKT_ALERT`    | 10    | Priority event notification               | 7 bytes fixed — see [services.md](services.md#6-alert-pkt_alert--10) |
+| `PKT_METRICS`  | 11    | Firmware diagnostics snapshot             | 132-byte `rivr_met_ble_payload_t`; BLE-only (TTL=1, never LoRa-relayed) |
 
-Packet type 0 and values 11–255 are reserved. Unrecognised types are forwarded
+Packet type 0 and values 12–255 are reserved. Unrecognised types are forwarded
 unchanged (relay nodes do not inspect payload beyond the common header).
 
 ---

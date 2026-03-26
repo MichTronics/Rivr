@@ -208,20 +208,22 @@ Byte offset  Field          Type    Notes
 ───────────  ─────────────  ──────  ───────────────────────────────────────
 0–1          magic          u16 LE  0x5256 = "RV"
 2            version        u8      1
-3            pkt_type       u8      PKT_CHAT=1, BEACON=2, … PROG_PUSH=7, TELEMETRY=8, MAILBOX=9, ALERT=10
-4            flags          u8      PKT_FLAG_RELAY=0x02, FALLBACK=0x04
+3            pkt_type       u8      PKT_CHAT=1, BEACON=2, … PROG_PUSH=7, TELEMETRY=8, MAILBOX=9, ALERT=10, METRICS=11
+4            flags          u8      PKT_FLAG_ACK_REQ=0x01, RELAY=0x02, FALLBACK=0x04
 5            ttl            u8      Default 7; decremented each hop
 6            hop            u8      0 at origin; incremented each hop
 7–8          net_id         u16 LE  Network discriminator
 9–12         src_id         u32 LE  Sender unique node ID
 13–16        dst_id         u32 LE  0 = broadcast
-17–20        seq            u32 LE  Per-source monotonic counter
-21           payload_len    u8      0–231 bytes
-22…          payload        bytes   Application data
+17–18        seq            u16 LE  Per-source monotonic counter
+19–20        pkt_id         u16 LE  Per-injection deduplication key
+21           payload_len    u8      0–230 bytes
+22           loop_guard     u8      OR-accumulating relay fingerprint (anti-loop)
+23…          payload        bytes   Application data
 +payload+0   CRC low        u8      CRC-16/CCITT (init=0xFFFF, poly=0x1021)
 +payload+1   CRC high       u8
 ───────────────────────────────────────────────────────────────────────────
-Minimum frame = 24 bytes (0 payload); maximum = 255 bytes
+Minimum frame = 25 bytes (0 payload); maximum = 255 bytes (230 payload)
 ```
 
 ---
@@ -246,7 +248,8 @@ Incoming frame
     │
     ▼
 ③ EU868 duty-cycle hard cap (all builds)
-   ─ 36 s/hour (1 %) sliding window, no override
+   ─ 360 s/hour (10 %) sliding window by default (DC_DUTY_PCT_X10=100)
+   ─ Configurable; 1 % (36 s/hour) available via DC_DUTY_PCT_X10=10
    ─ duty_blocked++ when blocked
     │
     ▼

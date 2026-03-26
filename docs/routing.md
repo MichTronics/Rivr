@@ -51,7 +51,7 @@ TELEMETRY, ALERT).
 
 ### How it works
 
-1. When a packet is received the node checks its **dedupe ring** — a 64-entry
+1. When a packet is received the node checks its **dedupe ring** — a 32-entry
    circular buffer of `(src_id, pkt_id)` pairs.  If the pair is already
    present the packet is silently dropped.
 2. If TTL > 0: decrement TTL, add `(src_id, pkt_id)` to the dedupe ring,
