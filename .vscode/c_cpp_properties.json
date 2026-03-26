@@ -365,7 +365,7 @@
                 "SOC_MMU_PAGE_SIZE=CONFIG_MMU_PAGE_SIZE",
                 "IDF_VER=\"5.5.0\"",
                 "ESP_PLATFORM",
-                "RIVR_GIT_SHA=\"3d11a7f3\"",
+                "RIVR_GIT_SHA=\"b55fccf2\"",
                 "PLATFORMIO=60119",
                 "ARDUINO_ESP32_DEV",
                 "RIVR_SIM_MODE=1",

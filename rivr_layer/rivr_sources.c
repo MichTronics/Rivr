@@ -151,8 +151,7 @@ uint32_t sources_rf_rx_drain(void)
         rivr_pkt_hdr_t pkt_hdr;
         const uint8_t *payload_ptr = NULL;
         if (!protocol_decode(frame.data, frame.len, &pkt_hdr, &payload_ptr)) {
-            /* Diagnose failure reason so we can distinguish foreign LoRa
-             * devices (bad magic) from corrupted RIVR frames (CRC fail). */
+            /* Diagnose failure reason. */
             const char *why;
             if (frame.len < RIVR_PKT_MIN_FRAME) {
                 why = "too short";
@@ -160,16 +159,26 @@ uint32_t sources_rf_rx_drain(void)
                 uint16_t m = (uint16_t)(frame.data[0]
                                        | ((uint16_t)frame.data[1] << 8));
                 if (m != RIVR_MAGIC) {
-                    why = "bad magic (foreign device?)";
+                    why = "bad magic";
+                } else if (frame.data[2] != RIVR_PROTO_VER) {
+                    why = "version mismatch";
                 } else {
-                    uint8_t pl   = frame.data[21];   /* payload_len byte */
+                    uint8_t pl   = frame.data[21];
                     uint8_t need = (uint8_t)(RIVR_PKT_HDR_LEN + pl
                                             + RIVR_PKT_CRC_LEN);
                     why = (frame.len < need) ? "length mismatch" : "CRC fail";
                 }
             }
-            ESP_LOGW(TAG, "rf_rx: invalid frame (len=%u rssi=%d) – %s",
-                     frame.len, frame.rssi_dbm, why);
+            /* Print first 8 bytes as hex to ease diagnosis. */
+            uint8_t n = frame.len < 8u ? frame.len : 8u;
+            char hexbuf[25] = {0};
+            for (uint8_t hi = 0; hi < n; hi++) {
+                hexbuf[hi*3+0] = "0123456789ABCDEF"[frame.data[hi] >> 4];
+                hexbuf[hi*3+1] = "0123456789ABCDEF"[frame.data[hi] & 0xF];
+                hexbuf[hi*3+2] = ' ';
+            }
+            RIVR_LOGW(TAG, "rf_rx: invalid frame (len=%u rssi=%d) – %s | hdr: %s",
+                     frame.len, frame.rssi_dbm, why, hexbuf);
             g_rivr_metrics.rx_decode_fail++;
             continue;
         }
