@@ -57,6 +57,9 @@
 #include <stdlib.h>   /* strtoul */
 
 #include "driver/uart.h"
+#ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#  include "driver/usb_serial_jtag.h"
+#endif
 #include "esp_log.h"
 #include "esp_system.h"        /* esp_restart()  */
 #include "freertos/FreeRTOS.h" /* vTaskDelay()   */
@@ -80,6 +83,15 @@
 #define TAG              "CLI"
 #define CLI_UART_PORT    UART_NUM_0
 #define CLI_RX_BUF      512u    /**< UART RX ring-buffer size (bytes)        */
+
+/* On boards with a native USB_SERIAL_JTAG port (e.g. XIAO ESP32S3) the
+ * primary console is USB_SERIAL_JTAG; use the matching non-blocking read.
+ * All other boards keep the uart_read_bytes() path.                         */
+#ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#  define CLI_READ_BYTE(buf)  usb_serial_jtag_read_bytes((buf), 1, 0)
+#else
+#  define CLI_READ_BYTE(buf)  uart_read_bytes(CLI_UART_PORT, (buf), 1, 0)
+#endif
 #define CLI_LINE_MAX     128u   /**< Max input line length including NUL      */
 
 /* Maximum text payload that fits in a single PKT_CHAT frame.                 */
@@ -102,8 +114,11 @@ static void cli_print_prompt(void);
 
 void rivr_cli_init(void)
 {
+#ifndef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     /* Install the interrupt-driven UART driver so uart_read_bytes() works in
-     * rivr_cli_poll().  Check first — SIM mode may have already installed it. */
+     * rivr_cli_poll().  Check first — SIM mode may have already installed it.
+     * Skipped for USB_SERIAL_JTAG console builds (e.g. XIAO ESP32S3): ESP-IDF
+     * startup installs that driver automatically; adding it again would assert. */
     if (!uart_is_driver_installed(CLI_UART_PORT)) {
         const uart_config_t cfg = {
             .baud_rate           = 115200,
@@ -119,6 +134,7 @@ void rivr_cli_init(void)
                                              (int)CLI_RX_BUF, 0,
                                              0, NULL, 0));
     }
+#endif /* CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG */
 
     /* Boot banner */
     printf("\r\n"
@@ -140,7 +156,7 @@ void rivr_cli_poll(void)
     uint8_t ch;
 
     /* Drain all available bytes until the RX FIFO is empty.                  */
-    while (uart_read_bytes(CLI_UART_PORT, &ch, 1, 0) == 1) {
+    while (CLI_READ_BYTE(&ch) == 1) {
 
         if (ch == '\n' || ch == '\r') {
             /* ── End of line: execute command ── */
