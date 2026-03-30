@@ -1,0 +1,22 @@
+# sdkconfig.xiao_usb_console — USB_SERIAL_JTAG console fragment for XIAO ESP32S3
+#
+# The Seeed XIAO ESP32S3 has no USB-to-UART bridge chip.  Its USB-C port
+# connects directly to the ESP32-S3 native USB_SERIAL_JTAG peripheral.
+# Keeping the default UART0 console means log output and CLI input would
+# require external wiring to GPIO43/44 — not useful for end-users.
+#
+# This fragment:
+#   • switches the primary ESP-IDF console from UART0 to USB_SERIAL_JTAG
+#   • disables the UART secondary mirror (no longer needed)
+#
+# Applied via SDKCONFIG_DEFAULTS in the seeed_xiao_sx1262 PlatformIO envs.
+# After applying, `rivr_cli.c` reads input via usb_serial_jtag_read_bytes()
+# (guarded by CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG) instead of uart_read_bytes().
+
+# Switch primary console to USB_SERIAL_JTAG
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set
+
+# No secondary mirror needed — USB_SERIAL_JTAG is the only serial port on XIAO
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+# CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG is not set
