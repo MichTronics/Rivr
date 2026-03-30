@@ -377,7 +377,7 @@
                 "SOC_MMU_PAGE_SIZE=CONFIG_MMU_PAGE_SIZE",
                 "IDF_VER=\"5.5.0\"",
                 "ESP_PLATFORM",
-                "RIVR_GIT_SHA=\"2637979a\"",
+                "RIVR_GIT_SHA=\"5a8d73d5\"",
                 "PLATFORMIO=60119",
                 "ARDUINO_XIAO_ESP32S3",
                 "BOARD_HAS_PSRAM",

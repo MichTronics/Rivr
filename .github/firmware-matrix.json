@@ -106,6 +106,21 @@
       "rust_target": "xtensa-esp32s3-espidf"
     },
     {
+      "pio_env": "client_seeed_xiao_sx1262",
+      "artifact": "client_seeed_xiao_sx1262",
+      "rust_target": "xtensa-esp32s3-espidf"
+    },
+    {
+      "pio_env": "client_seeed_xiao_sx1262_ble",
+      "artifact": "client_seeed_xiao_sx1262_ble",
+      "rust_target": "xtensa-esp32s3-espidf"
+    },
+    {
+      "pio_env": "repeater_seeed_xiao_sx1262",
+      "artifact": "relay_seeed_xiao_sx1262",
+      "rust_target": "xtensa-esp32s3-espidf"
+    },
+    {
       "pio_env": "client_heltec_t114",
       "artifact": "client_heltec_t114",
       "rust_target": "thumbv7em-none-eabihf"
