@@ -57,7 +57,6 @@
 #include <stdlib.h>   /* strtoul */
 
 #include <unistd.h>   /* read(), STDIN_FILENO */
-#include <fcntl.h>    /* fcntl(), O_NONBLOCK  */
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_system.h"        /* esp_restart()  */
@@ -121,14 +120,22 @@ static void cli_print_prompt(void);
 void rivr_cli_init(void)
 {
 #ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-    /* USB_SERIAL_JTAG console: ESP-IDF initialises the driver via its internal
-     * VFS path.  We must NOT call usb_serial_jtag_driver_install() here.
-     * Instead make stdin non-blocking so CLI_READ_BYTE (read(STDIN_FILENO))
-     * returns immediately when no bytes are waiting.                         */
-    {
-        int fl = fcntl(STDIN_FILENO, F_GETFL, 0);
-        if (fl >= 0) { fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK); }
-    }
+    /* USB_SERIAL_JTAG console: ESP-IDF initialises the console via its
+     * internal VFS path (usb_serial_jtag_vfs_use_nonblocking).
+     * We must NOT call usb_serial_jtag_driver_install() here, and we must
+     * NOT set O_NONBLOCK on stdin:
+     *
+     * With O_NONBLOCK, the VFS skips the hardware-FIFO pre-fetch and falls
+     * through to usb_serial_jtag_get_read_bytes_available(), which always
+     * returns 0 when the interrupt-driven driver is not installed.  This
+     * means read(STDIN_FILENO) always returns -1 and no typed input is
+     * ever received.
+     *
+     * Without O_NONBLOCK, the VFS calls usb_serial_jtag_rx_char_no_driver()
+     * which reads the hardware FIFO directly and returns NONE (-1) when
+     * empty — so it is effectively non-blocking anyway.                      */
+    /* nothing to do */
+    (void)0;
 #else
     /* Install the interrupt-driven UART driver so uart_read_bytes() works in
      * rivr_cli_poll().  Check first — SIM mode may have already installed it. */
