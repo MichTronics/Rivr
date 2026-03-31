@@ -56,10 +56,9 @@
 #include <stddef.h>
 #include <stdlib.h>   /* strtoul */
 
+#include <unistd.h>   /* read(), STDIN_FILENO */
+#include <fcntl.h>    /* fcntl(), O_NONBLOCK  */
 #include "driver/uart.h"
-#ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-#  include "driver/usb_serial_jtag.h"
-#endif
 #include "esp_log.h"
 #include "esp_system.h"        /* esp_restart()  */
 #include "freertos/FreeRTOS.h" /* vTaskDelay()   */
@@ -84,11 +83,16 @@
 #define CLI_UART_PORT    UART_NUM_0
 #define CLI_RX_BUF      512u    /**< UART RX ring-buffer size (bytes)        */
 
-/* On boards with a native USB_SERIAL_JTAG port (e.g. XIAO ESP32S3) the
- * primary console is USB_SERIAL_JTAG; use the matching non-blocking read.
- * All other boards keep the uart_read_bytes() path.                         */
+/* On boards with a native USB_SERIAL_JTAG console (e.g. XIAO ESP32S3),
+ * esp-idf initialises the console via its internal VFS path and does NOT
+ * call usb_serial_jtag_driver_install().  Calling usb_serial_jtag_read_bytes()
+ * without that install dereferences a NULL driver handle → panic.
+ *
+ * Solution (same approach as MeshCore / Meshtastic): use the POSIX VFS layer
+ * read(STDIN_FILENO) which works transparently for both UART and USB_SERIAL_JTAG
+ * after stdin is made non-blocking in rivr_cli_init().                      */
 #ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-#  define CLI_READ_BYTE(buf)  usb_serial_jtag_read_bytes((buf), 1, 0)
+#  define CLI_READ_BYTE(buf)  (read(STDIN_FILENO, (buf), 1) > 0 ? 1 : 0)
 #else
 #  define CLI_READ_BYTE(buf)  uart_read_bytes(CLI_UART_PORT, (buf), 1, 0)
 #endif
@@ -105,7 +109,9 @@ static uint8_t s_pos = 0u;           /**< Write cursor inside s_buf          */
 /* ─── Forward declarations ───────────────────────────────────────────────── */
 
 static void cli_handle_line(void);
+#if RIVR_ROLE_CLIENT
 static void cli_enqueue_chat(const char *msg, size_t len);
+#endif
 static void cli_print_prompt(void);
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -114,11 +120,18 @@ static void cli_print_prompt(void);
 
 void rivr_cli_init(void)
 {
-#ifndef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    /* USB_SERIAL_JTAG console: ESP-IDF initialises the driver via its internal
+     * VFS path.  We must NOT call usb_serial_jtag_driver_install() here.
+     * Instead make stdin non-blocking so CLI_READ_BYTE (read(STDIN_FILENO))
+     * returns immediately when no bytes are waiting.                         */
+    {
+        int fl = fcntl(STDIN_FILENO, F_GETFL, 0);
+        if (fl >= 0) { fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK); }
+    }
+#else
     /* Install the interrupt-driven UART driver so uart_read_bytes() works in
-     * rivr_cli_poll().  Check first — SIM mode may have already installed it.
-     * Skipped for USB_SERIAL_JTAG console builds (e.g. XIAO ESP32S3): ESP-IDF
-     * startup installs that driver automatically; adding it again would assert. */
+     * rivr_cli_poll().  Check first — SIM mode may have already installed it. */
     if (!uart_is_driver_installed(CLI_UART_PORT)) {
         const uart_config_t cfg = {
             .baud_rate           = 115200,
