@@ -79,11 +79,11 @@
 
 /* ── On-board SSD1306 OLED ────────────────────────────────────────────────
  * Non-default I²C pins (SDA=18, SCL=17); OLED RST on GPIO21.               */
-#ifndef PIN_OLED_SDA
-#  define PIN_OLED_SDA  18
+#ifndef PIN_DISPLAY_SDA
+#  define PIN_DISPLAY_SDA  18
 #endif
-#ifndef PIN_OLED_SCL
-#  define PIN_OLED_SCL  17
+#ifndef PIN_DISPLAY_SCL
+#  define PIN_DISPLAY_SCL  17
 #endif
 #ifndef PIN_OLED_RESET
 #  define PIN_OLED_RESET 21
