@@ -47,7 +47,7 @@
  * idempotent (safe to call in a future unified init path).
  */
 
-#if RIVR_ROLE_CLIENT
+#if RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
 
 #include "rivr_cli.h"
 
@@ -190,6 +190,7 @@ void rivr_cli_poll(void)
     }
 }
 
+#if RIVR_ROLE_CLIENT
 void rivr_cli_on_chat_rx(uint32_t src_id, const uint8_t *payload, uint8_t len)
 {
     /* Suppress self-echo: when the repeater relays our own CHAT frame back
@@ -212,6 +213,7 @@ void rivr_cli_on_chat_rx(uint32_t src_id, const uint8_t *payload, uint8_t len)
     /* Re-print the prompt so the user sees where to type next.              */
     cli_print_prompt();
 }
+#endif /* RIVR_ROLE_CLIENT */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Private helpers
@@ -248,8 +250,10 @@ static void cli_handle_line(void)
     /* ── "help" ── */
     if (strncmp(p, "help", 4u) == 0 && (p[4] == '\0' || p[4] == ' ')) {
         printf("Commands:\r\n"
+#if RIVR_ROLE_CLIENT
                "  chat <message>        broadcast text to the mesh\r\n"
                "  send <message>        alias for chat\r\n"
+#endif
                "  id                    print node ID, callsign and net ID\r\n"
                "  info                  print build info (env, sha, radio profile)\r\n"
                "  status                role, node ID, routing snapshot, loop-guard drops\r\n"
@@ -341,6 +345,7 @@ static void cli_handle_line(void)
         return;
     }
 
+#if RIVR_ROLE_CLIENT
     /* ── "chat <message>" ── */
     if (strncmp(p, "chat", 4u) == 0 && (p[4] == ' ' || p[4] == '\0')) {
         char *msg = p + 4;
@@ -354,6 +359,7 @@ static void cli_handle_line(void)
         cli_enqueue_chat(msg, strlen(msg));
         return;
     }
+#endif /* RIVR_ROLE_CLIENT */
 
     /* ── "info" ── */
     if (strncmp(p, "info", 4u) == 0 && (p[4] == '\0' || p[4] == ' ')) {
@@ -575,6 +581,7 @@ static void cli_handle_line(void)
 
     /* ── Aliases for convenience / discoverability ──────────────────────── */
 
+#if RIVR_ROLE_CLIENT
     /* "send <message>" — alias for "chat <message>" */
     if (strncmp(p, "send", 4u) == 0 && (p[4] == ' ' || p[4] == '\0')) {
         char *msg = p + 4;
@@ -587,6 +594,7 @@ static void cli_handle_line(void)
         cli_enqueue_chat(msg, strlen(msg));
         return;
     }
+#endif /* RIVR_ROLE_CLIENT */
 
     /* "peers" — alias for "neighbors" */
     if (strncmp(p, "peers", 5u) == 0 && (p[5] == '\0' || p[5] == ' ')) {
@@ -654,6 +662,7 @@ static void cli_handle_line(void)
     fflush(stdout);
 }
 
+#if RIVR_ROLE_CLIENT
 /**
  * @brief Encode and enqueue a PKT_CHAT broadcast frame.
  *
@@ -723,5 +732,6 @@ static void cli_enqueue_chat(const char *msg, size_t len)
     printf("TX CHAT: %.*s\r\n", (int)len, msg);
     fflush(stdout);
 }
-
 #endif /* RIVR_ROLE_CLIENT */
+
+#endif /* RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY */
