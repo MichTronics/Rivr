@@ -86,12 +86,17 @@
 /* ── On-board SSD1306 OLED ────────────────────────────────────────────────
  * The I²C bus uses SDA=17, SCL=18 — these override the defaults in
  * display/display.h which assume SDA=21, SCL=22.
+ * RST_OLED is GPIO 21 (from pins_arduino.h / Heltec V3 board definition).
+ * It must be pulsed LOW→HIGH before the SSD1306 will respond to I2C.
  * FEATURE_DISPLAY=1 enables the OLED path in display.c.                    */
 #ifndef PIN_DISPLAY_SDA
 #  define PIN_DISPLAY_SDA 17
 #endif
 #ifndef PIN_DISPLAY_SCL
 #  define PIN_DISPLAY_SCL 18
+#endif
+#ifndef PIN_DISPLAY_RST
+#  define PIN_DISPLAY_RST 21
 #endif
 #ifndef FEATURE_DISPLAY
 #  define FEATURE_DISPLAY 1
