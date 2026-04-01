@@ -4,11 +4,7 @@
  *
  * Files like rivr_cli.c and rivr_sources.c include this header for CLI serial
  * I/O on ESP32.  On nRF52840 the Arduino Serial object handles UART; these
- * stubs keep the include-headers compiling without errors while making all
- * UART driver operations no-ops.
- *
- * The CLI and UART serial source drain will be non-functional on nRF52 with
- * these stubs.  A future revision may provide a real Arduino Serial backend.
+ * shims bridge the ESP-IDF style API to the Arduino USB CDC serial port.
  */
 
 #ifndef RIVR_COMPAT_DRIVER_UART_H
@@ -21,6 +17,12 @@
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#if defined(RIVR_PLATFORM_NRF52840)
+bool rivr_arduino_uart_driver_ready(void);
+int  rivr_arduino_uart_read(void *buf, uint32_t length);
+int  rivr_arduino_uart_write(const void *src, size_t size);
 #endif
 
 /* ── UART port numbers ───────────────────────────────────────────────────── */
@@ -51,7 +53,11 @@ typedef struct {
 static inline bool uart_is_driver_installed(uart_port_t port)
 {
     (void)port;
+#if defined(RIVR_PLATFORM_NRF52840)
+    return rivr_arduino_uart_driver_ready();
+#else
     return false;
+#endif
 }
 
 static inline esp_err_t uart_param_config(uart_port_t port,
@@ -82,16 +88,26 @@ static inline int uart_read_bytes(uart_port_t port,
                                    uint32_t length,
                                    uint32_t ticks_to_wait)
 {
-    (void)port; (void)buf; (void)length; (void)ticks_to_wait;
+    (void)port; (void)ticks_to_wait;
+#if defined(RIVR_PLATFORM_NRF52840)
+    return rivr_arduino_uart_read(buf, length);
+#else
+    (void)buf; (void)length;
     return 0;
+#endif
 }
 
 static inline esp_err_t uart_write_bytes(uart_port_t port,
                                           const void *src,
                                           size_t size)
 {
-    (void)port; (void)src; (void)size;
+    (void)port;
+#if defined(RIVR_PLATFORM_NRF52840)
+    return (esp_err_t)rivr_arduino_uart_write(src, size);
+#else
+    (void)src; (void)size;
     return (esp_err_t)size;
+#endif
 }
 
 static inline esp_err_t uart_driver_delete(uart_port_t port)

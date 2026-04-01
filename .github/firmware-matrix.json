@@ -149,6 +149,21 @@
       "pio_env": "repeater_seeed_t1000_e",
       "artifact": "relay_seeed_t1000_e",
       "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "client_rak4631",
+      "artifact": "client_rak4631",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "client_rak4631_ble",
+      "artifact": "client_rak4631_ble",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "repeater_rak4631",
+      "artifact": "relay_rak4631",
+      "rust_target": "thumbv7em-none-eabihf"
     }
   ]
 }

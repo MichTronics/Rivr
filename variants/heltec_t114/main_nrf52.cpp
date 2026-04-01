@@ -52,6 +52,7 @@ extern "C" {
 #include "firmware_core/rivr_log.h"
 #include "firmware_core/rivr_ota.h"
 #include "firmware_core/build_info.h"
+#include "firmware_core/display/display.h"
 #include "firmware_core/rivr_panic.h"
 #include "firmware_core/rivr_policy.h"
 #include "firmware_core/opfwd_suppress.h"
@@ -81,6 +82,118 @@ extern "C" {
 /* ── nRF52840 FICR device ID registers (factory-programmed unique ID) ────── */
 #define NRF52_FICR_DEVICEID0  (*(volatile uint32_t *)0x10000060UL)
 #define NRF52_FICR_DEVICEID1  (*(volatile uint32_t *)0x10000064UL)
+
+extern "C" bool rivr_arduino_uart_driver_ready(void)
+{
+    return true;
+}
+
+extern "C" int rivr_arduino_uart_read(void *buf, uint32_t length)
+{
+    if (!buf || length == 0u) return 0;
+    uint8_t *dst = static_cast<uint8_t *>(buf);
+    uint32_t count = 0u;
+    while (count < length && Serial.available() > 0) {
+        int ch = Serial.read();
+        if (ch < 0) break;
+        dst[count++] = (uint8_t)ch;
+    }
+    return (int)count;
+}
+
+extern "C" int rivr_arduino_uart_write(const void *src, size_t size)
+{
+    if (!src || size == 0u) return 0;
+    return (int)Serial.write((const uint8_t *)src, size);
+}
+
+static void start_display_task(void)
+{
+    display_stats_t boot_stats;
+    memset(&boot_stats, 0, sizeof(boot_stats));
+    boot_stats.node_id = g_my_node_id;
+    boot_stats.net_id  = g_net_id;
+    strncpy(boot_stats.callsign, g_callsign, sizeof(boot_stats.callsign) - 1u);
+    display_task_start(&boot_stats);
+}
+
+static void publish_display_stats(uint32_t now_ms)
+{
+#if FEATURE_DISPLAY
+    static display_stats_t disp;
+    static bool initialized = false;
+    if (!initialized) {
+        memset(&disp, 0, sizeof(disp));
+        initialized = true;
+    }
+
+    disp.node_id  = g_my_node_id;
+    disp.net_id   = g_net_id;
+    strncpy(disp.callsign, g_callsign, sizeof(disp.callsign) - 1u);
+    disp.callsign[sizeof(disp.callsign) - 1u] = '\0';
+    disp.uptime_s = now_ms / 1000u;
+    disp.ble_active = rivr_ble_is_active();
+    disp.ble_connected = rivr_ble_is_connected();
+    disp.ble_paired = rivr_ble_has_bond();
+    disp.ble_passkey = rivr_ble_passkey();
+    disp.rssi_inst_dbm = g_last_rssi_dbm;
+    disp.rssi_dbm = g_last_rssi_dbm;
+    disp.snr_db = g_last_snr_db;
+    disp.rx_count = g_rx_frame_count;
+    disp.tx_count = g_tx_frame_count;
+    disp.neighbor_count = routing_neighbor_count(&g_neighbor_table, now_ms);
+
+    uint8_t slot = 0u;
+    for (uint8_t ni = 0u; ni < NEIGHBOR_TABLE_SIZE && slot < DISPLAY_NEIGHBOR_MAX; ni++) {
+        const neighbor_entry_t *ne = routing_neighbor_get(&g_neighbor_table, ni);
+        if (!ne) continue;
+        uint32_t age_ms = now_ms - ne->last_seen_ms;
+        if (age_ms > NEIGHBOR_EXPIRY_MS) continue;
+        disp.neighbors[slot].rssi_dbm = (int16_t)ne->rssi_dbm;
+        disp.neighbors[slot].hop_count = ne->hop_count;
+        disp.neighbors[slot].age_s = age_ms / 1000u;
+        disp.neighbors[slot].valid = true;
+        if (ne->callsign[0] != '\0') {
+            strncpy(disp.neighbors[slot].callsign, ne->callsign,
+                    sizeof(disp.neighbors[slot].callsign) - 1u);
+            disp.neighbors[slot].callsign[
+                sizeof(disp.neighbors[slot].callsign) - 1u] = '\0';
+        } else {
+            snprintf(disp.neighbors[slot].callsign,
+                     sizeof(disp.neighbors[slot].callsign),
+                     "%06lX",
+                     (unsigned long)(ne->node_id & 0xFFFFFFu));
+        }
+        slot++;
+    }
+    for (; slot < DISPLAY_NEIGHBOR_MAX; slot++) {
+        disp.neighbors[slot].valid = false;
+        disp.neighbors[slot].callsign[0] = '\0';
+    }
+
+    disp.route_count = route_cache_count(&g_route_cache, now_ms);
+    disp.pending_count = g_pending_queue.count;
+    disp.dc_used_pct_x10 = (DC_BUDGET_US > 0u)
+        ? (uint16_t)(g_dc.used_us * 1000u / DC_BUDGET_US) : 0u;
+    disp.dc_backoff_ms = 0u;
+    disp.vm_cycles = g_vm_total_cycles;
+    disp.error_code = g_vm_last_error;
+    disp.last_event[0] = '\0';
+
+    fabric_debug_t fab_dbg;
+    rivr_fabric_get_debug(now_ms, &fab_dbg);
+    disp.fabric_score = fab_dbg.score;
+    disp.fabric_rx_per_s_x100 = fab_dbg.rx_per_s_x100;
+    disp.fabric_blocked_per_s_x100 = fab_dbg.blocked_per_s_x100;
+    disp.fabric_fail_per_s_x100 = fab_dbg.fail_per_s_x100;
+    disp.fabric_relay_drop = fab_dbg.relay_drop_total;
+    disp.fabric_relay_delay = fab_dbg.relay_delay_total;
+
+    display_post_stats(&disp);
+#else
+    (void)now_ms;
+#endif
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * TX drain helper
@@ -196,6 +309,7 @@ static void rivr_main_task(void *pvParameters)
 
     /* ── 4. Boot banner ──────────────────────────────────────────────────── */
     build_info_print_banner();
+    start_display_task();
 
     /* ── 5. Role-specific init ───────────────────────────────────────────── */
 #if RIVR_ROLE_CLIENT
@@ -282,6 +396,7 @@ static void rivr_main_task(void *pvParameters)
             fflush(stdout);
         }
 
+        publish_display_stats(now);
         platform_led_toggle();
         loop_count++;
         vTaskDelay(pdMS_TO_TICKS(1));

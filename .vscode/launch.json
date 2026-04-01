@@ -12,32 +12,35 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug",
-            "executable": "/home/kali/source/Rivr/.pio/build/client_seeed_xiao_sx1262/firmware.elf",
-            "projectEnvName": "client_seeed_xiao_sx1262",
-            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
+            "executable": "/home/kali/source/Rivr/.pio/build/client_rak4631/firmware.elf",
+            "projectEnvName": "client_rak4631",
+            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-gccarmnoneeabi/bin",
             "internalConsoleOptions": "openOnSessionStart",
+            "svdPath": "/home/kali/.platformio/platforms/nordicnrf52/misc/svd/nrf52840.svd",
             "preLaunchTask": {
                 "type": "PlatformIO",
-                "task": "Pre-Debug (client_seeed_xiao_sx1262)"
+                "task": "Pre-Debug (client_rak4631)"
             }
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (skip Pre-Debug)",
-            "executable": "/home/kali/source/Rivr/.pio/build/client_seeed_xiao_sx1262/firmware.elf",
-            "projectEnvName": "client_seeed_xiao_sx1262",
-            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
-            "internalConsoleOptions": "openOnSessionStart"
+            "executable": "/home/kali/source/Rivr/.pio/build/client_rak4631/firmware.elf",
+            "projectEnvName": "client_rak4631",
+            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-gccarmnoneeabi/bin",
+            "internalConsoleOptions": "openOnSessionStart",
+            "svdPath": "/home/kali/.platformio/platforms/nordicnrf52/misc/svd/nrf52840.svd"
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (without uploading)",
-            "executable": "/home/kali/source/Rivr/.pio/build/client_seeed_xiao_sx1262/firmware.elf",
-            "projectEnvName": "client_seeed_xiao_sx1262",
-            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
+            "executable": "/home/kali/source/Rivr/.pio/build/client_rak4631/firmware.elf",
+            "projectEnvName": "client_rak4631",
+            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-gccarmnoneeabi/bin",
             "internalConsoleOptions": "openOnSessionStart",
+            "svdPath": "/home/kali/.platformio/platforms/nordicnrf52/misc/svd/nrf52840.svd",
             "loadMode": "manual"
         }
     ]
