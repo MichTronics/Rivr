@@ -462,7 +462,7 @@ def package_rp2040(build_dir: Path, pkg_dir: Path, variant: str) -> None:
     print(f"\n\u2713 Package ready: {zip_path}\n")
 
 
-
+def main() -> None:
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <pio_env> <artifact_name>", file=sys.stderr)
         sys.exit(1)
