@@ -233,9 +233,17 @@ static void rivr_ble_gatts_event(esp_gatts_cb_event_t event, esp_gatt_if_t gatts
         rivr_ble_service_set_connection(gatts_if, param->connect.conn_id);
 #if RIVR_BLE_PASSKEY != 0
         s_pending_conn_handle = param->connect.conn_id;
-        RIVR_LOGI(TAG, "BLE connected (conn_id=0x%04x) — requesting MITM encryption",
-                  (unsigned)s_pending_conn_handle);
-        esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
+        if (rivr_ble_is_peer_bonded(param->connect.remote_bda)) {
+            /* Already bonded — reuse stored LTK; no new passkey challenge needed. */
+            RIVR_LOGI(TAG, "BLE reconnect from bonded peer (conn_id=0x%04x) — re-encrypting",
+                      (unsigned)s_pending_conn_handle);
+            esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT);
+        } else {
+            /* New peer — full MITM passkey exchange. */
+            RIVR_LOGI(TAG, "BLE new peer connected (conn_id=0x%04x) — requesting MITM encryption",
+                      (unsigned)s_pending_conn_handle);
+            esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
+        }
 #else
         s_conn_handle = param->connect.conn_id;
         RIVR_LOGI(TAG, "BLE connected (conn_id=0x%04x)", (unsigned)s_conn_handle);
@@ -452,6 +460,34 @@ bool rivr_ble_has_bond(void)
     return false;
 #endif
 }
+
+#if RIVR_BLE_PASSKEY != 0
+/**
+ * Returns true if @p bda is already in the Bluedroid bond store.
+ * Used on reconnect to skip MITM re-challenge for a previously paired peer.
+ */
+static bool rivr_ble_is_peer_bonded(const esp_bd_addr_t bda)
+{
+    int dev_num = esp_ble_get_bond_device_num();
+    if (dev_num <= 0) return false;
+
+    esp_ble_bond_dev_t *list = calloc((size_t)dev_num, sizeof(*list));
+    if (!list) return false;
+
+    int count = dev_num;
+    bool found = false;
+    if (esp_ble_get_bond_device_list(&count, list) == ESP_OK) {
+        for (int i = 0; i < count; ++i) {
+            if (memcmp(list[i].bd_addr, bda, sizeof(esp_bd_addr_t)) == 0) {
+                found = true;
+                break;
+            }
+        }
+    }
+    free(list);
+    return found;
+}
+#endif
 
 int rivr_ble_clear_bonds(void)
 {
