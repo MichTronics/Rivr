@@ -8,6 +8,7 @@
         {
             "name": "PlatformIO",
             "includePath": [
+                "/home/kali/.platformio/packages/framework-arduinopico/libraries/LittleFS/src",
                 "/home/kali/.platformio/packages/framework-arduinopico/libraries/Wire/src",
                 "/home/kali/.platformio/packages/framework-arduinopico/libraries/SPI/src",
                 "/home/kali/source/Rivr/variants/waveshare_rp2040_lora_hf/compat",
@@ -126,7 +127,6 @@
                 "/home/kali/.platformio/packages/framework-arduinopico/libraries/KeyboardBLE/src",
                 "/home/kali/.platformio/packages/framework-arduinopico/libraries/KeyboardBT/src",
                 "/home/kali/.platformio/packages/framework-arduinopico/libraries/LEAmDNS/src",
-                "/home/kali/.platformio/packages/framework-arduinopico/libraries/LittleFS/src",
                 "/home/kali/.platformio/packages/framework-arduinopico/libraries/MD5Builder/src",
                 "/home/kali/.platformio/packages/framework-arduinopico/libraries/MIDIUSB/src",
                 "/home/kali/.platformio/packages/framework-arduinopico/libraries/Mouse/src",
@@ -173,6 +173,7 @@
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
+                    "/home/kali/.platformio/packages/framework-arduinopico/libraries/LittleFS/src",
                     "/home/kali/.platformio/packages/framework-arduinopico/libraries/Wire/src",
                     "/home/kali/.platformio/packages/framework-arduinopico/libraries/SPI/src",
                     "/home/kali/source/Rivr/variants/waveshare_rp2040_lora_hf/compat",
@@ -291,7 +292,6 @@
                     "/home/kali/.platformio/packages/framework-arduinopico/libraries/KeyboardBLE/src",
                     "/home/kali/.platformio/packages/framework-arduinopico/libraries/KeyboardBT/src",
                     "/home/kali/.platformio/packages/framework-arduinopico/libraries/LEAmDNS/src",
-                    "/home/kali/.platformio/packages/framework-arduinopico/libraries/LittleFS/src",
                     "/home/kali/.platformio/packages/framework-arduinopico/libraries/MD5Builder/src",
                     "/home/kali/.platformio/packages/framework-arduinopico/libraries/MIDIUSB/src",
                     "/home/kali/.platformio/packages/framework-arduinopico/libraries/Mouse/src",
@@ -337,17 +337,18 @@
                 ]
             },
             "defines": [
-                "RIVR_GIT_SHA=\"a53f73e4\"",
+                "RIVR_GIT_SHA=\"69c9c419\"",
                 "PLATFORMIO=60119",
                 "ARDUINO_WAVESHARE_RP2040_LORA",
                 "ARDUINO_ARCH_RP2040",
                 "USBD_MAX_POWER_MA=500",
+                "DEBUG_RP2040_PORT=Serial",
                 "RIVR_PLATFORM_RP2040=1",
                 "__STDC_FORMAT_MACROS=1",
                 "RF_SPREADING_FACTOR=8",
                 "RF_BANDWIDTH_HZ=62500",
                 "RF_CODING_RATE=8",
-                "RF_TX_POWER_DBM=17",
+                "RF_TX_POWER_DBM=22",
                 "RIVR_RF_FREQ_HZ=869480000",
                 "RIVR_ROLE_CLIENT=1",
                 "RIVR_FABRIC_REPEATER=0",
@@ -444,7 +445,7 @@
                 "F_CPU=133000000L",
                 "BOARD_NAME=\"waveshare_rp2040_lora\"",
                 "PICO_FLASH_SIZE_BYTES=2097152",
-                "FS_START=270528512",
+                "FS_START=270462976",
                 "FS_END=270528512",
                 "FILE_COPY_CONSTRUCTOR_SELECT=FILE_COPY_CONSTRUCTOR_PUBLIC",
                 "USE_UTF8_LONG_NAMES=1",

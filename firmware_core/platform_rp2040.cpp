@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <hardware/watchdog.h>
+#include "nvs_flash.h"
 
 #define TAG "PLATFORM"
 #define SX1262_SPI_FREQ_HZ 2000000UL
@@ -22,6 +23,8 @@ static SPIClassRP2040 &s_lora_spi = SPI1;
 
 void platform_init(void)
 {
+    ESP_ERROR_CHECK(nvs_flash_init());
+
     pinMode(PIN_SX1262_NSS, OUTPUT);
     pinMode(PIN_SX1262_RESET, OUTPUT);
     pinMode(PIN_LED_STATUS, OUTPUT);
@@ -43,6 +46,7 @@ void platform_init(void)
     s_lora_spi.setRX(PIN_SX1262_MISO);
     s_lora_spi.begin(false);
 
+    Serial.printf("[I][%s] LittleFS-backed NVS initialised\r\n", TAG);
     Serial.printf("[I][%s] platform_init done (RP2040)\r\n", TAG);
 }
 
