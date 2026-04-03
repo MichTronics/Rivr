@@ -126,14 +126,23 @@
  * RIVR_ROLE_REPEATER / RIVR_ROLE_GATEWAY are already defined.  In test
  * builds without those flags, defaults to client (600 000 ms).
  */
-#if (defined(RIVR_ROLE_REPEATER) && RIVR_ROLE_REPEATER) || \
-    (defined(RIVR_ROLE_GATEWAY)  && RIVR_ROLE_GATEWAY)
-#  define RIVR_PARAM_BEACON_INTERVAL_MS   300000UL /**< Repeater/gateway: 5 min  */
-#  define RIVR_PARAM_BEACON_JITTER_MS      60000UL /**< Repeater jitter: ±1 min  */
-#else
+#ifndef RIVR_PARAM_BEACON_INTERVAL_MS
+#  if (defined(RIVR_ROLE_REPEATER) && RIVR_ROLE_REPEATER) || \
+       (defined(RIVR_ROLE_GATEWAY)  && RIVR_ROLE_GATEWAY)
+#    define RIVR_PARAM_BEACON_INTERVAL_MS   300000UL /**< Repeater/gateway: 5 min  */
+#  else
 /** Client or unset: conservative 10-minute interval. */
-#  define RIVR_PARAM_BEACON_INTERVAL_MS   600000UL /**< Client: 10 min            */
-#  define RIVR_PARAM_BEACON_JITTER_MS     120000UL /**< Client jitter: ±2 min     */
+#    define RIVR_PARAM_BEACON_INTERVAL_MS   600000UL /**< Client: 10 min            */
+#  endif
+#endif
+
+#ifndef RIVR_PARAM_BEACON_JITTER_MS
+#  if (defined(RIVR_ROLE_REPEATER) && RIVR_ROLE_REPEATER) || \
+       (defined(RIVR_ROLE_GATEWAY)  && RIVR_ROLE_GATEWAY)
+#    define RIVR_PARAM_BEACON_JITTER_MS      60000UL /**< Repeater jitter: ±1 min  */
+#  else
+#    define RIVR_PARAM_BEACON_JITTER_MS     120000UL /**< Client jitter: ±2 min     */
+#  endif
 #endif
 
 #define RIVR_PARAM_CHAT_THROTTLE_MS      2000UL  /**< PKT_CHAT throttle window, ms       */
