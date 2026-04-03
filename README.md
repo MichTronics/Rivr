@@ -210,18 +210,36 @@ See [docs/FLASHING.md](docs/FLASHING.md) for all board variants and wiring table
 
 ## Hardware support
 
+### ESP32 / ESP32-S3 (serial flash)
+
 | Board | Radio | PA | Status |
 |---|---|---|---|
 | ESP32 DevKit + E22-900M30S | SX1262 | +30 dBm ext. | **Supported** |
 | LilyGo LoRa32 v2.1 | SX1276 | +20 dBm onboard | **Supported** |
-| Heltec WiFi LoRa 32 V3 | SX1262 | +22 dBm onboard | Experimental |
 | Heltec WiFi LoRa 32 V2 | SX1276 | +20 dBm onboard | Experimental |
+| Heltec WiFi LoRa 32 V3 | SX1262 | +22 dBm onboard | Experimental |
+| Heltec WiFi LoRa 32 V4 | SX1262 | +17 dBm onboard | Experimental |
 | LilyGo T-Beam v1.1 (SX1262) | SX1262 | +22 dBm onboard | Experimental ⚠ AXP192 |
 | LilyGo T3-S3 | SX1262 | +22 dBm onboard | Experimental |
+| Seeed XIAO ESP32S3 + Wio-SX1262 | SX1262 | +17 dBm onboard | Experimental |
+
+### nRF52840 (DFU — adafruit-nrfutil)
+
+| Board | Radio | PA | Status |
+|---|---|---|---|
+| RAK WisMesh / WisPocket (RAK4631) | SX1262 | +17 dBm onboard | **Supported** |
+| Heltec T114 | SX1262 | +17 dBm onboard | Experimental |
+| Seeed SenseCAP T1000-E | LR1110 | +22 dBm onboard | Experimental |
+
+### RP2040 (UF2 / picotool)
+
+| Board | Radio | PA | Status |
+|---|---|---|---|
+| Waveshare RP2040-LoRa-HF | SX1262 | +22 dBm onboard | **Supported** |
 
 **Supported** = CI-tested and field-validated.
 **Experimental** = compiles and boots; limited field testing.
-Full flash commands and pin-wiring tables: [docs/en/build-guide.md](docs/en/build-guide.md)
+Full flash commands and pin-wiring tables: [docs/FLASHING.md](docs/FLASHING.md)
 
 ---
 

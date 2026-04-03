@@ -22,10 +22,22 @@ All items must be ✅ before pushing the tag.
 
 ## 3. Firmware builds
 
+**ESP32 / ESP32-S3**
 - [ ] `pio run -e client_esp32devkit_e22_900` — builds without warnings
 - [ ] `pio run -e repeater_esp32devkit_e22_900` — builds without warnings
 - [ ] `pio run -e client_lilygo_lora32_v21` — builds without warnings
 - [ ] `pio run -e repeater_lilygo_lora32_v21` — builds without warnings
+
+**nRF52840** *(build Rust lib first: `cargo build -p rivr_core --target thumbv7em-none-eabihf --no-default-features --features ffi --release -Zbuild-std=core,alloc,panic_abort`)*
+- [ ] `pio run -e client_rak4631` — builds without warnings
+- [ ] `pio run -e repeater_rak4631` — builds without warnings
+- [ ] `pio run -e client_heltec_t114` — builds without warnings
+- [ ] `pio run -e client_seeed_t1000_e` — builds without warnings
+
+**RP2040** *(build Rust lib first: `cargo build -p rivr_core --target thumbv6m-none-eabi --no-default-features --features ffi --release -Zbuild-std=core,alloc,panic_abort`)*
+- [ ] `pio run -e client_waveshare_rp2040_lora_hf` — builds without warnings
+- [ ] `pio run -e repeater_waveshare_rp2040_lora_hf` — builds without warnings
+
 - [ ] Binary sizes have not regressed beyond the 5% gate: `make -C tests size_check`
 - [ ] Build is deterministic: `make -C tests determinism_check`
 

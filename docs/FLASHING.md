@@ -13,6 +13,8 @@ Start here if you have hardware in hand and want the fastest path to a working m
 | PlatformIO CLI | 6.x | `pip install platformio` |
 | Rust toolchain | 1.74 | `curl https://sh.rustup.rs -sSf \| sh` |
 | esptool | bundled with PlatformIO | — |
+| adafruit-nrfutil | 0.5.3+ | `pip install adafruit-nrfutil` *(nRF52840 boards only)* |
+| picotool | 1.x | `sudo apt install picotool` *(RP2040 boards only)* |
 
 Plug the board in via USB.  Confirm the device appears:
 
@@ -34,19 +36,39 @@ newgrp dialout
 ## Step 1 — Build the Rust library
 
 The Rust static library must be compiled before the C firmware can link.
+Choose the command for your board's MCU family.
 
 ```bash
 cd ~/Rivr
 
-# Cross-compile for ESP32 (Xtensa LX6, most supported boards):
+# ── ESP32 (Xtensa LX6) — DevKit, LilyGo v2.1, Heltec V2, T-Beam ──────────
 cargo +esp build -p rivr_core --target xtensa-esp32-espidf --features ffi --release
 
-# Cross-compile for ESP32-S3 (Heltec V3, LilyGo T3-S3):
+# ── ESP32-S3 (Xtensa LX7) — Heltec V3/V4, LilyGo T3-S3, Seeed XIAO ────────
 cargo +esp build -p rivr_core --target xtensa-esp32s3-espidf --features ffi --release
+
+# ── nRF52840 (Cortex-M4F) — RAK4631, Heltec T114, Seeed T1000-E ────────────
+cargo build -p rivr_core --target thumbv7em-none-eabihf \
+    --no-default-features --features ffi --release \
+    -Zbuild-std=core,alloc,panic_abort
+
+# ── RP2040 (Cortex-M0+) — Waveshare RP2040-LoRa-HF ─────────────────────────
+cargo build -p rivr_core --target thumbv6m-none-eabi \
+    --no-default-features --features ffi --release \
+    -Zbuild-std=core,alloc,panic_abort
 ```
 
-> **First time?**  Install the Xtensa toolchain once with:
+> **ESP32 / ESP32-S3 first time?**  Install the Xtensa toolchain once with:
 > `cargo install espup && espup install`
+>
+> **nRF52840 / RP2040 first time?**  Install the Rust targets once with:
+> ```bash
+> rustup target add thumbv7em-none-eabihf
+> rustup target add thumbv6m-none-eabi
+> rustup component add rust-src   # needed for -Zbuild-std
+> ```
+> `-Zbuild-std` requires the nightly toolchain (`rustup default nightly`) or a
+> per-project `rust-toolchain.toml` calling `channel = "nightly"`.
 
 ---
 
@@ -129,6 +151,104 @@ pio run -e repeater_lilygo_tbeam_sx1262   -t upload
 pio run -e client_lilygo_t3s3             -t upload
 pio run -e client_lilygo_t3s3_ble         -t upload
 pio run -e repeater_lilygo_t3s3           -t upload
+```
+
+---
+
+### Heltec WiFi LoRa 32 V4 — ESP32-S3, SX1262, OLED
+
+Build the Rust library for ESP32-S3 first (see Step 1).
+
+```bash
+pio run -e client_heltec_lora32_v4        -t upload
+pio run -e client_heltec_lora32_v4_ble    -t upload
+pio run -e repeater_heltec_lora32_v4      -t upload
+```
+
+Connects via native USB (CDC); device appears as `/dev/ttyACM*`.
+
+---
+
+### Seeed XIAO ESP32S3 + Wio-SX1262 — ESP32-S3, SX1262
+
+Build the Rust library for ESP32-S3 first (see Step 1).
+
+```bash
+pio run -e client_seeed_xiao_sx1262       -t upload
+pio run -e client_seeed_xiao_sx1262_ble   -t upload
+pio run -e repeater_seeed_xiao_sx1262     -t upload
+```
+
+Connects via native USB (CDC); device appears as `/dev/ttyACM*`.
+
+---
+
+### RAK WisMesh / WisPocket (RAK4631) — nRF52840, SX1262
+
+Build the Rust library for nRF52840 first (see Step 1 — `thumbv7em-none-eabihf`).
+
+The board uses the Adafruit nRF52 USB bootloader for DFU upload. Plug in via USB.
+
+```bash
+pio run -e client_rak4631                 -t upload
+pio run -e client_rak4631_ble             -t upload
+pio run -e repeater_rak4631               -t upload
+```
+
+> **Bootloader not entered?** Double-tap the RESET button quickly — the LED
+> turns on steadily when the bootloader is active. Device appears as
+> `/dev/ttyACM*`. PlatformIO calls `adafruit-nrfutil` automatically.
+
+---
+
+### Heltec T114 — nRF52840, SX1262, OLED
+
+Build the Rust library for nRF52840 first (see Step 1 — `thumbv7em-none-eabihf`).
+
+```bash
+pio run -e client_heltec_t114             -t upload
+pio run -e client_heltec_t114_ble         -t upload
+pio run -e repeater_heltec_t114           -t upload
+```
+
+> Double-tap RESET to enter the nRF52 bootloader if PlatformIO cannot connect.
+
+---
+
+### Seeed SenseCAP T1000-E — nRF52840, LR1110 ⚠ Experimental
+
+Build the Rust library for nRF52840 first (see Step 1 — `thumbv7em-none-eabihf`).
+
+```bash
+pio run -e client_seeed_t1000_e           -t upload
+pio run -e client_seeed_t1000_e_ble       -t upload
+pio run -e repeater_seeed_t1000_e         -t upload
+```
+
+> This board uses the LR1110 radio via RadioLib. Double-tap RESET to enter the
+> nRF52 bootloader. Tracker GPS functionality is not yet integrated into Rivr.
+
+---
+
+### Waveshare RP2040-LoRa-HF — RP2040, SX1262
+
+Build the Rust library for RP2040 first (see Step 1 — `thumbv6m-none-eabi`).
+
+```bash
+pio run -e client_waveshare_rp2040_lora_hf   -t upload
+pio run -e repeater_waveshare_rp2040_lora_hf -t upload
+```
+
+PlatformIO uses `picotool` for upload. The board must be in BOOTSEL mode:
+hold the **BOOT** button while plugging in USB — it appears as a USB mass
+storage device. PlatformIO enters BOOTSEL mode automatically on most systems.
+
+**Alternative — drag-and-drop UF2:**
+```bash
+# Build the UF2 file without flashing:
+pio run -e client_waveshare_rp2040_lora_hf
+# Then copy the .uf2 from .pio/build/client_waveshare_rp2040_lora_hf/ to
+# the RPI-RP2 mass storage drive.
 ```
 
 ---

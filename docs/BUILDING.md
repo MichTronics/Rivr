@@ -35,7 +35,9 @@
 | Rust          | 1.75+           | `rustup update stable`                           |
 | ESP-IDF       | 5.1             | https://docs.espressif.com/projects/esp-idf/en/  |
 | PlatformIO    | 6.x (optional)  | `pip install platformio`                         |
-| espup         | optional        | For Xtensa cross-compilation target              |
+| espup         | optional        | For Xtensa cross-compilation targets              |
+| adafruit-nrfutil | 0.5.3+       | `pip install adafruit-nrfutil` *(nRF52840 only)* |
+| picotool      | 1.x (optional)  | `sudo apt install picotool` *(RP2040 only)*      |
 
 ---
 
@@ -64,13 +66,45 @@ cargo build --features ffi --release
 # Install Xtensa Rust toolchain once:
 espup install
 
-# Then cross-compile:
+# Cross-compile for ESP32 (Xtensa LX6 — DevKit, LilyGo v2.1, Heltec V2, T-Beam):
 cargo +esp build --target xtensa-esp32-espidf --features ffi --release
 # Library at:  target/xtensa-esp32-espidf/release/librivr_core.a
+
+# Cross-compile for ESP32-S3 (Xtensa LX7 — Heltec V3/V4, LilyGo T3-S3, Seeed XIAO):
+cargo +esp build --target xtensa-esp32s3-espidf --features ffi --release
+# Library at:  target/xtensa-esp32s3-espidf/release/librivr_core.a
 ```
 
 > **Note:** `main/CMakeLists.txt` automatically finds `librivr_core.a` by searching
 > `rivr_core/target/release/` then `rivr_core/target/debug/`. No manual copy needed.
+
+### Cross-compile for nRF52840 (Cortex-M4F — RAK4631, Heltec T114, Seeed T1000-E)
+
+```bash
+# Install the target + rust-src once:
+rustup target add thumbv7em-none-eabihf
+rustup component add rust-src
+
+# Cross-compile (requires nightly for -Zbuild-std):
+cargo build -p rivr_core --target thumbv7em-none-eabihf \
+    --no-default-features --features ffi --release \
+    -Zbuild-std=core,alloc,panic_abort
+# Library at:  target/thumbv7em-none-eabihf/release/librivr_core.a
+```
+
+### Cross-compile for RP2040 (Cortex-M0+ — Waveshare RP2040-LoRa-HF)
+
+```bash
+# Install the target + rust-src once:
+rustup target add thumbv6m-none-eabi
+rustup component add rust-src
+
+# Cross-compile (requires nightly for -Zbuild-std):
+cargo build -p rivr_core --target thumbv6m-none-eabi \
+    --no-default-features --features ffi --release \
+    -Zbuild-std=core,alloc,panic_abort
+# Library at:  target/thumbv6m-none-eabi/release/librivr_core.a
+```
 
 ---
 
