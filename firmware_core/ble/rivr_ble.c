@@ -204,6 +204,10 @@ static void rivr_ble_gap_event(esp_gap_ble_cb_event_t event,
     }
 }
 
+#if RIVR_BLE_PASSKEY != 0
+static bool rivr_ble_is_peer_bonded(const esp_bd_addr_t bda);
+#endif
+
 static void rivr_ble_gatts_event(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
                                  esp_ble_gatts_cb_param_t *param)
 {
