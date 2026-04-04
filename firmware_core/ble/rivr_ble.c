@@ -95,7 +95,12 @@ static esp_ble_adv_params_t s_adv_params = {
     .adv_int_min = 0x100,
     .adv_int_max = 0x100,
     .adv_type = ADV_TYPE_IND,
-    .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
+    /* ESP32-S3/C3/H2 have no factory-programmed public BT address; using
+     * BLE_ADDR_TYPE_PUBLIC on those targets causes the controller to silently
+     * refuse to advertise.  BLE_ADDR_TYPE_RANDOM with a static random address
+     * (set via esp_ble_gap_set_rand_addr before the first adv start) works on
+     * all ESP32 variants. */
+    .own_addr_type = BLE_ADDR_TYPE_RANDOM,
     .channel_map = ADV_CHNL_ALL,
     .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
 };
@@ -426,6 +431,30 @@ void rivr_ble_init(void)
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "esp_bluedroid_enable failed: %s", esp_err_to_name(err));
         return;
+    }
+
+    /* Set a static random BLE address derived from the node ID.
+     * Required when own_addr_type = BLE_ADDR_TYPE_RANDOM: ESP32-S3/C3/H2/C6
+     * have no factory-programmed public BT address in efuse, so PUBLIC fails
+     * silently.  A static random address (top 2 bits = 11) is stable across
+     * reboots (tied to node_id) and visible to scanners on all ESP32 variants. */
+    {
+        esp_bd_addr_t rand_addr;
+        uint32_t id = g_my_node_id;
+        rand_addr[0] = (uint8_t)(id & 0xFFu);
+        rand_addr[1] = (uint8_t)((id >>  8) & 0xFFu);
+        rand_addr[2] = (uint8_t)((id >> 16) & 0xFFu);
+        rand_addr[3] = (uint8_t)((id >> 24) & 0xFFu);
+        rand_addr[4] = 0xABu;
+        rand_addr[5] = 0xC0u;   /* top 2 bits = 11 → static random address */
+        err = esp_ble_gap_set_rand_addr(rand_addr);
+        if (err != ESP_OK) {
+            RIVR_LOGW(TAG, "esp_ble_gap_set_rand_addr failed: %s", esp_err_to_name(err));
+        } else {
+            RIVR_LOGI(TAG, "BLE static random addr: %02X:%02X:%02X:%02X:%02X:%02X",
+                      rand_addr[5], rand_addr[4],
+                      rand_addr[3], rand_addr[2], rand_addr[1], rand_addr[0]);
+        }
     }
 
     rivr_ble_set_tx_power_max();
