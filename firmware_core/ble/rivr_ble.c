@@ -170,11 +170,20 @@ static void rivr_ble_set_tx_power_max(void)
 
 static void rivr_ble_start_adv(void)
 {
-    if (!s_ble_active || !s_stack_ready || !rivr_ble_service_is_ready()) return;
+    if (!s_ble_active || !s_stack_ready || !rivr_ble_service_is_ready()) {
+        RIVR_LOGI(TAG, "adv_start: skip (active=%d stack_ready=%d svc_ready=%d)",
+                  s_ble_active, s_stack_ready, rivr_ble_service_is_ready());
+        return;
+    }
     if (s_conn_handle != 0xFFFFu || s_pending_conn_handle != 0xFFFFu) return;
-    if (s_adv_config_done != 0u) return;
+    if (s_adv_config_done != 0u) {
+        RIVR_LOGI(TAG, "adv_start: skip (adv_config_done=0x%02x — waiting for GAP data callbacks)",
+                  s_adv_config_done);
+        return;
+    }
     if (s_adv_running) return;
 
+    RIVR_LOGI(TAG, "BLE: starting advertising now");
     rivr_ble_clear_adv_retry();
     esp_err_t err = esp_ble_gap_start_advertising(&s_adv_params);
     if (err != ESP_OK) {
@@ -209,12 +218,25 @@ static void rivr_ble_gap_event(esp_gap_ble_cb_event_t event,
                                esp_ble_gap_cb_param_t *param)
 {
     switch (event) {
+    case ESP_GAP_BLE_SET_STATIC_RAND_ADDR_EVT:
+        RIVR_LOGI(TAG, "BLE rand addr committed (status=%d)",
+                  param->set_rand_addr_cmpl.status);
+        break;
+
     case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
+        RIVR_LOGI(TAG, "BLE adv data set complete (status=%d adv_config_done=0x%02x→0x%02x)",
+                  param->adv_data_cmpl.status,
+                  s_adv_config_done,
+                  (uint8_t)(s_adv_config_done & (uint8_t)~ADV_CONFIG_FLAG));
         s_adv_config_done &= (uint8_t)~ADV_CONFIG_FLAG;
         rivr_ble_start_adv();
         break;
 
     case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
+        RIVR_LOGI(TAG, "BLE scan rsp set complete (status=%d adv_config_done=0x%02x→0x%02x)",
+                  param->scan_rsp_data_cmpl.status,
+                  s_adv_config_done,
+                  (uint8_t)(s_adv_config_done & (uint8_t)~SCAN_RSP_CONFIG_FLAG));
         s_adv_config_done &= (uint8_t)~SCAN_RSP_CONFIG_FLAG;
         rivr_ble_start_adv();
         break;
@@ -222,10 +244,11 @@ static void rivr_ble_gap_event(esp_gap_ble_cb_event_t event,
     case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
         s_adv_running = (param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS);
         if (!s_adv_running) {
-            RIVR_LOGW(TAG, "BLE advertising start failed (status=%d)",
+            RIVR_LOGW(TAG, "BLE advertising start FAILED (status=%d)",
                       param->adv_start_cmpl.status);
             rivr_ble_schedule_adv_retry(RIVR_BLE_ADV_RETRY_DELAY_MS);
         } else {
+            RIVR_LOGI(TAG, "BLE advertising started OK — device is now discoverable");
             rivr_ble_clear_adv_retry();
         }
         break;
@@ -325,8 +348,12 @@ static void rivr_ble_gatts_event(esp_gatts_cb_event_t event, esp_gatt_if_t gatts
         }
         rivr_ble_set_device_name();
         s_adv_config_done = ADV_CONFIG_FLAG | SCAN_RSP_CONFIG_FLAG;
-        esp_ble_gap_config_adv_data(&s_adv_data);
-        esp_ble_gap_config_adv_data(&s_scan_rsp_data);
+        {
+            esp_err_t e1 = esp_ble_gap_config_adv_data(&s_adv_data);
+            esp_err_t e2 = esp_ble_gap_config_adv_data(&s_scan_rsp_data);
+            RIVR_LOGI(TAG, "GATTS_REG: adv_data=%s scan_rsp=%s",
+                      esp_err_to_name(e1), esp_err_to_name(e2));
+        }
         break;
 
     case ESP_GATTS_CREAT_ATTR_TAB_EVT:
@@ -433,6 +460,20 @@ void rivr_ble_init(void)
         return;
     }
 
+    rivr_ble_set_tx_power_max();
+
+    err = esp_ble_gatts_register_callback(rivr_ble_gatts_event);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ble_gatts_register_callback failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    err = esp_ble_gap_register_callback(rivr_ble_gap_event);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ble_gap_register_callback failed: %s", esp_err_to_name(err));
+        return;
+    }
+
     /* Set a static random BLE address derived from the node ID.
      * Required when own_addr_type = BLE_ADDR_TYPE_RANDOM: ESP32-S3/C3/H2/C6
      * have no factory-programmed public BT address in efuse, so PUBLIC fails
@@ -441,7 +482,10 @@ void rivr_ble_init(void)
      *
      * esp_bd_addr_t layout: [0] = MSB (shown first in colon notation).
      * The BTM layer validates via (addr[0] & 0xC0) == 0xC0, so the 0xC0 flag
-     * byte MUST be at index [0], not [5]. */
+     * byte MUST be at index [0], not [5].
+     *
+     * Called AFTER esp_ble_gap_register_callback() so the completion event
+     * ESP_GAP_BLE_SET_STATIC_RAND_ADDR_EVT is delivered to our handler. */
     {
         esp_bd_addr_t rand_addr;
         uint32_t id = g_my_node_id;
@@ -455,24 +499,10 @@ void rivr_ble_init(void)
         if (err != ESP_OK) {
             RIVR_LOGW(TAG, "esp_ble_gap_set_rand_addr failed: %s", esp_err_to_name(err));
         } else {
-            RIVR_LOGI(TAG, "BLE static random addr: %02X:%02X:%02X:%02X:%02X:%02X",
+            RIVR_LOGI(TAG, "BLE static random addr queued: %02X:%02X:%02X:%02X:%02X:%02X",
                       rand_addr[0], rand_addr[1],
                       rand_addr[2], rand_addr[3], rand_addr[4], rand_addr[5]);
         }
-    }
-
-    rivr_ble_set_tx_power_max();
-
-    err = esp_ble_gatts_register_callback(rivr_ble_gatts_event);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_ble_gatts_register_callback failed: %s", esp_err_to_name(err));
-        return;
-    }
-
-    err = esp_ble_gap_register_callback(rivr_ble_gap_event);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_ble_gap_register_callback failed: %s", esp_err_to_name(err));
-        return;
     }
 
     err = esp_ble_gatt_set_local_mtu(RIVR_BLE_ATT_PREFERRED_MTU);
