@@ -234,8 +234,8 @@ Offset  Len  Field
 5. Inspect `pkt_type` to route to the appropriate UI handler.
 
 ```dart
-// flutter_reactive_ble example
-final sub = _ble.subscribeToCharacteristic(txChar).listen((data) {
+// flutter_blue_plus example
+txChar.onValueReceived.listen((data) {
   final bytes = Uint8List.fromList(data);
   if (!validateRivrFrame(bytes)) return;   // check magic + CRC
   final pktType = bytes[3];
@@ -246,6 +246,7 @@ final sub = _ble.subscribeToCharacteristic(txChar).listen((data) {
     // ...
   }
 });
+await txChar.setNotifyValue(true);
 ```
 
 ---
@@ -282,6 +283,11 @@ App                              Rivr node (BLE active)
  │                                   │
  │── connect ────────────────────────►│  GAP CONNECT event
  │                                   │  g_metrics.ble_connections++
+ │                                   │  (new peer) triggers MITM pairing
+ │◄── passkey notification ──────────│  node displays 6-digit PIN
+ │  [user enters PIN on phone]        │
+ │── pairing complete ───────────────►│  bond persisted on both sides
+ │                                   │
  │── request MTU (247) ──────────────►│  MTU event logged
  │                                   │
  │── subscribe TX notify ────────────►│  SUBSCRIBE event logged
@@ -314,6 +320,24 @@ phone must complete passkey pairing before the link is treated as data-ready. Bo
 phones reconnect silently and the bond is persisted on-device. Open BLE builds are
 still possible only if a board environment explicitly sets `RIVR_BLE_PASSKEY=0`.
 
+### First-time connection — pairing flow
+
+On the **first** connection to a new node, pairing must complete before the app can
+subscribe to notifications or send frames:
+
+1. Immediately after the GAP connect event, the node triggers MITM authentication.
+2. The node generates and displays a **random 6-digit passkey** on its screen (logged as
+   `BLE pairing: show passkey XXXXXX`).
+3. On Android the OS presents a passkey entry dialog; the user must type the 6-digit code
+   shown on the node within **60 seconds**.
+4. On success the bond is persisted; future reconnections are silent (no PIN needed).
+5. On failure or timeout, the connection is dropped.
+
+**App-side implementation**: block all GATT operations (MTU request, `discoverServices`,
+`setNotifyValue`) until the Android bond state reaches `bonded`.  Only start normal
+operations (subscribe, send frames) after bonding completes.  A 60-second timeout is
+recommended.  Once the bond exists, reconnections require no extra delay.
+
 ---
 
 ## 11. Metrics the app can monitor
@@ -339,33 +363,26 @@ UART0.
 
 | Package | Notes |
 |---|---|
-| [`flutter_reactive_ble`](https://pub.dev/packages/flutter_reactive_ble) | Recommended. Reactive streams, good MTU support, works on Android + iOS. |
-| [`flutter_blue_plus`](https://pub.dev/packages/flutter_blue_plus) | Also suitable. Broader platform support (Android, iOS, macOS, Linux, Windows). |
+| [`flutter_blue_plus`](https://pub.dev/packages/flutter_blue_plus) | **Used by Rivr Companion.** Android, iOS, macOS, Linux, Windows. |
+| [`flutter_reactive_ble`](https://pub.dev/packages/flutter_reactive_ble) | Alternative. Reactive streams, Android + iOS only. |
 
-Both packages support Nordic NUS UUIDs out of the box.  For `flutter_reactive_ble`:
+Both packages support Nordic NUS UUIDs.  The companion app uses `flutter_blue_plus`:
 
 ```dart
 const kServiceUuid  = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E';
 const kRxCharUuid   = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E';
 const kTxCharUuid   = '6E400003-B5A3-F393-E0A9-E50E24DCCA9E';
 
-final rxChar = QualifiedCharacteristic(
-  serviceId:      Uuid.parse(kServiceUuid),
-  characteristicId: Uuid.parse(kRxCharUuid),
-  deviceId: deviceId,
-);
-
-final txChar = QualifiedCharacteristic(
-  serviceId:      Uuid.parse(kServiceUuid),
-  characteristicId: Uuid.parse(kTxCharUuid),
-  deviceId: deviceId,
-);
+final svc    = device.servicesList.firstWhere((s) => s.uuid == Guid(kServiceUuid));
+final rxChar = svc.characteristics.firstWhere((c) => c.uuid == Guid(kRxCharUuid));
+final txChar = svc.characteristics.firstWhere((c) => c.uuid == Guid(kTxCharUuid));
 
 // Subscribe to incoming mesh frames
-_ble.subscribeToCharacteristic(txChar).listen(onFrame);
+txChar.onValueReceived.listen(onFrame);
+await txChar.setNotifyValue(true);
 
 // Send a frame to the mesh
-await _ble.writeCharacteristicWithoutResponse(rxChar, value: frameBytes);
+await rxChar.write(frameBytes, withoutResponse: true);
 ```
 
 ---
@@ -411,5 +428,6 @@ support (`flutter_reactive_ble` does not support Windows as of 2026).
 | **One client at a time** | Rivr currently tracks a single active BLE connection. A second phone cannot connect while one is already connected. |
 | **Fragmentation overhead** | Oversize payloads are fragmented automatically, but each fragment carries a 6-byte Rivr BLE transport header. |
 | **Activation window** | BLE is not always on. See Section 4. |
+| **First-connection PIN entry** | First-time pairing requires entering a 6-digit PIN shown on the node's display. Subsequent connections are silent. See Section 10. |
 | **No phone↔phone relay** | Frames injected via BLE are processed by the connected node only; they do not bypass the node's relay policy. A PKT_CHAT written by the phone is subject to the same duty-cycle and relay rules as any LoRa frame. |
-| **ESP32-S3 BLE stability** | Heltec V3 and LilyGo T3-S3 use ESP32-S3. BLE on ESP32-S3 with IDF 5.x has less community testing than ESP32 classic. Report regressions. |
+| **ESP32-S3 BLE stability** | Heltec V3 and LilyGo T3-S3 use ESP32-S3. Static-random BLE addressing is used on these boards; advertising and reconnection are stable from IDF 5.5.0. |
