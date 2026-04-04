@@ -563,6 +563,11 @@ void rivr_ble_init(void)
         RIVR_LOGI(TAG, "Bluedroid BLE active (%lu ms window)",
                   (unsigned long)BLE_BOOT_WINDOW_MS);
     }
+
+    /* GAP adv-data callbacks may have fired before s_stack_ready was set
+       (e.g. on software reset where Bluedroid init is faster).  Attempt to
+       start advertising now that the stack is fully ready. */
+    rivr_ble_start_adv();
 }
 
 void rivr_ble_tick(uint32_t now_ms)
