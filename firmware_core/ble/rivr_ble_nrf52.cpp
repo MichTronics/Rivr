@@ -39,12 +39,16 @@
 
 #if RIVR_FEATURE_BLE && RIVR_PLATFORM_NRF52840
 
+#include <Adafruit_LittleFS.h>
 #include <Arduino.h>
 #include <bluefruit.h>
+#include <InternalFileSystem.h>
 #include <string.h>
 #include <stdio.h>
+#include <nrf_soc.h>
 
 extern "C" {
+#include "rivr_ble_frag.h"
 #include "radio_sx1262.h"   /* rf_rx_ringbuf, rf_rx_frame_t, RF_MAX_PAYLOAD_LEN */
 #include "rivr_log.h"
 #include "rivr_metrics.h"
@@ -56,6 +60,7 @@ extern uint32_t g_my_node_id;
 } /* extern "C" */
 
 #define TAG "BLE_NRF52"
+#define RIVR_BLE_BOND_DIR_PRPH "/adafruit/bond_prph"
 
 /* ── NUS GATT service & characteristics ──────────────────────────────────── */
 
@@ -71,11 +76,101 @@ static BLECharacteristic s_nus_tx(NUS_TX_UUID);   /* node  → phone */
 /* ── State ───────────────────────────────────────────────────────────────── */
 
 static volatile uint16_t s_conn_handle = 0xFFFFu;
+static volatile uint16_t s_pending_conn_handle = 0xFFFFu;
 static volatile bool     s_ble_active  = false;
 static uint32_t          s_activate_ms = 0u;
 static uint32_t          s_timeout_ms  = BLE_BOOT_WINDOW_MS;
+static bool              s_has_bond    = false;
+static rivr_ble_frag_rx_t s_rx_frag;
+static uint8_t           s_tx_frag_msg_id = 0u;
+#if RIVR_BLE_PASSKEY != 0
+static uint32_t          s_active_passkey = 0u;
+#endif
 
 /* ── Internal helpers ────────────────────────────────────────────────────── */
+
+static bool rivr_ble_bond_store_has_entries(void)
+{
+    InternalFS.begin();
+
+    Adafruit_LittleFS_Namespace::File dir(
+        RIVR_BLE_BOND_DIR_PRPH,
+        Adafruit_LittleFS_Namespace::FILE_O_READ,
+        InternalFS);
+    if (!dir) {
+        return false;
+    }
+
+    Adafruit_LittleFS_Namespace::File file(InternalFS);
+    while ((file = dir.openNextFile(Adafruit_LittleFS_Namespace::FILE_O_READ))) {
+        file.close();
+        dir.close();
+        return true;
+    }
+
+    dir.close();
+    return false;
+}
+
+#if RIVR_BLE_PASSKEY != 0
+#if RIVR_BLE_RANDOM_PASSKEY
+static uint32_t rivr_ble_random_u32(void)
+{
+    uint8_t bytes[4];
+    if (sd_rand_application_vector_get(bytes, sizeof(bytes)) == NRF_SUCCESS) {
+        return ((uint32_t)bytes[0]) |
+               ((uint32_t)bytes[1] << 8) |
+               ((uint32_t)bytes[2] << 16) |
+               ((uint32_t)bytes[3] << 24);
+    }
+
+    return ((uint32_t)micros() << 12) ^ (uint32_t)millis() ^ g_my_node_id;
+}
+#endif
+
+static uint32_t rivr_ble_choose_passkey(void)
+{
+#if RIVR_BLE_RANDOM_PASSKEY
+    return 100000u + (rivr_ble_random_u32() % 900000u);
+#else
+    return (uint32_t)RIVR_BLE_PASSKEY;
+#endif
+}
+
+static void security_complete_cb(uint16_t conn_handle, uint8_t auth_status)
+{
+    if (auth_status == BLE_GAP_SEC_STATUS_SUCCESS) {
+        s_has_bond = true;
+        RIVR_LOGI(TAG, "pairing complete (conn_handle=0x%04x)", (unsigned)conn_handle);
+        return;
+    }
+
+    RIVR_LOGW(TAG, "pairing failed (conn_handle=0x%04x auth_status=0x%02x)",
+              (unsigned)conn_handle, (unsigned)auth_status);
+    if (Bluefruit.connected(conn_handle)) {
+        Bluefruit.disconnect(conn_handle);
+    }
+}
+
+static void security_secured_cb(uint16_t conn_handle)
+{
+    BLEConnection *conn = Bluefruit.Connection(conn_handle);
+    if (conn == NULL) {
+        return;
+    }
+
+    s_conn_handle = conn_handle;
+    s_pending_conn_handle = 0xFFFFu;
+    if (conn->bonded()) {
+        s_has_bond = true;
+    }
+    conn->requestMtuExchange(RIVR_BLE_ATT_PREFERRED_MTU);
+    RIVR_LOGI(TAG, "link secured (conn_handle=0x%04x mtu=%u payload=%u)",
+              (unsigned)conn_handle,
+              (unsigned)conn->getMtu(),
+              (unsigned)rivr_ble_link_payload_limit());
+}
+#endif
 
 static void start_adv(void)
 {
@@ -104,15 +199,30 @@ static void start_adv(void)
 
 static void connect_cb(uint16_t conn_handle)
 {
-    s_conn_handle = conn_handle;
     RIVR_LOGI(TAG, "connected, conn_handle=0x%04x", (unsigned)conn_handle);
     g_rivr_metrics.ble_connections++;
+
+    BLEConnection *conn = Bluefruit.Connection(conn_handle);
+    if (conn != NULL) {
+        conn->requestMtuExchange(RIVR_BLE_ATT_PREFERRED_MTU);
+    }
+
+#if RIVR_BLE_PASSKEY != 0
+    s_pending_conn_handle = conn_handle;
+    if (conn != NULL) {
+        conn->requestPairing();
+    }
+#else
+    s_conn_handle = conn_handle;
+#endif
 }
 
 static void disconnect_cb(uint16_t conn_handle, uint8_t reason)
 {
     (void)conn_handle;
     s_conn_handle = 0xFFFFu;
+    s_pending_conn_handle = 0xFFFFu;
+    rivr_ble_frag_reset(&s_rx_frag);
     rivr_ble_companion_on_disconnect();
     RIVR_LOGI(TAG, "disconnected, reason=0x%02x", (unsigned)reason);
 
@@ -133,24 +243,39 @@ static void rx_write_cb(uint16_t conn_handle,
                         BLECharacteristic *chr,
                         uint8_t *data, uint16_t len)
 {
+    const uint8_t *payload = NULL;
+    uint16_t payload_len = 0u;
+    rivr_ble_frag_rx_result_t frag_result;
+    rf_rx_frame_t frame;
+
     (void)conn_handle;
     (void)chr;
 
-    if (len == 0u || len > RF_MAX_PAYLOAD_LEN) {
+    frag_result = rivr_ble_frag_ingest(&s_rx_frag, data, len,
+                                       &payload, &payload_len);
+    if (frag_result == RIVR_BLE_FRAG_RX_INVALID) {
+        RIVR_LOGW(TAG, "rx: invalid fragment stream");
+        g_rivr_metrics.ble_errors++;
+        return;
+    }
+    if (frag_result == RIVR_BLE_FRAG_RX_INCOMPLETE) {
+        return;
+    }
+
+    if (payload_len == 0u || payload_len > RF_MAX_PAYLOAD_LEN) {
         RIVR_LOGW(TAG, "rx: frame length %u out of range (max=%u)",
-                  (unsigned)len, (unsigned)RF_MAX_PAYLOAD_LEN);
+                  (unsigned)payload_len, (unsigned)RF_MAX_PAYLOAD_LEN);
         g_rivr_metrics.ble_errors++;
         return;
     }
 
-    if (rivr_ble_companion_handle_rx(data, len)) {
+    if (rivr_ble_companion_handle_rx(payload, payload_len)) {
         return;
     }
 
-    rf_rx_frame_t frame;
     memset(&frame, 0, sizeof(frame));
-    memcpy(frame.data, data, len);
-    frame.len        = (uint8_t)len;
+    memcpy(frame.data, payload, payload_len);
+    frame.len        = (uint8_t)payload_len;
     frame.rssi_dbm   = 0;
     frame.snr_db     = 0;
     frame.rx_mono_ms = tb_millis();
@@ -166,6 +291,13 @@ static void rx_write_cb(uint16_t conn_handle,
     g_rivr_metrics.ble_rx_frames++;
 }
 
+static bool rivr_ble_service_notify_one(void *ctx, const uint8_t *data, uint16_t len)
+{
+    uint16_t conn_handle = *(const uint16_t *)ctx;
+
+    return s_nus_tx.notify(conn_handle, data, len);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * rivr_ble.h public API — nRF52 implementation
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -173,11 +305,14 @@ static void rx_write_cb(uint16_t conn_handle,
 void rivr_ble_init(void)
 {
     char name[20];
-    snprintf(name, sizeof(name), "RIVR-%08lX", (unsigned long)g_my_node_id);
+    snprintf(name, sizeof(name), "RIVR-%04lX", (unsigned long)(g_my_node_id & 0xFFFFu));
 
+    Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
     Bluefruit.begin();
     Bluefruit.setName(name);
     Bluefruit.setTxPower(4);   /* +4 dBm — reasonable for peripheral use */
+    Bluefruit.Periph.setConnIntervalMS(15u, 30u);
+    s_has_bond = rivr_ble_bond_store_has_entries();
 
     Bluefruit.Periph.setConnectCallback(connect_cb);
     Bluefruit.Periph.setDisconnectCallback(disconnect_cb);
@@ -186,11 +321,14 @@ void rivr_ble_init(void)
     /* MITM-protected bonding: node displays passkey, user enters it on phone. */
     Bluefruit.Security.setIOCaps(true, false, false);   /* display-only */
     Bluefruit.Security.setMITM(true);
+    Bluefruit.Security.setPairCompleteCallback(security_complete_cb);
+    Bluefruit.Security.setSecuredCallback(security_secured_cb);
     {
         /* BLESecurity::setPIN() takes a 6-character ASCII string (no NUL in
          * the 6 bytes), matching the BLE_GAP_PASSKEY_LEN requirement. */
         char pk_str[7];
-        snprintf(pk_str, sizeof(pk_str), "%06lu", (unsigned long)(RIVR_BLE_PASSKEY));
+        s_active_passkey = rivr_ble_choose_passkey();
+        snprintf(pk_str, sizeof(pk_str), "%06lu", (unsigned long)s_active_passkey);
         Bluefruit.Security.setPIN(pk_str);
         RIVR_LOGI(TAG, "BLE security: MITM passkey bonding enabled (PIN=%s)",
                   pk_str);
@@ -228,6 +366,8 @@ void rivr_ble_init(void)
     /* ── Timing state ───────────────────────────────────────────────────── */
     s_ble_active  = true;
     s_activate_ms = 0u;
+    s_conn_handle = 0xFFFFu;
+    s_pending_conn_handle = 0xFFFFu;
 #if RIVR_BLE_PASSKEY != 0
     s_timeout_ms = 0u;   /* passkey builds stay on until explicitly deactivated */
 #else
@@ -313,10 +453,34 @@ uint16_t rivr_ble_conn_handle(void)
     return s_conn_handle;
 }
 
+uint16_t rivr_ble_link_payload_limit(void)
+{
+    BLEConnection *conn;
+    uint16_t mtu;
+
+    if (s_conn_handle == 0xFFFFu || !Bluefruit.connected(s_conn_handle)) {
+        return 0u;
+    }
+
+    conn = Bluefruit.Connection(s_conn_handle);
+    if (conn == NULL) {
+        return 0u;
+    }
+
+    mtu = conn->getMtu();
+    if (mtu <= 3u) {
+        return 0u;
+    }
+    if (mtu > RIVR_BLE_ATT_PREFERRED_MTU) {
+        mtu = RIVR_BLE_ATT_PREFERRED_MTU;
+    }
+    return (uint16_t)(mtu - 3u);
+}
+
 uint32_t rivr_ble_passkey(void)
 {
 #if RIVR_BLE_PASSKEY != 0
-    return (uint32_t)RIVR_BLE_PASSKEY;
+    return s_active_passkey;
 #else
     return 0u;
 #endif
@@ -324,11 +488,7 @@ uint32_t rivr_ble_passkey(void)
 
 bool rivr_ble_has_bond(void)
 {
-    /* The Adafruit nRF52 BSP does not expose a bond count query directly.
-     * Bond presence can be inferred: if a peer reconnects with encryption
-     * without re-pairing, it has a stored bond.  For now return false;
-     * callers use this only for UI hints.                                    */
-    return false;
+    return s_has_bond;
 }
 
 int rivr_ble_clear_bonds(void)
@@ -338,6 +498,7 @@ int rivr_ble_clear_bonds(void)
         s_conn_handle = 0xFFFFu;
     }
     Bluefruit.Periph.clearBonds();
+    s_has_bond = false;
     RIVR_LOGI(TAG, "BLE bonds cleared");
     if (s_ble_active) {
         start_adv();
@@ -362,18 +523,29 @@ int rivr_ble_service_register(void)
     return 0;
 }
 
-void rivr_ble_service_notify(uint16_t conn_handle,
-                              const uint8_t *data, uint8_t len)
+bool rivr_ble_service_notify(uint16_t conn_handle,
+                             const uint8_t *data, uint8_t len)
 {
-    if (s_conn_handle == 0xFFFFu) return;
-    if (!data || len == 0u) return;
+    uint16_t limit = rivr_ble_link_payload_limit();
 
-    if (s_nus_tx.notify(conn_handle, data, (uint16_t)len)) {
-        g_rivr_metrics.ble_tx_frames++;
-    } else {
+    if (s_conn_handle == 0xFFFFu) return false;
+    if (!data || len == 0u) return false;
+    if (limit == 0u) {
         g_rivr_metrics.ble_errors++;
-        RIVR_LOGD(TAG, "notify failed for conn_handle=0x%04x", (unsigned)conn_handle);
+        RIVR_LOGW(TAG, "notify skipped: len=%u payload_limit=%u",
+                  (unsigned)len, (unsigned)limit);
+        return false;
     }
+
+    if (rivr_ble_frag_send(data, len, limit, &s_tx_frag_msg_id,
+                           rivr_ble_service_notify_one, &conn_handle)) {
+        g_rivr_metrics.ble_tx_frames++;
+        return true;
+    }
+
+    g_rivr_metrics.ble_errors++;
+    RIVR_LOGD(TAG, "notify failed for conn_handle=0x%04x", (unsigned)conn_handle);
+    return false;
 }
 
 #endif /* RIVR_FEATURE_BLE && RIVR_PLATFORM_NRF52840 */

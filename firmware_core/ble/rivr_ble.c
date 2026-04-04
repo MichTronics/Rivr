@@ -33,6 +33,11 @@ extern uint32_t g_my_node_id;
 #define TAG "RIVR_BLE"
 #define ADV_CONFIG_FLAG      (1u << 0)
 #define SCAN_RSP_CONFIG_FLAG (1u << 1)
+#define RIVR_BLE_ATT_DEFAULT_MTU 23u
+#define RIVR_BLE_CONN_INT_MIN    12u   /* 15 ms */
+#define RIVR_BLE_CONN_INT_MAX    24u   /* 30 ms */
+#define RIVR_BLE_CONN_LATENCY    0u
+#define RIVR_BLE_CONN_TIMEOUT    400u  /* 4 s */
 
 #if RIVR_BLE_PASSKEY != 0
 #define RIVR_BLE_DEFAULT_SENTINEL_PASSKEY 123456UL
@@ -42,6 +47,7 @@ static volatile uint16_t s_conn_handle = 0xFFFFu;
 static volatile uint16_t s_pending_conn_handle = 0xFFFFu;
 #if RIVR_BLE_PASSKEY != 0
 static uint32_t s_active_passkey = 0u;
+static bool s_reconnect_from_bonded_peer = false;
 #endif
 static volatile bool s_ble_active = false;
 static volatile bool s_stack_ready = false;
@@ -49,6 +55,7 @@ static volatile bool s_adv_running = false;
 static uint32_t s_activate_ms = 0u;
 static uint32_t s_timeout_ms = BLE_BOOT_WINDOW_MS;
 static uint8_t s_adv_config_done = 0u;
+static volatile uint16_t s_att_mtu = RIVR_BLE_ATT_DEFAULT_MTU;
 static esp_bd_addr_t s_remote_bda = {0};
 static bool s_remote_bda_valid = false;
 static char s_device_name[16];
@@ -60,7 +67,7 @@ static const uint8_t s_adv_svc_uuid[16] = {
 
 static esp_ble_adv_data_t s_adv_data = {
     .set_scan_rsp = false,
-    .include_name = true,
+    .include_name = false,
     .include_txpower = false,
     .min_interval = 0x0006,
     .max_interval = 0x0010,
@@ -69,16 +76,16 @@ static esp_ble_adv_data_t s_adv_data = {
     .p_manufacturer_data = NULL,
     .service_data_len = 0,
     .p_service_data = NULL,
-    .service_uuid_len = 0,
-    .p_service_uuid = NULL,
+    .service_uuid_len = sizeof(s_adv_svc_uuid),
+    .p_service_uuid = (uint8_t *)s_adv_svc_uuid,
     .flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
 };
 
 static esp_ble_adv_data_t s_scan_rsp_data = {
     .set_scan_rsp = true,
-    .include_name = false,
-    .service_uuid_len = sizeof(s_adv_svc_uuid),
-    .p_service_uuid = (uint8_t *)s_adv_svc_uuid,
+    .include_name = true,
+    .service_uuid_len = 0,
+    .p_service_uuid = NULL,
 };
 
 static esp_ble_adv_params_t s_adv_params = {
@@ -134,6 +141,28 @@ static void rivr_ble_start_adv(void)
     }
 }
 
+static void rivr_ble_request_link_tuning(const esp_bd_addr_t bda)
+{
+    esp_ble_conn_update_params_t conn_params = {
+        .min_int = RIVR_BLE_CONN_INT_MIN,
+        .max_int = RIVR_BLE_CONN_INT_MAX,
+        .latency = RIVR_BLE_CONN_LATENCY,
+        .timeout = RIVR_BLE_CONN_TIMEOUT,
+    };
+
+    memcpy(conn_params.bda, bda, sizeof(conn_params.bda));
+
+    esp_err_t err = esp_ble_gap_update_conn_params(&conn_params);
+    if (err != ESP_OK) {
+        RIVR_LOGW(TAG, "BLE conn param update request failed: %s", esp_err_to_name(err));
+    }
+
+    err = esp_ble_gap_set_pkt_data_len((uint8_t *)bda, 251u);
+    if (err != ESP_OK) {
+        RIVR_LOGW(TAG, "BLE data length request failed: %s", esp_err_to_name(err));
+    }
+}
+
 static void rivr_ble_gap_event(esp_gap_ble_cb_event_t event,
                                esp_ble_gap_cb_param_t *param)
 {
@@ -160,6 +189,22 @@ static void rivr_ble_gap_event(esp_gap_ble_cb_event_t event,
         s_adv_running = false;
         break;
 
+    case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
+        RIVR_LOGI(TAG,
+                  "BLE conn params updated: status=%u min=%u max=%u latency=%u timeout=%u",
+                  (unsigned)param->update_conn_params.status,
+                  (unsigned)param->update_conn_params.min_int,
+                  (unsigned)param->update_conn_params.max_int,
+                  (unsigned)param->update_conn_params.latency,
+                  (unsigned)param->update_conn_params.timeout);
+        break;
+
+    case ESP_GAP_BLE_SET_PKT_LENGTH_COMPLETE_EVT:
+        RIVR_LOGI(TAG, "BLE data length update: status=%u tx_len=%u",
+                  (unsigned)param->pkt_data_length_cmpl.status,
+                  (unsigned)param->pkt_data_length_cmpl.params.tx_len);
+        break;
+
 #if RIVR_BLE_PASSKEY != 0
     case ESP_GAP_BLE_SEC_REQ_EVT:
         esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
@@ -184,6 +229,7 @@ static void rivr_ble_gap_event(esp_gap_ble_cb_event_t event,
         if (param->ble_security.auth_cmpl.success &&
             rivr_ble_auth_mode_is_mitm(param->ble_security.auth_cmpl.auth_mode)) {
             s_conn_handle = s_pending_conn_handle;
+            s_reconnect_from_bonded_peer = false;
             RIVR_LOGI(TAG, "BLE encrypted & authenticated (conn_handle=0x%04x) — ready",
                       (unsigned)s_conn_handle);
         } else {
@@ -191,6 +237,16 @@ static void rivr_ble_gap_event(esp_gap_ble_cb_event_t event,
                       param->ble_security.auth_cmpl.success,
                       (unsigned)param->ble_security.auth_cmpl.auth_mode,
                       (unsigned)param->ble_security.auth_cmpl.fail_reason);
+            if (s_reconnect_from_bonded_peer && s_remote_bda_valid) {
+                esp_err_t err = esp_ble_remove_bond_device(s_remote_bda);
+                if (err == ESP_OK) {
+                    RIVR_LOGW(TAG, "BLE stale bond removed after failed bonded reconnect");
+                } else {
+                    RIVR_LOGW(TAG, "BLE stale bond removal failed: %s",
+                              esp_err_to_name(err));
+                }
+            }
+            s_reconnect_from_bonded_peer = false;
             if (s_remote_bda_valid) {
                 esp_ble_gap_disconnect(s_remote_bda);
             }
@@ -232,12 +288,16 @@ static void rivr_ble_gatts_event(esp_gatts_cb_event_t event, esp_gatt_if_t gatts
     case ESP_GATTS_CONNECT_EVT:
         g_rivr_metrics.ble_connections++;
         s_adv_running = false;
+        s_att_mtu = RIVR_BLE_ATT_DEFAULT_MTU;
         memcpy(s_remote_bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
         s_remote_bda_valid = true;
         rivr_ble_service_set_connection(gatts_if, param->connect.conn_id);
+        rivr_ble_request_link_tuning(param->connect.remote_bda);
 #if RIVR_BLE_PASSKEY != 0
         s_pending_conn_handle = param->connect.conn_id;
-        if (rivr_ble_is_peer_bonded(param->connect.remote_bda)) {
+        s_reconnect_from_bonded_peer =
+            rivr_ble_is_peer_bonded(param->connect.remote_bda);
+        if (s_reconnect_from_bonded_peer) {
             /* Already bonded — reuse stored LTK; no new passkey challenge needed. */
             RIVR_LOGI(TAG, "BLE reconnect from bonded peer (conn_id=0x%04x) — re-encrypting",
                       (unsigned)s_pending_conn_handle);
@@ -257,14 +317,23 @@ static void rivr_ble_gatts_event(esp_gatts_cb_event_t event, esp_gatt_if_t gatts
     case ESP_GATTS_DISCONNECT_EVT:
         RIVR_LOGI(TAG, "BLE disconnected (reason=0x%x)", param->disconnect.reason);
         s_conn_handle = 0xFFFFu;
+        s_att_mtu = RIVR_BLE_ATT_DEFAULT_MTU;
 #if RIVR_BLE_PASSKEY != 0
         s_pending_conn_handle = 0xFFFFu;
+        s_reconnect_from_bonded_peer = false;
 #endif
         s_remote_bda_valid = false;
         rivr_ble_service_clear_connection();
         if (s_ble_active) {
             rivr_ble_start_adv();
         }
+        break;
+
+    case ESP_GATTS_MTU_EVT:
+        s_att_mtu = param->mtu.mtu;
+        RIVR_LOGI(TAG, "BLE negotiated MTU=%u (payload=%u)",
+                  (unsigned)s_att_mtu,
+                  (unsigned)rivr_ble_link_payload_limit());
         break;
 
     default:
@@ -321,7 +390,7 @@ void rivr_ble_init(void)
         return;
     }
 
-    err = esp_ble_gatt_set_local_mtu(247);
+    err = esp_ble_gatt_set_local_mtu(RIVR_BLE_ATT_PREFERRED_MTU);
     if (err != ESP_OK) {
         RIVR_LOGW(TAG, "esp_ble_gatt_set_local_mtu failed: %s", esp_err_to_name(err));
     }
@@ -369,6 +438,7 @@ void rivr_ble_init(void)
     s_conn_handle = 0xFFFFu;
 #if RIVR_BLE_PASSKEY != 0
     s_pending_conn_handle = 0xFFFFu;
+    s_reconnect_from_bonded_peer = false;
 #endif
 
     if (s_timeout_ms == 0u) {
@@ -445,6 +515,19 @@ bool rivr_ble_is_connected(void)
 uint16_t rivr_ble_conn_handle(void)
 {
     return s_conn_handle;
+}
+
+uint16_t rivr_ble_link_payload_limit(void)
+{
+    uint16_t mtu = s_att_mtu;
+
+    if (s_conn_handle == 0xFFFFu || mtu <= 3u) {
+        return 0u;
+    }
+    if (mtu > RIVR_BLE_ATT_PREFERRED_MTU) {
+        mtu = RIVR_BLE_ATT_PREFERRED_MTU;
+    }
+    return (uint16_t)(mtu - 3u);
 }
 
 uint32_t rivr_ble_passkey(void)

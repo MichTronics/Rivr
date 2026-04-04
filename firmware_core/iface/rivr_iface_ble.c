@@ -24,6 +24,5 @@ bool rivr_iface_ble_send(const uint8_t *data, size_t len)
     if (!data || len == 0u || len > 255u) {
         return false;
     }
-    rivr_ble_service_notify(rivr_ble_conn_handle(), data, (uint8_t)len);
-    return true;
+    return rivr_ble_service_notify(rivr_ble_conn_handle(), data, (uint8_t)len);
 }

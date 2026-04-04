@@ -12,35 +12,32 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug",
-            "executable": "/home/kali/source/Rivr/.pio/build/client_waveshare_rp2040_lora_hf/firmware.elf",
-            "projectEnvName": "client_waveshare_rp2040_lora_hf",
-            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-rp2040-earlephilhower/bin",
+            "executable": "/home/kali/source/Rivr/.pio/build/client_lilygo_lora32_v21_ble/firmware.elf",
+            "projectEnvName": "client_lilygo_lora32_v21_ble",
+            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart",
-            "svdPath": "/home/kali/.platformio/platforms/raspberrypi/misc/svd/rp2040.svd",
             "preLaunchTask": {
                 "type": "PlatformIO",
-                "task": "Pre-Debug (client_waveshare_rp2040_lora_hf)"
+                "task": "Pre-Debug (client_lilygo_lora32_v21_ble)"
             }
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (skip Pre-Debug)",
-            "executable": "/home/kali/source/Rivr/.pio/build/client_waveshare_rp2040_lora_hf/firmware.elf",
-            "projectEnvName": "client_waveshare_rp2040_lora_hf",
-            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-rp2040-earlephilhower/bin",
-            "internalConsoleOptions": "openOnSessionStart",
-            "svdPath": "/home/kali/.platformio/platforms/raspberrypi/misc/svd/rp2040.svd"
+            "executable": "/home/kali/source/Rivr/.pio/build/client_lilygo_lora32_v21_ble/firmware.elf",
+            "projectEnvName": "client_lilygo_lora32_v21_ble",
+            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
+            "internalConsoleOptions": "openOnSessionStart"
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (without uploading)",
-            "executable": "/home/kali/source/Rivr/.pio/build/client_waveshare_rp2040_lora_hf/firmware.elf",
-            "projectEnvName": "client_waveshare_rp2040_lora_hf",
-            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-rp2040-earlephilhower/bin",
+            "executable": "/home/kali/source/Rivr/.pio/build/client_lilygo_lora32_v21_ble/firmware.elf",
+            "projectEnvName": "client_lilygo_lora32_v21_ble",
+            "toolchainBinDir": "/home/kali/.platformio/packages/toolchain-xtensa-esp-elf/bin",
             "internalConsoleOptions": "openOnSessionStart",
-            "svdPath": "/home/kali/.platformio/platforms/raspberrypi/misc/svd/rp2040.svd",
             "loadMode": "manual"
         }
     ]

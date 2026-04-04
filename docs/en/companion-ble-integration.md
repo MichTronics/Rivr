@@ -64,8 +64,9 @@ Examples:
 
 ### Service UUID in advertisement
 
-The advertisement payload includes the **full 128-bit service UUID** (`6E400001-...`), allowing
-the app to filter scan results by UUID instead of name if preferred.
+The advertisement payload includes the **full 128-bit service UUID** (`6E400001-...`).
+The local name is placed in the **scan response** packet, so the app should use
+active scanning when filtering by name.
 
 ### Advertising interval
 
@@ -114,7 +115,7 @@ connect within the active window, or trigger a new one.
 
 ### MTU negotiation
 
-The node firmware configures `CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU = 128`.
+The node firmware targets an ATT MTU of **247** on both ESP32 and nRF52 builds.
 
 **Always request a higher MTU** after connecting:
 
@@ -131,8 +132,8 @@ effective_payload = negotiated_mtu - 3 (ATT header overhead)
 | Negotiated MTU | Max bytes per write/notify |
 |---|---|
 | 23 (default, no negotiation) | **20 bytes** — too small for most Rivr frames |
-| 128 (node preferred) | 125 bytes |
-| 247 (BLE 4.2+, recommended) | 244 bytes — fits any Rivr frame (max 255 bytes) |
+| 128 | 125 bytes |
+| 247 (recommended) | 244 bytes |
 
 > ⚠ **Do not skip MTU negotiation.** The minimum Rivr frame is 25 bytes and the typical CHAT
 > frame is 30–60 bytes.  The default 20-byte ATT payload will truncate most frames.
@@ -143,9 +144,11 @@ effective_payload = negotiated_mtu - 3 (ATT header overhead)
 |---|---|
 | Minimum frame size | 25 bytes (23-byte header + 2-byte CRC) |
 | Maximum frame size | 255 bytes (LoRa hardware limit) |
+| Maximum BLE-carriable frame | 244 bytes at MTU 247 |
 | Maximum payload inside a frame | 230 bytes |
 
-The node rejects writes that exceed 255 bytes with `ATT_ERR_INVALID_ATTR_VALUE_LEN`.
+The node rejects writes that exceed the negotiated BLE payload limit or 255 bytes,
+whichever is lower.
 
 ---
 
@@ -261,12 +264,12 @@ final sub = _ble.subscribeToCharacteristic(txChar).listen((data) {
    - Use **Write Without Response** for lower latency (`BLE_GATT_CHR_F_WRITE_NO_RSP`).
    - Use **Write With Response** if you want delivery confirmation from the node.
 8. Maximum write size: `negotiated_mtu - 3` bytes per write.  For Rivr frames ≤ 125 bytes,
-   a single write is sufficient after MTU negotiation to 128.  For frames up to 255 bytes,
-   negotiate to 247+.
+   a single write is sufficient after MTU negotiation to 128.  Larger payloads are
+   fragmented automatically by the BLE transport and reassembled on the peer.
 
-> ⚠ **No fragmentation layer exists in the firmware.** Each write must be a single, complete
-> Rivr frame.  Do not split a frame across multiple writes and do not send multiple frames in
-> one write.
+> BLE fragmentation uses a 6-byte Rivr transport header and only activates when a complete
+> Rivr frame or companion packet does not fit in one ATT write/notify.  The reassembler keeps
+> a small set of concurrent fragment streams so overlapping companion and mesh traffic can complete cleanly.
 
 ---
 
@@ -299,20 +302,17 @@ window is still open).  The app should attempt reconnection with exponential bac
 
 ## 10. Security — current state
 
-| Property | v0.1.0-beta |
+| Property | Current `_ble` builds |
 |---|---|
-| Encryption | ❌ None (plaintext BLE) |
-| Pairing / bonding | ❌ None |
-| Authentication | ❌ None |
-| Filter by address | ❌ Not implemented |
+| Encryption | ✅ Link encryption required after pairing |
+| Pairing / bonding | ✅ LE Secure Connections bonding |
+| Authentication | ✅ MITM passkey entry |
+| Filter by address | ❌ Single-client only; no allow-list |
 
-**Implication for the companion app:** any phone or BLE scanner in range can connect to the node
-during an active window and inject frames into the mesh.  This is intentional for the beta —
-treat the BLE interface as a local physical-proximity trust boundary, equivalent to plugging in
-a serial cable.
-
-Current firmware supports optional LE Secure Connections pairing with passkey bonding when
-`RIVR_BLE_PASSKEY != 0`. Open BLE builds remain possible with `RIVR_BLE_PASSKEY=0`.
+Current `_ble` environments in this repo ship with `RIVR_BLE_PASSKEY != 0`, so the
+phone must complete passkey pairing before the link is treated as data-ready. Bonded
+phones reconnect silently and the bond is persisted on-device. Open BLE builds are
+still possible only if a board environment explicitly sets `RIVR_BLE_PASSKEY=0`.
 
 ---
 
@@ -409,8 +409,7 @@ support (`flutter_reactive_ble` does not support Windows as of 2026).
 | Limitation | Detail |
 |---|---|
 | **One client at a time** | Rivr currently tracks a single active BLE connection. A second phone cannot connect while one is already connected. |
-| **No fragmentation** | Each BLE write / notify is exactly one complete Rivr frame. Frames > (`mtu - 3`) cannot be carried without MTU negotiation. |
-| **No encryption** | BLE traffic is plaintext. See Section 10. |
+| **Fragmentation overhead** | Oversize payloads are fragmented automatically, but each fragment carries a 6-byte Rivr BLE transport header. |
 | **Activation window** | BLE is not always on. See Section 4. |
 | **No phone↔phone relay** | Frames injected via BLE are processed by the connected node only; they do not bypass the node's relay policy. A PKT_CHAT written by the phone is subject to the same duty-cycle and relay rules as any LoRa frame. |
 | **ESP32-S3 BLE stability** | Heltec V3 and LilyGo T3-S3 use ESP32-S3. BLE on ESP32-S3 with IDF 5.x has less community testing than ESP32 classic. Report regressions. |

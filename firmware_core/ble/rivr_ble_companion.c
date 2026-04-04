@@ -100,8 +100,7 @@ static bool cp_send_packet(uint8_t type, uint8_t status,
         memcpy(&packet[RIVR_BLE_CP_HDR_LEN], payload, payload_len);
     }
 
-    rivr_ble_service_notify(rivr_ble_conn_handle(), packet, (uint8_t)total_len);
-    return true;
+    return rivr_ble_service_notify(rivr_ble_conn_handle(), packet, (uint8_t)total_len);
 }
 
 static void cp_send_ok(uint8_t cmd)
