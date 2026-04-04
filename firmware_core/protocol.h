@@ -126,11 +126,12 @@ extern "C" {
 #define MB_FLAG_DELIVERED  0x02u /**< Delivery confirmed (set by recipient ACK)*/
 #define MB_FLAG_FORWARD    0x04u /**< Frame is at an intermediate store node   */
 
-/** Beacon payload layout (11 bytes after header):
+/** Beacon payload layout (12 bytes after header):
  *  [0..9]  callsign (ASCII, NUL-padded)
  *  [10]    hop_count (always 0 for the originating node)
+ *  [11]    role (rivr_node_role_t: 1=client, 2=repeater, 3=gateway, 0=unknown)
  */
-#define BEACON_PAYLOAD_LEN    11u
+#define BEACON_PAYLOAD_LEN    12u
 #define BEACON_CALLSIGN_MAX   10u
 
 /* ── Layout constants ────────────────────────────────────────────────────── */

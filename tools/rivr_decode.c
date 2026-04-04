@@ -107,9 +107,12 @@ static void emit_frame(const uint8_t           *buf,
         for (int i = BEACON_CALLSIGN_MAX - 1; i >= 0 && callsign[i] == '\0'; i--)
             callsign[i] = '\0';
         uint8_t hop_count = payload[10];
+        uint8_t role      = payload[11];
+        const char *role_str = (role == 2u) ? "repeater"
+                             : (role == 3u) ? "gateway" : "client";
         snprintf(extra, sizeof(extra),
-                 ",\"beacon\":{\"callsign\":\"%s\",\"hop_count\":%u}",
-                 callsign, (unsigned)hop_count);
+                 ",\"beacon\":{\"callsign\":\"%s\",\"hop_count\":%u,\"role\":\"%s\"}",
+                 callsign, (unsigned)hop_count, role_str);
     } else if (hdr->pkt_type == PKT_PROG_PUSH &&
                hdr->payload_len > RIVR_OTA_HDR_LEN) {
         /* OTA push: show key_id and seq */

@@ -114,9 +114,9 @@ uint8_t routing_neighbor_link_score(const neighbor_entry_t *n, uint32_t now_ms)
 void routing_neighbor_print(const neighbor_table_t *tbl, uint32_t now_ms)
 {
     if (!tbl) return;
-    printf("%-12s %-12s %4s %8s %7s %5s %6s %6s\r\n",
+    printf("%-12s %-12s %4s %8s %7s %5s %6s %6s %4s\r\n",
            "NodeID", "Callsign", "Hops", "RSSI(dB)", "SNR(dB)",
-           "Score", "Age(s)", "rx_ok");
+           "Score", "Age(s)", "rx_ok", "Role");
     uint8_t shown = 0u;
     for (uint8_t i = 0u; i < NEIGHBOR_TABLE_SIZE; i++) {
         const neighbor_entry_t *n = &tbl->entries[i];
@@ -124,7 +124,9 @@ void routing_neighbor_print(const neighbor_table_t *tbl, uint32_t now_ms)
         uint32_t age_ms = now_ms - n->last_seen_ms;
         if (age_ms > NEIGHBOR_EXPIRY_MS) continue;
         uint8_t score = routing_neighbor_link_score(n, now_ms);
-        printf("0x%08lX  %-12s %4u %8d %7d %5u %6lu %6lu\r\n",
+        const char *role_str = (n->role == 2u) ? "REP"
+                             : (n->role == 3u) ? "GW" : "C";
+        printf("0x%08lX  %-12s %4u %8d %7d %5u %6lu %6lu %4s\r\n",
                (unsigned long)n->node_id,
                n->callsign[0] ? n->callsign : "-",
                (unsigned)n->hop_count,
@@ -132,7 +134,8 @@ void routing_neighbor_print(const neighbor_table_t *tbl, uint32_t now_ms)
                (int)n->last_snr_db,
                (unsigned)score,
                (unsigned long)(age_ms / 1000u),
-               (unsigned long)n->rx_ok);
+               (unsigned long)n->rx_ok,
+               role_str);
         shown++;
     }
     if (shown == 0u) printf("  (no live neighbours)\r\n");
@@ -285,6 +288,20 @@ void routing_neighbor_set_callsign(neighbor_table_t *tbl,
                 j++;
             }
             n->callsign[j] = '\0';
+            return;
+        }
+    }
+}
+
+void routing_neighbor_set_role(neighbor_table_t *tbl,
+                               uint32_t          node_id,
+                               uint8_t           role)
+{
+    if (!tbl || node_id == 0) return;
+    for (uint8_t i = 0; i < NEIGHBOR_TABLE_SIZE; i++) {
+        neighbor_entry_t *n = &tbl->entries[i];
+        if (n->node_id == node_id) {
+            n->role = role;
             return;
         }
     }

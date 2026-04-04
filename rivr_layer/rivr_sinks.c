@@ -354,7 +354,8 @@ static void do_beacon_tx(void)
     size_t cs_len = strlen(g_callsign);
     if (cs_len > BEACON_CALLSIGN_MAX) cs_len = BEACON_CALLSIGN_MAX;
     memcpy(payload, g_callsign, cs_len);
-    payload[BEACON_CALLSIGN_MAX] = 0u;   /* hop_count = 0 (origin) */
+    payload[BEACON_CALLSIGN_MAX]      = 0u;  /* hop_count = 0 (origin) */
+    payload[BEACON_CALLSIGN_MAX + 1u] = g_policy_params.role; /* node role */
 
     rivr_pkt_hdr_t hdr;
     memset(&hdr, 0, sizeof(hdr));

@@ -396,16 +396,20 @@ uint32_t sources_rf_rx_drain(void)
         /* ── 4a. Handle PKT_BEACON: log + learn, skip RIVR injection ────────────────── */
         if (pkt_hdr.pkt_type == PKT_BEACON) {
             char callsign[BEACON_CALLSIGN_MAX + 1] = {0};
+            uint8_t beacon_role = 0u;
             if (payload_ptr && pkt_hdr.payload_len >= BEACON_PAYLOAD_LEN) {
                 memcpy(callsign, payload_ptr, BEACON_CALLSIGN_MAX);
                 callsign[BEACON_CALLSIGN_MAX] = '\0';
+                beacon_role = payload_ptr[BEACON_CALLSIGN_MAX + 1u];
             }
-            RIVR_LOGI(TAG, "BEACON src=0x%08lx cs='%s' rssi=%d dBm",
+            RIVR_LOGI(TAG, "BEACON src=0x%08lx cs='%s' role=%u rssi=%d dBm",
                      (unsigned long)pkt_hdr.src_id, callsign,
-                     (int)frame.rssi_dbm);
-            /* Persist callsign into the neighbour table entry for this node */
+                     (unsigned)beacon_role, (int)frame.rssi_dbm);
+            /* Persist callsign and role into the neighbour table entry */
             routing_neighbor_set_callsign(&g_neighbor_table,
                                           pkt_hdr.src_id, callsign);
+            routing_neighbor_set_role(&g_neighbor_table,
+                                      pkt_hdr.src_id, beacon_role);
             {
                 const neighbor_entry_t *entry =
                     routing_neighbor_get(&g_neighbor_table, 0u);
@@ -422,7 +426,8 @@ uint32_t sources_rf_rx_drain(void)
                                              (int8_t)frame.rssi_dbm,
                                              frame.snr_db,
                                              pkt_hdr.hop,
-                                             entry ? routing_neighbor_link_score(entry, now_ms) : 0u);
+                                             entry ? routing_neighbor_link_score(entry, now_ms) : 0u,
+                                             beacon_role);
             }
             goto maybe_relay;
         }
