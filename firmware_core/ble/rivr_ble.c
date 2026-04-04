@@ -27,12 +27,14 @@
 #include "rivr_ble_service_internal.h"
 #include "../rivr_log.h"
 #include "../rivr_metrics.h"
+#include "../timebase.h"
 
 extern uint32_t g_my_node_id;
 
 #define TAG "RIVR_BLE"
 #define ADV_CONFIG_FLAG      (1u << 0)
 #define SCAN_RSP_CONFIG_FLAG (1u << 1)
+#define RIVR_BLE_ADV_RETRY_DELAY_MS 1000u
 #define RIVR_BLE_ATT_DEFAULT_MTU 23u
 #define RIVR_BLE_CONN_INT_MIN    12u   /* 15 ms */
 #define RIVR_BLE_CONN_INT_MAX    24u   /* 30 ms */
@@ -53,6 +55,7 @@ static volatile bool s_ble_active = false;
 static volatile bool s_stack_ready = false;
 static volatile bool s_adv_running = false;
 static uint32_t s_activate_ms = 0u;
+static uint32_t s_adv_retry_due_ms = 0u;
 static uint32_t s_timeout_ms = BLE_BOOT_WINDOW_MS;
 static uint8_t s_adv_config_done = 0u;
 static volatile uint16_t s_att_mtu = RIVR_BLE_ATT_DEFAULT_MTU;
@@ -129,15 +132,49 @@ static void rivr_ble_set_device_name(void)
     RIVR_LOGI(TAG, "BLE device name: %s", s_device_name);
 }
 
+static void rivr_ble_schedule_adv_retry(uint32_t delay_ms)
+{
+    if (!s_ble_active) return;
+    s_adv_retry_due_ms = tb_millis() + delay_ms;
+}
+
+static void rivr_ble_clear_adv_retry(void)
+{
+    s_adv_retry_due_ms = 0u;
+}
+
+static void rivr_ble_set_tx_power_max(void)
+{
+    esp_err_t err;
+
+    err = esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
+    if (err != ESP_OK) {
+        RIVR_LOGW(TAG, "BLE TX power default set failed: %s", esp_err_to_name(err));
+    }
+
+    err = esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
+    if (err != ESP_OK) {
+        RIVR_LOGW(TAG, "BLE TX power advertising set failed: %s", esp_err_to_name(err));
+    }
+
+    err = esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P9);
+    if (err != ESP_OK) {
+        RIVR_LOGW(TAG, "BLE TX power scan set failed: %s", esp_err_to_name(err));
+    }
+}
+
 static void rivr_ble_start_adv(void)
 {
     if (!s_ble_active || !s_stack_ready || !rivr_ble_service_is_ready()) return;
     if (s_conn_handle != 0xFFFFu || s_pending_conn_handle != 0xFFFFu) return;
     if (s_adv_config_done != 0u) return;
+    if (s_adv_running) return;
 
+    rivr_ble_clear_adv_retry();
     esp_err_t err = esp_ble_gap_start_advertising(&s_adv_params);
     if (err != ESP_OK) {
         RIVR_LOGW(TAG, "esp_ble_gap_start_advertising failed: %s", esp_err_to_name(err));
+        rivr_ble_schedule_adv_retry(RIVR_BLE_ADV_RETRY_DELAY_MS);
     }
 }
 
@@ -182,11 +219,17 @@ static void rivr_ble_gap_event(esp_gap_ble_cb_event_t event,
         if (!s_adv_running) {
             RIVR_LOGW(TAG, "BLE advertising start failed (status=%d)",
                       param->adv_start_cmpl.status);
+            rivr_ble_schedule_adv_retry(RIVR_BLE_ADV_RETRY_DELAY_MS);
+        } else {
+            rivr_ble_clear_adv_retry();
         }
         break;
 
     case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
         s_adv_running = false;
+        if (s_ble_active && s_conn_handle == 0xFFFFu && s_pending_conn_handle == 0xFFFFu) {
+            rivr_ble_schedule_adv_retry(RIVR_BLE_ADV_RETRY_DELAY_MS);
+        }
         break;
 
     case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
@@ -288,6 +331,7 @@ static void rivr_ble_gatts_event(esp_gatts_cb_event_t event, esp_gatt_if_t gatts
     case ESP_GATTS_CONNECT_EVT:
         g_rivr_metrics.ble_connections++;
         s_adv_running = false;
+        rivr_ble_clear_adv_retry();
         s_att_mtu = RIVR_BLE_ATT_DEFAULT_MTU;
         memcpy(s_remote_bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
         s_remote_bda_valid = true;
@@ -325,7 +369,7 @@ static void rivr_ble_gatts_event(esp_gatts_cb_event_t event, esp_gatt_if_t gatts
         s_remote_bda_valid = false;
         rivr_ble_service_clear_connection();
         if (s_ble_active) {
-            rivr_ble_start_adv();
+            rivr_ble_schedule_adv_retry(RIVR_BLE_ADV_RETRY_DELAY_MS);
         }
         break;
 
@@ -377,6 +421,8 @@ void rivr_ble_init(void)
         ESP_LOGE(TAG, "esp_bluedroid_enable failed: %s", esp_err_to_name(err));
         return;
     }
+
+    rivr_ble_set_tx_power_max();
 
     err = esp_ble_gatts_register_callback(rivr_ble_gatts_event);
     if (err != ESP_OK) {
@@ -430,6 +476,7 @@ void rivr_ble_init(void)
     s_stack_ready = true;
     s_ble_active = true;
     s_activate_ms = 0u;
+    s_adv_retry_due_ms = 0u;
 #if RIVR_BLE_PASSKEY != 0
     s_timeout_ms = 0u;
 #else
@@ -455,6 +502,10 @@ void rivr_ble_tick(uint32_t now_ms)
         s_activate_ms = now_ms;
     }
     if (!s_ble_active) return;
+    if (s_adv_retry_due_ms != 0u && (int32_t)(now_ms - s_adv_retry_due_ms) >= 0) {
+        s_adv_retry_due_ms = 0u;
+        rivr_ble_start_adv();
+    }
     if (s_timeout_ms == 0u) return;
     if ((now_ms - s_activate_ms) >= s_timeout_ms) {
         RIVR_LOGI(TAG, "BLE: activation window expired (%lu ms) — deactivating",
@@ -486,12 +537,14 @@ void rivr_ble_activate(rivr_ble_mode_t mode)
 
     s_ble_active = true;
     s_activate_ms = 0u;
+    s_adv_retry_due_ms = 0u;
     rivr_ble_start_adv();
 }
 
 void rivr_ble_deactivate(void)
 {
     s_ble_active = false;
+    s_adv_retry_due_ms = 0u;
     s_timeout_ms = 0u;
 
     if (s_adv_running) {
