@@ -391,11 +391,17 @@ void rivr_ble_init(void)
 
     RIVR_LOGI(TAG, "rivr_ble_init: initialising Bluedroid BLE stack");
 
+#if CONFIG_IDF_TARGET_ESP32
+    /* Release classic-BT controller memory on original ESP32 only.
+     * ESP32-S3, C3, H2, C6 are BLE-only chips — classic BT memory does not
+     * exist; calling mem_release() with ESP_BT_MODE_CLASSIC_BT on those
+     * targets returns ESP_ERR_NOT_SUPPORTED and would abort BLE init. */
     err = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "esp_bt_controller_mem_release failed: %s", esp_err_to_name(err));
         return;
     }
+#endif
 
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     err = esp_bt_controller_init(&bt_cfg);
