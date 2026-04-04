@@ -437,23 +437,27 @@ void rivr_ble_init(void)
      * Required when own_addr_type = BLE_ADDR_TYPE_RANDOM: ESP32-S3/C3/H2/C6
      * have no factory-programmed public BT address in efuse, so PUBLIC fails
      * silently.  A static random address (top 2 bits = 11) is stable across
-     * reboots (tied to node_id) and visible to scanners on all ESP32 variants. */
+     * reboots (tied to node_id) and visible to scanners on all ESP32 variants.
+     *
+     * esp_bd_addr_t layout: [0] = MSB (shown first in colon notation).
+     * The BTM layer validates via (addr[0] & 0xC0) == 0xC0, so the 0xC0 flag
+     * byte MUST be at index [0], not [5]. */
     {
         esp_bd_addr_t rand_addr;
         uint32_t id = g_my_node_id;
-        rand_addr[0] = (uint8_t)(id & 0xFFu);
-        rand_addr[1] = (uint8_t)((id >>  8) & 0xFFu);
-        rand_addr[2] = (uint8_t)((id >> 16) & 0xFFu);
-        rand_addr[3] = (uint8_t)((id >> 24) & 0xFFu);
-        rand_addr[4] = 0xABu;
-        rand_addr[5] = 0xC0u;   /* top 2 bits = 11 → static random address */
+        rand_addr[0] = 0xC0u;                          /* MSB: top 2 bits = 11 → static random */
+        rand_addr[1] = 0xABu;                          /* fixed namespace byte */
+        rand_addr[2] = (uint8_t)((id >> 24) & 0xFFu);
+        rand_addr[3] = (uint8_t)((id >> 16) & 0xFFu);
+        rand_addr[4] = (uint8_t)((id >>  8) & 0xFFu);
+        rand_addr[5] = (uint8_t)(id & 0xFFu);          /* LSB */
         err = esp_ble_gap_set_rand_addr(rand_addr);
         if (err != ESP_OK) {
             RIVR_LOGW(TAG, "esp_ble_gap_set_rand_addr failed: %s", esp_err_to_name(err));
         } else {
             RIVR_LOGI(TAG, "BLE static random addr: %02X:%02X:%02X:%02X:%02X:%02X",
-                      rand_addr[5], rand_addr[4],
-                      rand_addr[3], rand_addr[2], rand_addr[1], rand_addr[0]);
+                      rand_addr[0], rand_addr[1],
+                      rand_addr[2], rand_addr[3], rand_addr[4], rand_addr[5]);
         }
     }
 
