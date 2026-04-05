@@ -272,6 +272,26 @@ def is_rp2040_env(pio_env: str) -> bool:
     return "_rp2040" in pio_env
 
 
+def _generate_nrf52_dfu(hex_src: Path, dfu_dst: Path) -> None:
+    """Generate a DFU zip from an Intel HEX via adafruit-nrfutil.
+
+    Called when PlatformIO did not produce firmware.zip (which only happens
+    during ``pio run -t upload``, never during a plain ``pio run`` build).
+    """
+    subprocess.run(
+        [
+            "adafruit-nrfutil", "dfu", "genpkg",
+            "--dev-type", "0x0052",   # nRF52840
+            "--sd-req",   "0x00B6",   # S140 6.1.1 – FWID shared by all Adafruit nRF52 boards
+            "--application", str(hex_src),
+            "--application-version", "0xFFFF",
+            str(dfu_dst),
+        ],
+        check=True,
+    )
+    print(f"  generated DFU  →  {dfu_dst}  ({dfu_dst.stat().st_size // 1024} KB)")
+
+
 def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
     """Package an nRF52 variant.
 
@@ -295,11 +315,15 @@ def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
     shutil.copy(hex_src, hex_dst)
     print(f"  copied  firmware.hex  →  {hex_dst}")
 
-    # adafruit-nrfutil DFU zip – used for serial / USB bootloader flashing
+    # adafruit-nrfutil DFU zip – used for serial / USB bootloader flashing.
+    # pio run (plain build) never invokes adafruit-nrfutil, so firmware.zip is
+    # absent in CI.  Generate it explicitly from the HEX in that case.
+    dfu_dst = pkg_dir / f"rivr_{variant}_dfu.zip"
     if dfu_src.exists():
-        dfu_dst = pkg_dir / f"rivr_{variant}_dfu.zip"
         shutil.copy(dfu_src, dfu_dst)
         print(f"  copied  firmware.zip  →  {dfu_dst}")
+    else:
+        _generate_nrf52_dfu(hex_src, dfu_dst)
 
     # Sidecar JSON (minimal — no ESP flash segments)
     manifest = {
