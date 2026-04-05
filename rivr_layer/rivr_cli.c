@@ -54,7 +54,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stddef.h>
-#include <stdlib.h>   /* strtoul */
+#include <stdlib.h>   /* strtoul, strtod, strtol */
+#include <limits.h>   /* INT16_MIN via climits on C++ or stdint on C */
+#include "../firmware_core/gps/rivr_gps.h"
 
 #include <unistd.h>   /* read(), STDIN_FILENO */
 #include "driver/uart.h"
@@ -289,6 +291,8 @@ static void cli_handle_line(void)
                "  rtstats               routing pipeline telemetry snapshot (@RST JSON block)\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
+               "  set pos <lat> <lon> [alt]  set and persist fixed GPS position (decimal degrees)\r\n"
+               "  get pos               show current GPS position and fix status\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
                "  ble-clear-bonds       remove all persisted BLE bonds from this node\r\n"
                "  reboot                software reset the device\r\n"
@@ -300,6 +304,8 @@ static void cli_handle_line(void)
     /* ── "id" ── */
     if (strncmp(p, "id", 2u) == 0 && (p[2] == '\0' || p[2] == ' ')) {
         printf("Node ID  : 0x%08lX\r\nCallsign : %s\r\nNet ID   : 0x%04X\r\n",
+               (unsigned long)g_my_node_id, g_callsign, (unsigned)g_net_id);
+        printf("@ID {\"node_id\":\"0x%08lx\",\"callsign\":\"%s\",\"net_id\":\"0x%04x\"}\r\n",
                (unsigned long)g_my_node_id, g_callsign, (unsigned)g_net_id);
         fflush(stdout);
         return;
@@ -360,6 +366,66 @@ static void cli_handle_line(void)
             printf("WARN: NVS write failed – net ID updated for this session only\r\n");
         } else {
             printf("OK net ID set to 0x%04X\r\n", (unsigned)g_net_id);
+        }
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "get pos" ── */
+    if (strncmp(p, "get pos", 7u) == 0 && (p[7] == '\0' || p[7] == ' ')) {
+        const gps_state_t *gps = gps_get_state();
+        if (!gps->fix_valid) {
+            printf("GPS position: not set\r\n");
+            printf("@POS {\"fix_valid\":false}\r\n");
+        } else {
+            printf("GPS position: lat=%.6f lon=%.6f alt=%d m  (fix_valid=%d)\r\n",
+                   gps->lat_e5 / 100000.0,
+                   gps->lon_e5 / 100000.0,
+                   (int)gps->alt_m,
+                   (int)gps->fix_valid);
+            printf("@POS {\"fix_valid\":true,\"lat\":%.6f,\"lon\":%.6f,\"alt\":%d}\r\n",
+                   gps->lat_e5 / 100000.0,
+                   gps->lon_e5 / 100000.0,
+                   (int)gps->alt_m);
+        }
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "set pos <lat> <lon> [alt]" ── */
+    if (strncmp(p, "set pos", 7u) == 0 && (p[7] == ' ' || p[7] == '\0')) {
+        char *arg = p + 7;
+        while (*arg == ' ') { arg++; }
+        if (*arg == '\0') {
+            printf("ERR: usage: set pos <lat_deg> <lon_deg> [alt_m]\r\n");
+            fflush(stdout);
+            return;
+        }
+        char *end1 = NULL;
+        double dlat = strtod(arg, &end1);
+        if (end1 == arg || dlat < -90.0 || dlat > 90.0) {
+            printf("ERR: bad latitude (range -90..90)\r\n");
+            fflush(stdout);
+            return;
+        }
+        while (*end1 == ' ') { end1++; }
+        char *end2 = NULL;
+        double dlon = strtod(end1, &end2);
+        if (end2 == end1 || dlon < -180.0 || dlon > 180.0) {
+            printf("ERR: bad longitude (range -180..180)\r\n");
+            fflush(stdout);
+            return;
+        }
+        int32_t lat_e5 = (int32_t)(dlat * 100000.0);
+        int32_t lon_e5 = (int32_t)(dlon * 100000.0);
+        while (*end2 == ' ') { end2++; }
+        int16_t alt_m = (*end2 != '\0') ? (int16_t)strtol(end2, NULL, 10) : INT16_MIN;
+        gps_set_position(lat_e5, lon_e5, alt_m);
+        if (!rivr_nvs_store_gps_position(lat_e5, lon_e5, alt_m)) {
+            printf("WARN: NVS write failed\r\n");
+        } else {
+            printf("OK pos lat=%.5f lon=%.5f alt=%d\r\n",
+                   dlat, dlon, (int)alt_m);
         }
         fflush(stdout);
         return;

@@ -271,6 +271,28 @@ void rivr_nvs_load_identity(void);
  */
 bool rivr_nvs_store_identity(const char *callsign, uint16_t net_id);
 
+/**
+ * @brief Persist the node's own GPS position to NVS.
+ *
+ * Stored as three values: lat_e5 (i32), lon_e5 (i32), alt_m (i16).
+ * Call after validating the coordinates.
+ *
+ * @return true on success.
+ */
+bool rivr_nvs_store_gps_position(int32_t lat_e5, int32_t lon_e5, int16_t alt_m);
+
+/**
+ * @brief Load GPS position from NVS into the out-parameters.
+ *
+ * If no position has been stored, the out-parameters are left unchanged.
+ *
+ * @param lat_e5   Receives stored latitude  × 10⁻⁵.
+ * @param lon_e5   Receives stored longitude × 10⁻⁵.
+ * @param alt_m    Receives stored altitude in metres.
+ * @return true if a valid position was loaded, false if NVS has no entry.
+ */
+bool rivr_nvs_load_gps_position(int32_t *lat_e5, int32_t *lon_e5, int16_t *alt_m);
+
 /** Print engine diagnostics to the UART log channel. */
 void rivr_embed_print_stats(void);
 

@@ -46,6 +46,8 @@ idf_component_register(
         "rivr_panic.c"
         # Runtime-adjustable policy parameters
         "rivr_policy.c"
+        # GPS + location-advertisement service
+        "gps/rivr_gps.c"
         # @PARAMS HMAC-SHA-256 signing support
         "crypto/hmac_sha256.c"
         # RIVR glue layer (relative to firmware_core/)

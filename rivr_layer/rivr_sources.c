@@ -28,6 +28,7 @@
 #include "../firmware_core/rivr_policy.h"
 #include "../firmware_core/retry_table.h"
 #include "rivr_svc.h"
+#include "../firmware_core/gps/rivr_gps.h"
 /* Multi-transport packet bus — registers every valid frame, dispatches mirrors
  * to BLE/USB, and detects cross-transport duplicates before routing sees them. */
 #include "../firmware_core/rivr_bus/rivr_bus.h"
@@ -724,6 +725,13 @@ uint32_t sources_rf_rx_drain(void)
                 && payload_ptr != NULL
                 && pkt_hdr.payload_len >= SVC_ALERT_PAYLOAD_LEN) {
             handle_alert_event(&pkt_hdr, payload_ptr, pkt_hdr.payload_len);
+        }
+        if (pkt_hdr.pkt_type == PKT_DATA
+                && payload_ptr != NULL
+                && pkt_hdr.payload_len >= 2u
+                && payload_ptr[0] == RIVR_DATA_SVC_GPS) {
+            gps_on_rx(pkt_hdr.src_id, pkt_hdr.dst_id,
+                      payload_ptr, pkt_hdr.payload_len, now_ms);
         }
 
         /* ── 6. Inject non-control frames into RIVR ── */

@@ -19,6 +19,7 @@
 #include "rivr_ble.h"
 #include "rivr_ble_service.h"
 #include "rivr_layer/rivr_embed.h"
+#include "../gps/rivr_gps.h"
 
 #define TAG "RIVR_BLE_CP"
 
@@ -34,6 +35,8 @@ enum {
     RIVR_CP_CMD_DEVICE_QUERY  = 0x02u,
     RIVR_CP_CMD_SET_CALLSIGN  = 0x03u,
     RIVR_CP_CMD_GET_NEIGHBORS = 0x04u,
+    RIVR_CP_CMD_SET_POSITION  = 0x05u,
+    RIVR_CP_CMD_GET_POSITION  = 0x06u,
 };
 
 enum {
@@ -43,6 +46,8 @@ enum {
     RIVR_CP_PKT_NODE_INFO      = 0x83u,
     RIVR_CP_PKT_NODE_LIST_DONE = 0x84u,
     RIVR_CP_PKT_CHAT_RX        = 0x85u,
+    RIVR_CP_PKT_GPS_UPDATE     = 0x86u,
+    RIVR_CP_PKT_DEVICE_POSITION = 0x87u,
 };
 
 typedef struct {
@@ -242,6 +247,27 @@ static void cp_handle_get_neighbors(void)
     (void)cp_send_packet(RIVR_CP_PKT_NODE_LIST_DONE, 0u, NULL, 0u);
 }
 
+static void cp_handle_get_position(void)
+{
+    /* Payload: lat_e5 LE4 | lon_e5 LE4 | alt_m LE2 | fix_valid u8 (11 bytes) */
+    uint8_t payload[11u];
+    const gps_state_t *gps = gps_get_state();
+
+    payload[0]  = (uint8_t)((uint32_t)gps->lat_e5 & 0xFFu);
+    payload[1]  = (uint8_t)(((uint32_t)gps->lat_e5 >> 8)  & 0xFFu);
+    payload[2]  = (uint8_t)(((uint32_t)gps->lat_e5 >> 16) & 0xFFu);
+    payload[3]  = (uint8_t)(((uint32_t)gps->lat_e5 >> 24) & 0xFFu);
+    payload[4]  = (uint8_t)((uint32_t)gps->lon_e5 & 0xFFu);
+    payload[5]  = (uint8_t)(((uint32_t)gps->lon_e5 >> 8)  & 0xFFu);
+    payload[6]  = (uint8_t)(((uint32_t)gps->lon_e5 >> 16) & 0xFFu);
+    payload[7]  = (uint8_t)(((uint32_t)gps->lon_e5 >> 24) & 0xFFu);
+    payload[8]  = (uint8_t)((uint16_t)gps->alt_m & 0xFFu);
+    payload[9]  = (uint8_t)(((uint16_t)gps->alt_m >> 8) & 0xFFu);
+    payload[10] = gps->fix_valid ? 1u : 0u;
+
+    (void)cp_send_packet(RIVR_CP_PKT_DEVICE_POSITION, 0u, payload, sizeof(payload));
+}
+
 bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len)
 {
     uint8_t next_head;
@@ -309,6 +335,47 @@ void rivr_ble_companion_tick(void)
                 break;
             }
             cp_handle_get_neighbors();
+            break;
+
+        case RIVR_CP_CMD_GET_POSITION:
+            if (!s_session_active) {
+                cp_send_err(cmd, "app start required");
+                break;
+            }
+            cp_handle_get_position();
+            break;
+
+        case RIVR_CP_CMD_SET_POSITION:
+            if (!s_session_active) {
+                cp_send_err(cmd, "app start required");
+                break;
+            }
+            if (payload_len < 10u) {
+                cp_send_err(cmd, "payload too short");
+                break;
+            }
+            {
+                /* Payload: lat_e5 LE4 | lon_e5 LE4 | alt_m LE2 */
+                int32_t lat_e5 = (int32_t)(
+                    (uint32_t)payload[0]        |
+                    ((uint32_t)payload[1] << 8)  |
+                    ((uint32_t)payload[2] << 16) |
+                    ((uint32_t)payload[3] << 24));
+                int32_t lon_e5 = (int32_t)(
+                    (uint32_t)payload[4]        |
+                    ((uint32_t)payload[5] << 8)  |
+                    ((uint32_t)payload[6] << 16) |
+                    ((uint32_t)payload[7] << 24));
+                int16_t alt_m = (int16_t)(
+                    (uint16_t)payload[8] |
+                    ((uint16_t)payload[9] << 8));
+                gps_set_position(lat_e5, lon_e5, alt_m);
+                if (!rivr_nvs_store_gps_position(lat_e5, lon_e5, alt_m)) {
+                    cp_send_err(cmd, "NVS write failed");
+                } else {
+                    cp_send_ok(RIVR_CP_CMD_SET_POSITION);
+                }
+            }
             break;
 
         default:
@@ -386,6 +453,40 @@ void rivr_ble_companion_push_node(uint32_t node_id,
     }
 
     (void)cp_send_packet(RIVR_CP_PKT_NODE_INFO, 0u, payload, sizeof(payload));
+}
+
+void rivr_ble_companion_push_gps_update(uint32_t node_id,
+                                         int32_t lat_e5,
+                                         int32_t lon_e5,
+                                         uint8_t mobility)
+{
+    /* Packet layout (13 bytes):
+     *   [0..3]  node_id  LE u32
+     *   [4..7]  lat_e5   LE i32
+     *   [8..11] lon_e5   LE i32
+     *   [12]    mobility u8 (0=static, 1=slow, 2=fast)
+     */
+    uint8_t payload[13u];
+
+    if (!s_session_active) {
+        return;
+    }
+
+    payload[0]  = (uint8_t)(node_id & 0xFFu);
+    payload[1]  = (uint8_t)((node_id >> 8) & 0xFFu);
+    payload[2]  = (uint8_t)((node_id >> 16) & 0xFFu);
+    payload[3]  = (uint8_t)((node_id >> 24) & 0xFFu);
+    payload[4]  = (uint8_t)((uint32_t)lat_e5 & 0xFFu);
+    payload[5]  = (uint8_t)(((uint32_t)lat_e5 >> 8) & 0xFFu);
+    payload[6]  = (uint8_t)(((uint32_t)lat_e5 >> 16) & 0xFFu);
+    payload[7]  = (uint8_t)(((uint32_t)lat_e5 >> 24) & 0xFFu);
+    payload[8]  = (uint8_t)((uint32_t)lon_e5 & 0xFFu);
+    payload[9]  = (uint8_t)(((uint32_t)lon_e5 >> 8) & 0xFFu);
+    payload[10] = (uint8_t)(((uint32_t)lon_e5 >> 16) & 0xFFu);
+    payload[11] = (uint8_t)(((uint32_t)lon_e5 >> 24) & 0xFFu);
+    payload[12] = mobility;
+
+    (void)cp_send_packet(RIVR_CP_PKT_GPS_UPDATE, 0u, payload, sizeof(payload));
 }
 
 #endif

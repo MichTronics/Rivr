@@ -31,6 +31,7 @@ extern "C" {
 #include "firmware_core/rivr_bus/rivr_bus.h"
 #include "firmware_core/ble/rivr_ble.h"
 #include "firmware_core/ble/rivr_ble_companion.h"
+#include "firmware_core/gps/rivr_gps.h"
 }
 
 #define TAG "MAIN"
@@ -217,6 +218,11 @@ static void rivr_boot(void)
               (unsigned)FWDBUDGET_MAX_FWD_ROLE);
     rivr_cli_init();
     s_cli_session_announced = serial_session_active();
+    /* Mobile client: initialize GPS; restore any saved fixed position from NVS. */
+    gps_init(false, 0, 0, INT16_MIN);
+    { int32_t _lat = 0, _lon = 0; int16_t _alt = INT16_MIN;
+      if (rivr_nvs_load_gps_position(&_lat, &_lon, &_alt))
+          gps_set_position(_lat, _lon, _alt); }
 #elif RIVR_ROLE_REPEATER
     RIVR_LOGI(TAG, "role: REPEATER | relay_budget=%u | fabric=%s",
               (unsigned)FWDBUDGET_MAX_FWD_ROLE,

@@ -192,6 +192,65 @@ bool rivr_nvs_store_identity(const char *callsign, uint16_t net_id)
     return false;
 }
 
+#define RIVR_NVS_KEY_GPS_LAT   "gps_lat"
+#define RIVR_NVS_KEY_GPS_LON   "gps_lon"
+#define RIVR_NVS_KEY_GPS_ALT   "gps_alt"
+
+bool rivr_nvs_store_gps_position(int32_t lat_e5, int32_t lon_e5, int16_t alt_m)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(RIVR_NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open (gps) failed: %d", (int)err);
+        return false;
+    }
+    /* Store signed values as their unsigned bit-pattern; two's complement is
+     * preserved exactly and nvs_set_u32/u16 is available on all platforms.  */
+    uint32_t ulat, ulon; uint16_t ualt;
+    memcpy(&ulat, &lat_e5, sizeof(ulat));
+    memcpy(&ulon, &lon_e5, sizeof(ulon));
+    memcpy(&ualt, &alt_m,  sizeof(ualt));
+    bool ok = true;
+    if (nvs_set_u32(h, RIVR_NVS_KEY_GPS_LAT, ulat) != ESP_OK) ok = false;
+    if (nvs_set_u32(h, RIVR_NVS_KEY_GPS_LON, ulon) != ESP_OK) ok = false;
+    if (nvs_set_u16(h, RIVR_NVS_KEY_GPS_ALT, ualt) != ESP_OK) ok = false;
+    if (ok) err = nvs_commit(h);
+    nvs_close(h);
+    if (ok && err == ESP_OK) {
+        RIVR_LOGI(TAG, "NVS GPS stored: lat=%ld lon=%ld alt=%d",
+                  (long)lat_e5, (long)lon_e5, (int)alt_m);
+        return true;
+    }
+    ESP_LOGE(TAG, "NVS GPS commit failed: %d", (int)err);
+    return false;
+}
+
+bool rivr_nvs_load_gps_position(int32_t *lat_e5, int32_t *lon_e5, int16_t *alt_m)
+{
+    if (!lat_e5 || !lon_e5 || !alt_m) return false;
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(RIVR_NVS_NAMESPACE, NVS_READONLY, &h);
+    if (err != ESP_OK) return false;  /* no namespace yet — first boot */
+    uint32_t ulat = 0u, ulon = 0u;
+    uint16_t ualt = 0u;
+    bool ok = (nvs_get_u32(h, RIVR_NVS_KEY_GPS_LAT, &ulat) == ESP_OK &&
+               nvs_get_u32(h, RIVR_NVS_KEY_GPS_LON, &ulon) == ESP_OK);
+    (void)nvs_get_u16(h, RIVR_NVS_KEY_GPS_ALT, &ualt);  /* optional */
+    nvs_close(h);
+    if (ok) {
+        int32_t la; int32_t lo; int16_t al;
+        memcpy(&la, &ulat, sizeof(la));
+        memcpy(&lo, &ulon, sizeof(lo));
+        memcpy(&al, &ualt, sizeof(al));
+        *lat_e5 = la;
+        *lon_e5 = lo;
+        *alt_m  = al;
+        RIVR_LOGI(TAG, "NVS GPS loaded: lat=%ld lon=%ld alt=%d",
+                  (long)la, (long)lo, (int)al);
+    }
+    return ok;
+}
+
 /* u64 trampoline: rivr_foreach_timer_source gives uint64_t; sources API uses uint32_t */
 static void s_timer_reg_cb(const char *name, uint64_t interval_ms)
 {

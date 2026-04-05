@@ -26,6 +26,10 @@ void rivr_ble_companion_push_node(uint32_t node_id,
                                   uint8_t hop_count,
                                   uint8_t link_score,
                                   uint8_t role);
+void rivr_ble_companion_push_gps_update(uint32_t node_id,
+                                        int32_t lat_e5,
+                                        int32_t lon_e5,
+                                        uint8_t mobility);
 
 #else
 
@@ -62,6 +66,16 @@ static inline void rivr_ble_companion_push_node(uint32_t node_id,
     (void)hop_count;
     (void)link_score;
     (void)role;
+}
+static inline void rivr_ble_companion_push_gps_update(uint32_t node_id,
+                                                      int32_t lat_e5,
+                                                      int32_t lon_e5,
+                                                      uint8_t mobility)
+{
+    (void)node_id;
+    (void)lat_e5;
+    (void)lon_e5;
+    (void)mobility;
 }
 
 #endif

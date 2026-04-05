@@ -73,6 +73,7 @@
 #include "rivr_layer/rivr_cli.h"
 #include "firmware_core/display/display.h"
 #include "firmware_core/ble/rivr_ble.h"    /* BLE transport (stub when RIVR_FEATURE_BLE=0) */
+#include "firmware_core/gps/rivr_gps.h"     /* GPS + location-advertisement service */
 #include "firmware_core/ble/rivr_ble_companion.h"
 #include "firmware_core/rivr_bus/rivr_bus.h"      /* Multi-transport packet bus              */
 #include "firmware_core/iface/rivr_iface_usb.h"   /* USB-UART SLIP bridge (stub when USB=0) */
@@ -525,6 +526,13 @@ static void rivr_init_client(void)
               (unsigned)RCACHE_SIZE,
               (unsigned)RETRY_TABLE_SIZE);
     rivr_cli_init();    /* install UART driver + print boot banner */
+    /* Mobile node — no fixed position; GPS fix comes from hardware.
+     * If the user previously set a fixed position via CLI or companion,
+     * restore it from NVS so it survives reboots. */
+    gps_init(false, 0, 0, INT16_MIN);
+    { int32_t _lat = 0, _lon = 0; int16_t _alt = INT16_MIN;
+      if (rivr_nvs_load_gps_position(&_lat, &_lon, &_alt))
+          gps_set_position(_lat, _lon, _alt); }
 }
 #endif  /* RIVR_ROLE_CLIENT */
 
@@ -543,6 +551,16 @@ static void rivr_init_repeater(void)
               (unsigned)RETRY_TABLE_SIZE,
               RIVR_FABRIC_REPEATER ? "on" : "off");
     rivr_cli_init();
+    /* Static infra node — fixed position known at compile time.        *
+     * Override RIVR_REPEATER_LAT_E5 / _LON_E5 / _ALT_M in sdkconfig. */
+    gps_init(true,
+             (int32_t)RIVR_STATIC_LAT_E5,
+             (int32_t)RIVR_STATIC_LON_E5,
+             (int16_t)RIVR_STATIC_ALT_M);
+    /* Allow NVS-stored position to override the compile-time defaults. */
+    { int32_t _lat = 0, _lon = 0; int16_t _alt = INT16_MIN;
+      if (rivr_nvs_load_gps_position(&_lat, &_lon, &_alt))
+          gps_set_position(_lat, _lon, _alt); }
 }
 #endif  /* RIVR_ROLE_REPEATER */
 
@@ -563,6 +581,16 @@ static void rivr_init_gateway(void)
      * Application service dispatch (rivr_svc.c) is always active; the
      * gateway just adds an extra forwarding path: RF → IP. */
     rivr_cli_init();
+    /* Static infra node — fixed position known at compile time.        *
+     * Override RIVR_GATEWAY_LAT_E5 / _LON_E5 / _ALT_M in sdkconfig.  */
+    gps_init(true,
+             (int32_t)RIVR_STATIC_LAT_E5,
+             (int32_t)RIVR_STATIC_LON_E5,
+             (int16_t)RIVR_STATIC_ALT_M);
+    /* Allow NVS-stored position to override the compile-time defaults. */
+    { int32_t _lat = 0, _lon = 0; int16_t _alt = INT16_MIN;
+      if (rivr_nvs_load_gps_position(&_lat, &_lon, &_alt))
+          gps_set_position(_lat, _lon, _alt); }
 }
 #endif  /* RIVR_ROLE_GATEWAY */
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -828,6 +856,8 @@ void app_main(void)
 #if !RIVR_SIM_MODE
         rivr_ble_tick(now);
         rivr_ble_companion_tick();
+        /* ─ 3c. GPS presence & location tick ─ */
+        gps_tick(now);
         /* ─ 3b. USB-UART SLIP bridge RX drain ─ */
         rivr_iface_usb_tick();  /* no-op when RIVR_FEATURE_USB_BRIDGE=0 */
 #endif
