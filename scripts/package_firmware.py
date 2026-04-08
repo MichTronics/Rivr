@@ -292,16 +292,78 @@ def _generate_nrf52_dfu(hex_src: Path, dfu_dst: Path) -> None:
     print(f"  generated DFU  →  {dfu_dst}  ({dfu_dst.stat().st_size // 1024} KB)")
 
 
+def _generate_nrf52_uf2(hex_src: Path, uf2_dst: Path, app_base: int = 0x26000) -> None:
+    """Generate a UF2 file from Intel HEX for nRF52840 (Adafruit/Seeed bootloader).
+
+    The Adafruit nRF52 bootloader exposes the device as a USB mass-storage
+    drive when in DFU mode. Dropping a .uf2 on that drive flashes the app.
+
+    App start address 0x26000 is the standard offset for S140 v6 + Adafruit
+    bootloader on all nRF52840 boards in this project.
+    Family ID 0xADA52840 is the Adafruit/Microsoft assigned ID for nRF52840.
+
+    Uses intelhex (installed by PlatformIO / adafruit-nrfutil) — no extra dep.
+    """
+    import struct
+    try:
+        from intelhex import IntelHex
+    except ImportError:
+        print("WARNING: intelhex not available – skipping UF2 generation.", file=sys.stderr)
+        print("  Install with: pip install intelhex", file=sys.stderr)
+        return
+
+    UF2_MAGIC0     = 0x0A324655  # "UF2\n"
+    UF2_MAGIC1     = 0x9E5D5157
+    UF2_MAGIC3     = 0x0AB16F30
+    FLAG_FAMILY_ID = 0x00002000
+    FAMILY_NRF52840 = 0xADA52840
+    PAYLOAD        = 256          # bytes of app data per UF2 block
+    BLOCK_SIZE     = 512          # total UF2 block size
+
+    ih = IntelHex()
+    ih.loadhex(str(hex_src))
+
+    # Extract binary from app_base to end of HEX data.
+    data = bytearray(ih.tobinarray(start=app_base))
+
+    # Pad to a multiple of PAYLOAD.
+    rem = len(data) % PAYLOAD
+    if rem:
+        data += b"\xff" * (PAYLOAD - rem)
+
+    num_blocks = len(data) // PAYLOAD
+
+    with uf2_dst.open("wb") as out:
+        for blk in range(num_blocks):
+            chunk = data[blk * PAYLOAD : (blk + 1) * PAYLOAD]
+            addr  = app_base + blk * PAYLOAD
+            header = struct.pack(
+                "<IIIIIIII",
+                UF2_MAGIC0, UF2_MAGIC1,
+                FLAG_FAMILY_ID,
+                addr, PAYLOAD,
+                blk, num_blocks,
+                FAMILY_NRF52840,
+            )
+            # Pad payload section to 476 bytes (block = 32 header + 476 data + 4 magic3)
+            padded = bytes(chunk) + b"\x00" * (476 - PAYLOAD)
+            out.write(header + padded + struct.pack("<I", UF2_MAGIC3))
+
+    print(f"  generated UF2  →  {uf2_dst}  ({num_blocks} blocks, {uf2_dst.stat().st_size // 1024} KB)")
+
+
 def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
     """Package an nRF52 variant.
 
     The Adafruit nRF52 Arduino BSP produces:
       firmware.hex  – Intel HEX for J-Link / nrfjprog
       firmware.zip  – adafruit-nrfutil DFU package (OTA / serial bootloader)
+      firmware.uf2  – UF2 image for USB-drive drag-and-drop (BSP >= 0.21)
     There is no standalone firmware.bin in the build directory.
     """
     hex_src = build_dir / "firmware.hex"
     dfu_src = build_dir / "firmware.zip"
+    uf2_src = build_dir / "firmware.uf2"
 
     if not hex_src.exists():
         print(f"ERROR: expected build artefact not found: {hex_src}", file=sys.stderr)
@@ -324,6 +386,16 @@ def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
         print(f"  copied  firmware.zip  →  {dfu_dst}")
     else:
         _generate_nrf52_dfu(hex_src, dfu_dst)
+
+    # UF2 image – used for USB-drive drag-and-drop flashing via Adafruit/Seeed
+    # bootloader (device mounts as T1000-E-BOOT / HELTECT114 / etc.).
+    # The BSP generates firmware.uf2 automatically; fall back to our generator.
+    uf2_dst = pkg_dir / f"rivr_{variant}.uf2"
+    if uf2_src.exists():
+        shutil.copy(uf2_src, uf2_dst)
+        print(f"  copied  firmware.uf2  →  {uf2_dst}")
+    else:
+        _generate_nrf52_uf2(hex_src, uf2_dst)
 
     # Sidecar JSON (minimal — no ESP flash segments)
     manifest = {
@@ -372,11 +444,17 @@ def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
         "---------------------\n"
         f"  rivr_{variant}.hex          Intel HEX for J-Link / nrfjprog\n"
         f"  rivr_{variant}_dfu.zip      adafruit-nrfutil DFU package (serial bootloader)\n"
+        f"  rivr_{variant}.uf2          UF2 image for USB-drive drag-and-drop flashing\n"
         f"  rivr_{variant}.json         Metadata\n"
         f"  flash.sh                    Linux/macOS flash script\n"
         "\n"
-        "Flashing – adafruit-nrfutil / serial bootloader (easiest)\n"
-        "----------------------------------------------------------\n"
+        "Flashing – UF2 drag-and-drop (simplest)\n"
+        "----------------------------------------\n"
+        "  1. Double-tap RESET – device mounts as a USB drive (T1000-E-BOOT etc.)\n"
+        f"  2. Copy rivr_{variant}.uf2 onto the drive – done!\n"
+        "\n"
+        "Flashing – adafruit-nrfutil / serial bootloader\n"
+        "------------------------------------------------\n"
         "  1. Install: pip install adafruit-nrfutil\n"
         "  2. Double-click RESET to enter the serial DFU bootloader.\n"
         "  3. chmod +x flash.sh && ./flash.sh /dev/ttyACM0\n"

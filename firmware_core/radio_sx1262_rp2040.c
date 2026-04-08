@@ -28,6 +28,9 @@
 static uint32_t s_last_rx_event_ms = 0u;
 static volatile bool s_in_rx = false;
 static volatile atomic_bool s_dio1_pending = ATOMIC_VAR_INIT(false);
+/* Adaptive frequency correction: tracks the current synthesiser centre frequency
+ * after per-packet FEI-based nudges (mirrors RadioLib getFrequencyError autoCorrect). */
+static int32_t s_corrected_freq_hz = (int32_t)RIVR_RF_FREQ_HZ;
 
 static void s_radio_isr_trampoline(void)
 {
@@ -149,12 +152,24 @@ static void sx_apply_waveshare_tweaks(void)
     sx_write_reg(0x08E7u, 0x38u);  /* OCP = 140 mA */
     sx_write_reg(0x08ACu, 0x96u);  /* boosted RX gain */
 
-    /* Meshtastic also applies this Semtech/Heltec RX sensitivity patch. */
+    /* SX1262 errata §15.1: receiver spurious reception fix.
+     * For all BW != 500 kHz, bit 2 of reg 0x08B5 must be SET.
+     * (RadioLib fixSensitivity(): sensitivityConfig |= 0x04) */
     {
         uint8_t reg = 0u;
         sx_read_reg(0x08B5u, &reg, 1u);
-        reg |= 0x01u;
+        reg |= 0x04u;
         sx_write_reg(0x08B5u, reg);
+    }
+
+    /* SX1262 errata §15.2: PA clamp fix — overly eager PA clamping
+     * during initial NFET turn-on causes weak / failed TX without this.
+     * (RadioLib fixPaClamping(): clampConfig |= 0x1E on reg 0x08D8) */
+    {
+        uint8_t reg = 0u;
+        sx_read_reg(0x08D8u, &reg, 1u);
+        reg |= 0x1Eu;
+        sx_write_reg(0x08D8u, reg);
     }
 }
 
@@ -204,6 +219,7 @@ void radio_init(void)
         };
         sx_write_cmd(0x86, d, 4);
     }
+    s_corrected_freq_hz = (int32_t)RIVR_RF_FREQ_HZ;
     sx_calibrate_image(RIVR_RF_FREQ_HZ);
 
     { uint8_t d[4] = {0x04, 0x07, 0x00, 0x01}; sx_write_cmd(0x95, d, 4); }
@@ -245,7 +261,7 @@ void radio_init(void)
     }
 
     {
-        uint8_t d[6] = {0x00, 0x08, 0x00, RF_MAX_PAYLOAD_LEN, 0x01, 0x00};
+        uint8_t d[6] = {0x00, RF_PREAMBLE_LEN, 0x00, RF_MAX_PAYLOAD_LEN, 0x01, 0x00};
         sx_write_cmd(0x8C, d, 6);
     }
 
@@ -273,6 +289,18 @@ void radio_init(void)
 
 void radio_start_rx(void)
 {
+    /* SX1262 errata §15.4: IQ polarity — reapply before each RX.
+     * SetPacketParams resets register 0x0736 bit 2 to the inverted state.
+     * For non-inverted (peer-to-peer) LoRa, bit 2 must be SET.
+     * RadioLib fixes this via fixInvertedIQ(false) inside setPacketParams(),
+     * called from startReceiveCommon() on every RX entry. */
+    {
+        uint8_t iq = 0u;
+        sx_read_reg(0x0736u, &iq, 1u);
+        iq |= 0x04u;
+        sx_write_reg(0x0736u, iq);
+    }
+
     platform_sx1262_set_rxen(true);
     vTaskDelay(pdMS_TO_TICKS(1));
     {
@@ -299,7 +327,11 @@ void radio_service_rx(void)
         { uint8_t d[2] = {irq_bytes[0], irq_bytes[1]}; sx_write_cmd(0x02, d, 2); }
 
         if (!(irq & 0x0002u)) {
-            return;
+            /* DIO1 fired but RxDone not set — spurious TxDone/Timeout IRQ.
+             * Restart RX to ensure the radio doesn't stay in STDBY if a
+             * Timeout fired (rare with infinite RX, but safe to handle). */
+            RIVR_LOGD(TAG, "DIO1 non-RxDone IRQ=0x%04X – restarting RX", irq);
+            goto restart_rx;
         }
 
         if (irq & 0x0040u) {
@@ -337,6 +369,39 @@ void radio_service_rx(void)
 
             rb_try_push(&rf_rx_ringbuf, &frame);
             s_last_rx_event_ms = tb_millis();
+
+            /* Adaptive frequency error correction (mirrors RadioLib SX126x::getFrequencyError
+             * with autoCorrect). After each valid packet the SX1262 FEI registers
+             * 0x076B-0x076D hold a 20-bit signed frequency error. Reading and applying
+             * it keeps the synthesiser locked onto a crystal-drifted peer (e.g. LilyGo
+             * SX1276) across successive packets at BW=62.5 kHz.
+             * Formula from RadioLib: error_hz = 1.55 × raw × BW_kHz / 1600             */
+            {
+                uint8_t fei[3] = {0u, 0u, 0u};
+                sx_read_reg(0x076Bu, fei, 3u);
+                int32_t raw = (int32_t)(((uint32_t)fei[0] << 16) |
+                                        ((uint32_t)fei[1] <<  8) |
+                                         (uint32_t)fei[2]);
+                raw &= (int32_t)0x000FFFFF;
+                if (raw & (int32_t)0x00080000) {
+                    raw |= (int32_t)0xFFF00000;  /* sign-extend 20→32 bit */
+                }
+                float err_hz = 1.55f * (float)raw
+                               * (float)RF_BANDWIDTH_KHZ / 1600.0f;
+                s_corrected_freq_hz -= (int32_t)err_hz;
+                /* Clamp to ±50 kHz around nominal to prevent runaway. */
+                if (s_corrected_freq_hz < (int32_t)(RIVR_RF_FREQ_HZ - 50000u))
+                    s_corrected_freq_hz = (int32_t)(RIVR_RF_FREQ_HZ - 50000u);
+                if (s_corrected_freq_hz > (int32_t)(RIVR_RF_FREQ_HZ + 50000u))
+                    s_corrected_freq_hz = (int32_t)(RIVR_RF_FREQ_HZ + 50000u);
+                uint32_t frf = (uint32_t)(((uint64_t)(uint32_t)s_corrected_freq_hz << 25)
+                                           / 32000000UL);
+                uint8_t fd[4] = {
+                    (uint8_t)(frf >> 24), (uint8_t)(frf >> 16),
+                    (uint8_t)(frf >>  8), (uint8_t)(frf)
+                };
+                sx_write_cmd(0x86u, fd, 4u);
+            }
         }
 
         return;
@@ -357,8 +422,16 @@ bool radio_transmit(const rf_tx_request_t *req)
     { uint8_t d[2] = {0xFF, 0xFF}; sx_write_cmd(0x02, d, 2); }
 
     {
-        uint8_t d[6] = {0x00, 0x08, 0x00, req->len, 0x01, 0x00};
+        uint8_t d[6] = {0x00, RF_PREAMBLE_LEN, 0x00, req->len, 0x01, 0x00};
         sx_write_cmd(0x8C, d, 6);
+    }
+
+    /* SX1262 errata §15.4: IQ polarity — reapply after SetPacketParams for TX. */
+    {
+        uint8_t iq = 0u;
+        sx_read_reg(0x0736u, &iq, 1u);
+        iq |= 0x04u;
+        sx_write_reg(0x0736u, iq);
     }
 
     sx_write_buf(0, req->data, req->len);
@@ -419,10 +492,10 @@ void radio_check_timeouts(void)
     if ((now - s_last_rx_event_ms) >= RADIO_RX_SILENCE_MS) {
         g_rivr_metrics.radio_rx_timeout++;
         RIVR_LOGW(TAG,
-                  "RX silent %" PRIu32 "ms – no reset (total=%" PRIu32 ")",
+                  "RX silent %" PRIu32 "ms – restarting RX (total=%" PRIu32 ")",
                   (uint32_t)(now - s_last_rx_event_ms),
                   g_rivr_metrics.radio_rx_timeout);
-        s_last_rx_event_ms = now;
+        radio_start_rx();
     }
 }
 

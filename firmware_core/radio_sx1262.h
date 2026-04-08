@@ -43,7 +43,10 @@ extern "C" {
  *   CR: 8 (= 4/8)     highest redundancy; 5 (= 4/5) for least overhead
  *   Power (SX1262): -9..22 dBm; E22 external PA adds ~8 dBm on top       */
 #ifndef RF_PREAMBLE_LEN
-#  define RF_PREAMBLE_LEN      8u
+#  define RF_PREAMBLE_LEN      16u   /* 16 symbols — matches MeshCore default; improves
+                               * acquisition range at 62.5 kHz where two crystal-
+                               * based boards can accumulate ~±17 kHz combined
+                               * offset (SX1276 + SX1262 each ±10 ppm at 869 MHz). */
 #endif
 /* RF_FREQ_HZ — actual chip register value; falls back to RIVR_RF_FREQ_HZ so
  * a single -DRIVR_RF_FREQ_HZ=… updates both the boot banner AND the radio. */

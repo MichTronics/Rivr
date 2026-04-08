@@ -337,7 +337,7 @@
                 ]
             },
             "defines": [
-                "RIVR_GIT_SHA=\"ef51add1\"",
+                "RIVR_GIT_SHA=\"17a0ccc3\"",
                 "PLATFORMIO=60119",
                 "ARDUINO_WAVESHARE_RP2040_LORA",
                 "ARDUINO_ARCH_RP2040",
