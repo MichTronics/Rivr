@@ -212,6 +212,32 @@ void radio_init(void)
     /* Fix SX1262 RX gain from datasheet errata (reg 0x08AC = 0x96) */
     sx_write_reg(0x08AC, 0x96);
 
+    /* SX1262 errata §15.1: receiver spurious reception fix.
+     * For all BW != 500 kHz, bit 2 of reg 0x08B5 must be SET.
+     * (RadioLib fixSensitivity(): sensitivityConfig |= 0x04) */
+    {
+        uint8_t tx[5] = { 0x1D, 0x08, 0xB5, 0x00, 0x00 };  /* 0x1D = ReadRegister */
+        uint8_t rx[5] = {0};
+        platform_sx1262_wait_busy(10);
+        platform_spi_transfer(tx, rx, 5);
+        uint8_t reg = rx[4];
+        reg |= 0x04u;
+        sx_write_reg(0x08B5, reg);
+    }
+
+    /* SX1262 errata §15.2: PA clamp fix — overly eager PA clamping
+     * during initial NFET turn-on causes weak / failed TX without this.
+     * (RadioLib fixPaClamping(): clampConfig |= 0x1E on reg 0x08D8) */
+    {
+        uint8_t tx[5] = { 0x1D, 0x08, 0xD8, 0x00, 0x00 };  /* 0x1D = ReadRegister */
+        uint8_t rx[5] = {0};
+        platform_sx1262_wait_busy(10);
+        platform_spi_transfer(tx, rx, 5);
+        uint8_t reg = rx[4];
+        reg |= 0x1Eu;
+        sx_write_reg(0x08D8, reg);
+    }
+
     /* Attach DIO1 ISR */
     platform_dio1_attach_isr(s_radio_isr_trampoline);
 
