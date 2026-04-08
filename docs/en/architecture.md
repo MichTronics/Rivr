@@ -62,7 +62,7 @@
 | `neighbor_table.c` | 16-slot BSS link-quality table; `rivr_neighbor_t` tracks EWMA RSSI/SNR (`rssi_avg`, `snr_avg`), seq-gap loss-rate (`loss_rate`), `last_seen_ms`, and `flags` (`NTABLE_FLAG_DIRECT`, `NTABLE_FLAG_STALE`, `NTABLE_FLAG_BEACON`); API: `neighbor_update()`, `neighbor_find()`, `neighbor_best()`, `neighbor_link_score()`, `neighbor_set_flag()`, `neighbor_table_expire()`; `g_ntable` global exposed via `rivr_embed.h` |
 | `rivr_fabric.c` | Congestion-aware relay policy: 60 s sliding-window score, DELAY / DROP decisions for `PKT_CHAT` / `PKT_DATA` relay; enabled when `RIVR_FABRIC_REPEATER=1` |
 | `rivr_policy.c` | Runtime-adjustable policy: `rivr_policy_params_t` (beacon interval, TX power, relay throttle, node role); `@PARAMS` parser + NVS-backed storage; `@POLICY` JSON reporter; USB origination gate (`rivr_policy_allow_origination()`); HMAC-SHA-256 signature verification (`rivr_verify_params_sig()`); `policy` CLI command; metrics counters (`params_sig_ok_count`, `params_sig_fail_count`); built-in selftest |
-| `rivr_ota.c` | Signed `PKT_PROG_PUSH` gate: Ed25519 verify (`rivr_ota_verify()`), anti-replay sequence counter stored in NVS, `rivr_ota_activate()` / `rivr_ota_confirm()` / `rivr_ota_is_pending()` |
+| `rivr_ota_core.c` | Signed `PKT_PROG_PUSH` gate: Ed25519 verify (`rivr_ota_verify()`), anti-replay sequence counter stored in NVS, `rivr_ota_activate()` / `rivr_ota_confirm()` / `rivr_ota_is_pending()`. Platform-agnostic; links against `rivr_ota_platform.c` (ESP-IDF NVS) or the nRF52/RP2040 variants |
 | `crypto/hmac_sha256.c` | Self-contained FIPS 180-4 SHA-256 + RFC 2104 HMAC-SHA-256; no heap allocation; stack cost ≈460 B; tested against RFC 4231 TC1 known vector |
 | `display/` | SSD1306 128×64 OLED driver; I²C 400 kHz, horizontal addressing mode, single 1025-byte bulk flush per refresh; auto-detects I²C address 0x3C / 0x3D; 7-page rotating UI (overview, RF stats, routing, duty cycle, RIVR VM, neighbours, Fabric debug); runs as FreeRTOS task on CPU1 at priority 1; feature-gated by `FEATURE_DISPLAY=1` |
 
@@ -332,7 +332,7 @@ adding capability.
 
 ### Phase 8 — Crypto layer (`hal/crypto_if.h`)
 
-Ed25519 OTA signature verification was already in place (`rivr_ota.c`).
+Ed25519 OTA signature verification was already in place (`rivr_ota_core.c` + `rivr_ota_platform.c`).
 Added in `hal/crypto_if.h`:
 
 - `crypto_if_ed25519_verify()` — thin wrapper around `rivr_ed25519_verify()`.
