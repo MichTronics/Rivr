@@ -4,7 +4,9 @@
  */
 
 #include "rivr_ble_service.h"
+#include "rivr_ble.h"
 #include "rivr_ble_companion.h"
+#include "rivr_ble_frag.h"
 #include "rivr_ble_service_internal.h"
 #include "rivr_config.h"
 
@@ -123,26 +125,45 @@ static esp_gatt_if_t s_gatts_if = ESP_GATT_IF_NONE;
 static uint16_t s_conn_id = 0xFFFFu;
 static bool s_service_ready = false;
 static bool s_notify_enabled = false;
+static rivr_ble_frag_rx_t s_rx_frag;
+static uint8_t s_tx_frag_msg_id = 0u;
 
-static void rivr_ble_service_handle_rx_write(const esp_ble_gatts_cb_param_t *param)
+static bool rivr_ble_service_notify_one(void *ctx, const uint8_t *data, uint16_t len)
 {
-    const struct gatts_write_evt_param *w = &param->write;
+    const uint16_t *conn_handle = (const uint16_t *)ctx;
+    esp_err_t err;
 
-    if (w->len == 0u || w->len > RF_MAX_PAYLOAD_LEN) {
-        RIVR_LOGW(TAG, "BLE rx: frame length %u out of range (max=%u)",
-                  (unsigned)w->len, (unsigned)RF_MAX_PAYLOAD_LEN);
-        g_rivr_metrics.ble_errors++;
-        return;
+    (void)conn_handle;
+
+    err = esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id,
+                                      s_handle_table[IDX_TX_CHAR_VAL],
+                                      (uint16_t)len, (uint8_t *)data, false);
+    if (err == ESP_OK) {
+        return true;
     }
 
-    if (rivr_ble_companion_handle_rx(w->value, w->len)) {
-        return;
-    }
+    RIVR_LOGD(TAG, "BLE notify failed: %s", esp_err_to_name(err));
+    return false;
+}
 
+static bool rivr_ble_service_handle_payload(const uint8_t *data, uint16_t len)
+{
     rf_rx_frame_t frame;
+
+    if (!data || len == 0u || len > RF_MAX_PAYLOAD_LEN) {
+        RIVR_LOGW(TAG, "BLE rx: frame length %u out of range (max=%u)",
+                  (unsigned)len, (unsigned)RF_MAX_PAYLOAD_LEN);
+        g_rivr_metrics.ble_errors++;
+        return false;
+    }
+
+    if (rivr_ble_companion_handle_rx(data, len)) {
+        return true;
+    }
+
     memset(&frame, 0, sizeof(frame));
-    memcpy(frame.data, w->value, w->len);
-    frame.len = (uint8_t)w->len;
+    memcpy(frame.data, data, len);
+    frame.len = (uint8_t)len;
     frame.rssi_dbm = 0;
     frame.snr_db = 0;
     frame.rx_mono_ms = tb_millis();
@@ -152,11 +173,33 @@ static void rivr_ble_service_handle_rx_write(const esp_ble_gatts_cb_param_t *par
     if (!rb_try_push(&rf_rx_ringbuf, &frame)) {
         RIVR_LOGW(TAG, "BLE rx: rf_rx_ringbuf full — frame dropped");
         g_rivr_metrics.ble_errors++;
-        return;
+        return false;
     }
 
     g_rivr_metrics.ble_rx_frames++;
-    RIVR_LOGI(TAG, "BLE rx: %u bytes pushed to rf_rx_ringbuf", (unsigned)w->len);
+    RIVR_LOGI(TAG, "BLE rx: %u bytes pushed to rf_rx_ringbuf", (unsigned)len);
+    return true;
+}
+
+static void rivr_ble_service_handle_rx_write(const esp_ble_gatts_cb_param_t *param)
+{
+    const struct gatts_write_evt_param *w = &param->write;
+    const uint8_t *payload = NULL;
+    uint16_t payload_len = 0u;
+    rivr_ble_frag_rx_result_t frag_result;
+
+    frag_result = rivr_ble_frag_ingest(&s_rx_frag, w->value, w->len,
+                                       &payload, &payload_len);
+    if (frag_result == RIVR_BLE_FRAG_RX_INVALID) {
+        RIVR_LOGW(TAG, "BLE rx: invalid fragment stream");
+        g_rivr_metrics.ble_errors++;
+        return;
+    }
+    if (frag_result == RIVR_BLE_FRAG_RX_INCOMPLETE) {
+        return;
+    }
+
+    (void)rivr_ble_service_handle_payload(payload, payload_len);
 }
 
 int rivr_ble_service_register(void)
@@ -178,6 +221,7 @@ void rivr_ble_service_clear_connection(void)
 {
     s_conn_id = 0xFFFFu;
     s_notify_enabled = false;
+    rivr_ble_frag_reset(&s_rx_frag);
 }
 
 bool rivr_ble_service_is_ready(void)
@@ -237,23 +281,26 @@ void rivr_ble_service_handle_gatts_event(esp_gatts_cb_event_t event,
     }
 }
 
-void rivr_ble_service_notify(uint16_t conn_handle, const uint8_t *data, uint8_t len)
+bool rivr_ble_service_notify(uint16_t conn_handle, const uint8_t *data, uint8_t len)
 {
-    (void)conn_handle;
+    uint16_t payload_limit = rivr_ble_link_payload_limit();
 
-    if (s_gatts_if == ESP_GATT_IF_NONE || s_conn_id == 0xFFFFu) return;
-    if (!s_service_ready || !s_notify_enabled || !data || len == 0u) return;
-
-    esp_err_t err = esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id,
-                                                s_handle_table[IDX_TX_CHAR_VAL],
-                                                len, (uint8_t *)data, false);
-    if (err == ESP_OK) {
+    if (s_gatts_if == ESP_GATT_IF_NONE || s_conn_id == 0xFFFFu) return false;
+    if (!s_service_ready || !s_notify_enabled || !data || len == 0u) return false;
+    if (payload_limit == 0u) {
+        g_rivr_metrics.ble_errors++;
+        RIVR_LOGW(TAG, "BLE notify skipped: len=%u payload_limit=%u",
+                  (unsigned)len, (unsigned)payload_limit);
+        return false;
+    }
+    if (rivr_ble_frag_send(data, len, payload_limit, &s_tx_frag_msg_id,
+                           rivr_ble_service_notify_one, &conn_handle)) {
         g_rivr_metrics.ble_tx_frames++;
-        return;
+        return true;
     }
 
     g_rivr_metrics.ble_errors++;
-    RIVR_LOGD(TAG, "BLE notify failed: %s", esp_err_to_name(err));
+    return false;
 }
 
 #endif /* RIVR_FEATURE_BLE */

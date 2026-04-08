@@ -1,0 +1,14 @@
+# sdkconfig.heltec_v3_8mb — Heltec WiFi LoRa 32 V3 flash size override
+#
+# Official Heltec V3 boards ship with 8MB flash. Keep this as a variant-local
+# override so other ESP32 targets can continue using the global 4MB default.
+
+# CONFIG_ESPTOOLPY_FLASHSIZE_1MB is not set
+# CONFIG_ESPTOOLPY_FLASHSIZE_2MB is not set
+# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+# CONFIG_ESPTOOLPY_FLASHSIZE_16MB is not set
+# CONFIG_ESPTOOLPY_FLASHSIZE_32MB is not set
+# CONFIG_ESPTOOLPY_FLASHSIZE_64MB is not set
+# CONFIG_ESPTOOLPY_FLASHSIZE_128MB is not set
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"

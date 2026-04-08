@@ -318,6 +318,34 @@ static void radio_apply_config(void)
         sx1262_cmd(0x0D, wr_params, 3);   /* 0x0D = WriteRegister */
         platform_sx1262_wait_busy(5);
     }
+
+    /* SX1262 errata §15.1: receiver spurious reception fix.
+     * For all BW != 500 kHz, bit 2 of reg 0x08B5 must be SET.
+     * (RadioLib fixSensitivity(): sensitivityConfig |= 0x04) */
+    {
+        uint8_t tx[5] = { 0x1D, 0x08, 0xB5, 0x00, 0x00 };  /* 0x1D = ReadRegister */
+        uint8_t rx[5] = {0};
+        platform_spi_transfer(tx, rx, 5);
+        uint8_t reg = rx[4];
+        reg |= 0x04u;
+        uint8_t wr[3] = { 0x08, 0xB5, reg };
+        sx1262_cmd(0x0D, wr, 3);
+        platform_sx1262_wait_busy(5);
+    }
+
+    /* SX1262 errata §15.2: PA clamp fix — overly eager PA clamping
+     * during initial NFET turn-on causes weak / failed TX without this.
+     * (RadioLib fixPaClamping(): clampConfig |= 0x1E on reg 0x08D8) */
+    {
+        uint8_t tx[5] = { 0x1D, 0x08, 0xD8, 0x00, 0x00 };  /* 0x1D = ReadRegister */
+        uint8_t rx[5] = {0};
+        platform_spi_transfer(tx, rx, 5);
+        uint8_t reg = rx[4];
+        reg |= 0x1Eu;
+        uint8_t wr[3] = { 0x08, 0xD8, reg };
+        sx1262_cmd(0x0D, wr, 3);
+        platform_sx1262_wait_busy(5);
+    }
 }
 
 void radio_init(void)

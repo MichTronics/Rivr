@@ -264,7 +264,92 @@ def create_zip(pkg_dir: Path, variant: str) -> Path:
 
 def is_nrf52_env(pio_env: str) -> bool:
     """Return True for nRF52 PlatformIO environments (flat .bin, no bootloader)."""
-    return "_t114" in pio_env or "_t1000_e" in pio_env or "_nrf52" in pio_env
+    return "_t114" in pio_env or "_t1000_e" in pio_env or "_rak4631" in pio_env or "_nrf52" in pio_env
+
+
+def is_rp2040_env(pio_env: str) -> bool:
+    """Return True for RP2040 PlatformIO environments (single UF2 image)."""
+    return "_rp2040" in pio_env
+
+
+def _generate_nrf52_dfu(hex_src: Path, dfu_dst: Path) -> None:
+    """Generate a DFU zip from an Intel HEX via adafruit-nrfutil.
+
+    Called when PlatformIO did not produce firmware.zip (which only happens
+    during ``pio run -t upload``, never during a plain ``pio run`` build).
+    """
+    subprocess.run(
+        [
+            "adafruit-nrfutil", "dfu", "genpkg",
+            "--dev-type", "0x0052",   # nRF52840
+            "--sd-req",   "0x00B6",   # S140 6.1.1 – FWID shared by all Adafruit nRF52 boards
+            "--application", str(hex_src),
+            "--application-version", "0xFFFF",
+            str(dfu_dst),
+        ],
+        check=True,
+    )
+    print(f"  generated DFU  →  {dfu_dst}  ({dfu_dst.stat().st_size // 1024} KB)")
+
+
+def _generate_nrf52_uf2(hex_src: Path, uf2_dst: Path, app_base: int = 0x26000) -> None:
+    """Generate a UF2 file from Intel HEX for nRF52840 (Adafruit/Seeed bootloader).
+
+    The Adafruit nRF52 bootloader exposes the device as a USB mass-storage
+    drive when in DFU mode. Dropping a .uf2 on that drive flashes the app.
+
+    App start address 0x26000 is the standard offset for S140 v6 + Adafruit
+    bootloader on all nRF52840 boards in this project.
+    Family ID 0xADA52840 is the Adafruit/Microsoft assigned ID for nRF52840.
+
+    Uses intelhex (installed by PlatformIO / adafruit-nrfutil) — no extra dep.
+    """
+    import struct
+    try:
+        from intelhex import IntelHex
+    except ImportError:
+        print("WARNING: intelhex not available – skipping UF2 generation.", file=sys.stderr)
+        print("  Install with: pip install intelhex", file=sys.stderr)
+        return
+
+    UF2_MAGIC0     = 0x0A324655  # "UF2\n"
+    UF2_MAGIC1     = 0x9E5D5157
+    UF2_MAGIC3     = 0x0AB16F30
+    FLAG_FAMILY_ID = 0x00002000
+    FAMILY_NRF52840 = 0xADA52840
+    PAYLOAD        = 256          # bytes of app data per UF2 block
+    BLOCK_SIZE     = 512          # total UF2 block size
+
+    ih = IntelHex()
+    ih.loadhex(str(hex_src))
+
+    # Extract binary from app_base to end of HEX data.
+    data = bytearray(ih.tobinarray(start=app_base))
+
+    # Pad to a multiple of PAYLOAD.
+    rem = len(data) % PAYLOAD
+    if rem:
+        data += b"\xff" * (PAYLOAD - rem)
+
+    num_blocks = len(data) // PAYLOAD
+
+    with uf2_dst.open("wb") as out:
+        for blk in range(num_blocks):
+            chunk = data[blk * PAYLOAD : (blk + 1) * PAYLOAD]
+            addr  = app_base + blk * PAYLOAD
+            header = struct.pack(
+                "<IIIIIIII",
+                UF2_MAGIC0, UF2_MAGIC1,
+                FLAG_FAMILY_ID,
+                addr, PAYLOAD,
+                blk, num_blocks,
+                FAMILY_NRF52840,
+            )
+            # Pad payload section to 476 bytes (block = 32 header + 476 data + 4 magic3)
+            padded = bytes(chunk) + b"\x00" * (476 - PAYLOAD)
+            out.write(header + padded + struct.pack("<I", UF2_MAGIC3))
+
+    print(f"  generated UF2  →  {uf2_dst}  ({num_blocks} blocks, {uf2_dst.stat().st_size // 1024} KB)")
 
 
 def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
@@ -273,10 +358,12 @@ def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
     The Adafruit nRF52 Arduino BSP produces:
       firmware.hex  – Intel HEX for J-Link / nrfjprog
       firmware.zip  – adafruit-nrfutil DFU package (OTA / serial bootloader)
+      firmware.uf2  – UF2 image for USB-drive drag-and-drop (BSP >= 0.21)
     There is no standalone firmware.bin in the build directory.
     """
     hex_src = build_dir / "firmware.hex"
     dfu_src = build_dir / "firmware.zip"
+    uf2_src = build_dir / "firmware.uf2"
 
     if not hex_src.exists():
         print(f"ERROR: expected build artefact not found: {hex_src}", file=sys.stderr)
@@ -290,11 +377,25 @@ def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
     shutil.copy(hex_src, hex_dst)
     print(f"  copied  firmware.hex  →  {hex_dst}")
 
-    # adafruit-nrfutil DFU zip – used for serial / USB bootloader flashing
+    # adafruit-nrfutil DFU zip – used for serial / USB bootloader flashing.
+    # pio run (plain build) never invokes adafruit-nrfutil, so firmware.zip is
+    # absent in CI.  Generate it explicitly from the HEX in that case.
+    dfu_dst = pkg_dir / f"rivr_{variant}_dfu.zip"
     if dfu_src.exists():
-        dfu_dst = pkg_dir / f"rivr_{variant}_dfu.zip"
         shutil.copy(dfu_src, dfu_dst)
         print(f"  copied  firmware.zip  →  {dfu_dst}")
+    else:
+        _generate_nrf52_dfu(hex_src, dfu_dst)
+
+    # UF2 image – used for USB-drive drag-and-drop flashing via Adafruit/Seeed
+    # bootloader (device mounts as T1000-E-BOOT / HELTECT114 / etc.).
+    # The BSP generates firmware.uf2 automatically; fall back to our generator.
+    uf2_dst = pkg_dir / f"rivr_{variant}.uf2"
+    if uf2_src.exists():
+        shutil.copy(uf2_src, uf2_dst)
+        print(f"  copied  firmware.uf2  →  {uf2_dst}")
+    else:
+        _generate_nrf52_uf2(hex_src, uf2_dst)
 
     # Sidecar JSON (minimal — no ESP flash segments)
     manifest = {
@@ -343,11 +444,17 @@ def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
         "---------------------\n"
         f"  rivr_{variant}.hex          Intel HEX for J-Link / nrfjprog\n"
         f"  rivr_{variant}_dfu.zip      adafruit-nrfutil DFU package (serial bootloader)\n"
+        f"  rivr_{variant}.uf2          UF2 image for USB-drive drag-and-drop flashing\n"
         f"  rivr_{variant}.json         Metadata\n"
         f"  flash.sh                    Linux/macOS flash script\n"
         "\n"
-        "Flashing – adafruit-nrfutil / serial bootloader (easiest)\n"
-        "----------------------------------------------------------\n"
+        "Flashing – UF2 drag-and-drop (simplest)\n"
+        "----------------------------------------\n"
+        "  1. Double-tap RESET – device mounts as a USB drive (T1000-E-BOOT etc.)\n"
+        f"  2. Copy rivr_{variant}.uf2 onto the drive – done!\n"
+        "\n"
+        "Flashing – adafruit-nrfutil / serial bootloader\n"
+        "------------------------------------------------\n"
         "  1. Install: pip install adafruit-nrfutil\n"
         "  2. Double-click RESET to enter the serial DFU bootloader.\n"
         "  3. chmod +x flash.sh && ./flash.sh /dev/ttyACM0\n"
@@ -368,6 +475,95 @@ def package_nrf52(build_dir: Path, pkg_dir: Path, variant: str) -> None:
     print(f"\n✓ Package ready: {zip_path}\n")
 
 
+def package_rp2040(build_dir: Path, pkg_dir: Path, variant: str) -> None:
+    """Package an RP2040 variant.
+
+    The Earle Philhower arduino-pico framework produces:
+      firmware.uf2  – UF2 drag-and-drop image (BOOTSEL / picotool)
+    """
+    uf2_src = build_dir / "firmware.uf2"
+
+    if not uf2_src.exists():
+        print(f"ERROR: expected build artefact not found: {uf2_src}", file=sys.stderr)
+        sys.exit(1)
+
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\n\u2500\u2500 Packaging {variant} (RP2040) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+
+    uf2_dst = pkg_dir / f"rivr_{variant}.uf2"
+    shutil.copy(uf2_src, uf2_dst)
+    print(f"  copied  firmware.uf2  \u2192  {uf2_dst}")
+
+    # Sidecar JSON
+    manifest = {
+        "chip": "rp2040",
+        "platform": "rp2040",
+        "segments": [{"address": "0x10000000", "file": "firmware"}],
+    }
+    manifest_path = pkg_dir / f"rivr_{variant}.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print(f"  created {manifest_path}")
+
+    # flash.sh — picotool or BOOTSEL drag-and-drop
+    sh_content = (
+        "#!/usr/bin/env bash\n"
+        f"# Flash Rivr firmware \u2013 {variant} (RP2040)\n"
+        "# Option A: drag-and-drop (no tools needed)\n"
+        "#   1. Hold BOOTSEL while plugging USB.\n"
+        "#   2. RPI-RP2 drive appears; copy the .uf2 file onto it.\n"
+        "# Option B: picotool\n"
+        "# Usage: ./flash.sh   (board must be in BOOTSEL mode)\n"
+        "set -e\n"
+        "if command -v picotool &>/dev/null; then\n"
+        f'  echo "Flashing via picotool\u2026"\n'
+        f"  picotool load rivr_{variant}.uf2 --force\n"
+        "  picotool reboot\n"
+        "else\n"
+        f'  echo "picotool not found \u2014 use BOOTSEL drag-and-drop instead."\n'
+        f'  echo "  Copy rivr_{variant}.uf2 onto the RPI-RP2 USB drive."\n'
+        "fi\n"
+    )
+    sh_path = pkg_dir / "flash.sh"
+    sh_path.write_text(sh_content, encoding="utf-8")
+    sh_path.chmod(0o755)
+    print(f"  created {sh_path}")
+
+    # README
+    sep = "=" * (18 + len(variant))
+    readme_content = (
+        f"Rivr Firmware \u2013 {variant} (RP2040)\n"
+        f"{sep}\n"
+        "\n"
+        "Files in this package\n"
+        "---------------------\n"
+        f"  rivr_{variant}.uf2          UF2 firmware image (drag-and-drop or picotool)\n"
+        f"  rivr_{variant}.json         Metadata\n"
+        f"  flash.sh                    Linux/macOS helper script\n"
+        "\n"
+        "Flashing \u2013 BOOTSEL drag-and-drop (no tools required)\n"
+        "------------------------------------------------------\n"
+        "  1. Hold BOOTSEL button while plugging the board into USB.\n"
+        "  2. A drive named RPI-RP2 appears on your computer.\n"
+        f"  3. Copy rivr_{variant}.uf2 onto that drive.\n"
+        "  4. The board reboots automatically and runs Rivr.\n"
+        "\n"
+        "Flashing \u2013 picotool (optional)\n"
+        "--------------------------------\n"
+        "  Install: https://github.com/raspberrypi/picotool\n"
+        "  Then run: ./flash.sh\n"
+        "\n"
+        "Support\n"
+        "-------\n"
+        "  https://github.com/MichTronics/Rivr\n"
+    )
+    readme_path = pkg_dir / "README.txt"
+    readme_path.write_text(readme_content, encoding="utf-8")
+    print(f"  created {readme_path}")
+
+    zip_path = create_zip(pkg_dir, variant)
+    print(f"\n\u2713 Package ready: {zip_path}\n")
+
+
 def main() -> None:
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <pio_env> <artifact_name>", file=sys.stderr)
@@ -382,6 +578,11 @@ def main() -> None:
     # nRF52 variants: flat bin only, no bootloader/partitions
     if is_nrf52_env(pio_env):
         package_nrf52(build_dir, pkg_dir, variant)
+        return
+
+    # RP2040 variants: single UF2 image
+    if is_rp2040_env(pio_env):
+        package_rp2040(build_dir, pkg_dir, variant)
         return
 
     flash_config = load_flash_config(build_dir)

@@ -542,6 +542,7 @@ static void rivr_init_repeater(void)
               (unsigned)RCACHE_SIZE,
               (unsigned)RETRY_TABLE_SIZE,
               RIVR_FABRIC_REPEATER ? "on" : "off");
+    rivr_cli_init();
 }
 #endif  /* RIVR_ROLE_REPEATER */
 
@@ -561,6 +562,7 @@ static void rivr_init_gateway(void)
      *   rivr_gateway_bridge_init();  // connect MQTT / HTTP / raw TCP
      * Application service dispatch (rivr_svc.c) is always active; the
      * gateway just adds an extra forwarding path: RF → IP. */
+    rivr_cli_init();
 }
 #endif  /* RIVR_ROLE_GATEWAY */
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -789,7 +791,7 @@ void app_main(void)
         /* Capture start of active work (excludes vTaskDelay sleep time). */
         uint32_t loop_body_start = tb_millis();
 
-#if RIVR_ROLE_CLIENT
+#if RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
         /* ─ CLI poll MUST be first — consumes UART0 bytes before rivr_tick()
          * calls sources_cli_drain(), preventing any byte-ownership race.     */
         rivr_cli_poll();

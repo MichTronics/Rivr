@@ -47,7 +47,7 @@
  * idempotent (safe to call in a future unified init path).
  */
 
-#if RIVR_ROLE_CLIENT
+#if RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
 
 #include "rivr_cli.h"
 
@@ -56,6 +56,7 @@
 #include <stddef.h>
 #include <stdlib.h>   /* strtoul */
 
+#include <unistd.h>   /* read(), STDIN_FILENO */
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_system.h"        /* esp_restart()  */
@@ -80,6 +81,20 @@
 #define TAG              "CLI"
 #define CLI_UART_PORT    UART_NUM_0
 #define CLI_RX_BUF      512u    /**< UART RX ring-buffer size (bytes)        */
+
+/* On boards with a native USB_SERIAL_JTAG console (e.g. XIAO ESP32S3),
+ * esp-idf initialises the console via its internal VFS path and does NOT
+ * call usb_serial_jtag_driver_install().  Calling usb_serial_jtag_read_bytes()
+ * without that install dereferences a NULL driver handle → panic.
+ *
+ * Solution (same approach as MeshCore / Meshtastic): use the POSIX VFS layer
+ * read(STDIN_FILENO) which works transparently for both UART and USB_SERIAL_JTAG
+ * after stdin is made non-blocking in rivr_cli_init().                      */
+#ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#  define CLI_READ_BYTE(buf)  (read(STDIN_FILENO, (buf), 1) > 0 ? 1 : 0)
+#else
+#  define CLI_READ_BYTE(buf)  uart_read_bytes(CLI_UART_PORT, (buf), 1, 0)
+#endif
 #define CLI_LINE_MAX     128u   /**< Max input line length including NUL      */
 
 /* Maximum text payload that fits in a single PKT_CHAT frame.                 */
@@ -93,7 +108,9 @@ static uint8_t s_pos = 0u;           /**< Write cursor inside s_buf          */
 /* ─── Forward declarations ───────────────────────────────────────────────── */
 
 static void cli_handle_line(void);
+#if RIVR_ROLE_CLIENT
 static void cli_enqueue_chat(const char *msg, size_t len);
+#endif
 static void cli_print_prompt(void);
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -102,6 +119,24 @@ static void cli_print_prompt(void);
 
 void rivr_cli_init(void)
 {
+#ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    /* USB_SERIAL_JTAG console: ESP-IDF initialises the console via its
+     * internal VFS path (usb_serial_jtag_vfs_use_nonblocking).
+     * We must NOT call usb_serial_jtag_driver_install() here, and we must
+     * NOT set O_NONBLOCK on stdin:
+     *
+     * With O_NONBLOCK, the VFS skips the hardware-FIFO pre-fetch and falls
+     * through to usb_serial_jtag_get_read_bytes_available(), which always
+     * returns 0 when the interrupt-driven driver is not installed.  This
+     * means read(STDIN_FILENO) always returns -1 and no typed input is
+     * ever received.
+     *
+     * Without O_NONBLOCK, the VFS calls usb_serial_jtag_rx_char_no_driver()
+     * which reads the hardware FIFO directly and returns NONE (-1) when
+     * empty — so it is effectively non-blocking anyway.                      */
+    /* nothing to do */
+    (void)0;
+#else
     /* Install the interrupt-driven UART driver so uart_read_bytes() works in
      * rivr_cli_poll().  Check first — SIM mode may have already installed it. */
     if (!uart_is_driver_installed(CLI_UART_PORT)) {
@@ -119,6 +154,7 @@ void rivr_cli_init(void)
                                              (int)CLI_RX_BUF, 0,
                                              0, NULL, 0));
     }
+#endif /* CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG */
 
     /* Boot banner */
     printf("\r\n"
@@ -140,7 +176,7 @@ void rivr_cli_poll(void)
     uint8_t ch;
 
     /* Drain all available bytes until the RX FIFO is empty.                  */
-    while (uart_read_bytes(CLI_UART_PORT, &ch, 1, 0) == 1) {
+    while (CLI_READ_BYTE(&ch) == 1) {
 
         if (ch == '\n' || ch == '\r') {
             /* ── End of line: execute command ── */
@@ -174,6 +210,7 @@ void rivr_cli_poll(void)
     }
 }
 
+#if RIVR_ROLE_CLIENT
 void rivr_cli_on_chat_rx(uint32_t src_id, const uint8_t *payload, uint8_t len)
 {
     /* Suppress self-echo: when the repeater relays our own CHAT frame back
@@ -196,6 +233,7 @@ void rivr_cli_on_chat_rx(uint32_t src_id, const uint8_t *payload, uint8_t len)
     /* Re-print the prompt so the user sees where to type next.              */
     cli_print_prompt();
 }
+#endif /* RIVR_ROLE_CLIENT */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Private helpers
@@ -232,8 +270,10 @@ static void cli_handle_line(void)
     /* ── "help" ── */
     if (strncmp(p, "help", 4u) == 0 && (p[4] == '\0' || p[4] == ' ')) {
         printf("Commands:\r\n"
+#if RIVR_ROLE_CLIENT
                "  chat <message>        broadcast text to the mesh\r\n"
                "  send <message>        alias for chat\r\n"
+#endif
                "  id                    print node ID, callsign and net ID\r\n"
                "  info                  print build info (env, sha, radio profile)\r\n"
                "  status                role, node ID, routing snapshot, loop-guard drops\r\n"
@@ -325,6 +365,7 @@ static void cli_handle_line(void)
         return;
     }
 
+#if RIVR_ROLE_CLIENT
     /* ── "chat <message>" ── */
     if (strncmp(p, "chat", 4u) == 0 && (p[4] == ' ' || p[4] == '\0')) {
         char *msg = p + 4;
@@ -338,6 +379,7 @@ static void cli_handle_line(void)
         cli_enqueue_chat(msg, strlen(msg));
         return;
     }
+#endif /* RIVR_ROLE_CLIENT */
 
     /* ── "info" ── */
     if (strncmp(p, "info", 4u) == 0 && (p[4] == '\0' || p[4] == ' ')) {
@@ -559,6 +601,7 @@ static void cli_handle_line(void)
 
     /* ── Aliases for convenience / discoverability ──────────────────────── */
 
+#if RIVR_ROLE_CLIENT
     /* "send <message>" — alias for "chat <message>" */
     if (strncmp(p, "send", 4u) == 0 && (p[4] == ' ' || p[4] == '\0')) {
         char *msg = p + 4;
@@ -571,6 +614,7 @@ static void cli_handle_line(void)
         cli_enqueue_chat(msg, strlen(msg));
         return;
     }
+#endif /* RIVR_ROLE_CLIENT */
 
     /* "peers" — alias for "neighbors" */
     if (strncmp(p, "peers", 5u) == 0 && (p[5] == '\0' || p[5] == ' ')) {
@@ -638,6 +682,7 @@ static void cli_handle_line(void)
     fflush(stdout);
 }
 
+#if RIVR_ROLE_CLIENT
 /**
  * @brief Encode and enqueue a PKT_CHAT broadcast frame.
  *
@@ -707,5 +752,6 @@ static void cli_enqueue_chat(const char *msg, size_t len)
     printf("TX CHAT: %.*s\r\n", (int)len, msg);
     fflush(stdout);
 }
-
 #endif /* RIVR_ROLE_CLIENT */
+
+#endif /* RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY */

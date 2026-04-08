@@ -100,8 +100,7 @@ static bool cp_send_packet(uint8_t type, uint8_t status,
         memcpy(&packet[RIVR_BLE_CP_HDR_LEN], payload, payload_len);
     }
 
-    rivr_ble_service_notify(rivr_ble_conn_handle(), packet, (uint8_t)total_len);
-    return true;
+    return rivr_ble_service_notify(rivr_ble_conn_handle(), packet, (uint8_t)total_len);
 }
 
 static void cp_send_ok(uint8_t cmd)
@@ -360,7 +359,8 @@ void rivr_ble_companion_push_node(uint32_t node_id,
                                   int8_t rssi_dbm,
                                   int8_t snr_db,
                                   uint8_t hop_count,
-                                  uint8_t link_score)
+                                  uint8_t link_score,
+                                  uint8_t role)
 {
     uint8_t payload[22];
     size_t cs_len = 0u;
@@ -377,7 +377,7 @@ void rivr_ble_companion_push_node(uint32_t node_id,
     payload[5] = (uint8_t)snr_db;
     payload[6] = hop_count;
     payload[7] = link_score;
-    payload[8] = 0u;
+    payload[8] = role;  /* node role (rivr_node_role_t) */
     payload[9] = 0u;
     memset(&payload[10], 0, 12u);
     if (callsign) {

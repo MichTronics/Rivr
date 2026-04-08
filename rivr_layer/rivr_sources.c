@@ -246,12 +246,17 @@ uint32_t sources_rf_rx_drain(void)
             continue;
         }
 
+        bool relay_suppressed_by_loop = false;
         if (fwd == RIVR_FWD_DROP_LOOP) {
-            /* Relay fingerprint in loop_guard matched — packet has looped back. */
-            RIVR_LOGW(TAG, "[LOOP] drop pkt_id=0x%04x src=0x%08lx reason=bloom",
+            /* A loop-guard hit should suppress relay, but not hide a valid
+             * locally consumable frame from the client/service layer.  The
+             * 1-byte OR-accumulating guard can false-positive in larger meshes,
+             * so keep local delivery alive while skipping route-learning. */
+            RIVR_LOGW(TAG,
+                      "[LOOP] relay suppressed pkt_id=0x%04x src=0x%08lx reason=bloom",
                       (unsigned)pkt_hdr.pkt_id,
                       (unsigned long)pkt_hdr.src_id);
-            continue;
+            relay_suppressed_by_loop = true;
         }
 
         if (fwd == RIVR_FWD_FORWARD) {
@@ -290,25 +295,31 @@ uint32_t sources_rf_rx_drain(void)
         /* ── Display stats: update neighbour table for unique frames ──────────
          * routing_neighbor_update tracks pkt_hdr.src_id + hop_count for all
          * observed senders; hop==0 entries count as direct neighbours.       */
-        routing_neighbor_update(&g_neighbor_table, &pkt_hdr,
-                                (int8_t)frame.rssi_dbm, frame.snr_db, now_ms);
+        if (!relay_suppressed_by_loop) {
+            routing_neighbor_update(&g_neighbor_table, &pkt_hdr,
+                                    (int8_t)frame.rssi_dbm, frame.snr_db, now_ms);
+        }
 
         /* ── Standalone quality tracker: RSSI/SNR/loss-rate per neighbor ────
          * neighbor_update() records wide RSSI (int16), SEQ-gap loss rate,
          * and DIRECT / BEACON flags used by routing_next_hop_score().        */
-        neighbor_update(&g_ntable,
-                        pkt_hdr.src_id,
-                        (int16_t)frame.rssi_dbm,
-                        frame.snr_db,
-                        pkt_hdr.hop,
-                        pkt_hdr.seq,
-                        frame.len,   /* Phase 1: track avg frame length for ToA estimation */
-                        now_ms);
+        if (!relay_suppressed_by_loop) {
+            neighbor_update(&g_ntable,
+                            pkt_hdr.src_id,
+                            (int16_t)frame.rssi_dbm,
+                            frame.snr_db,
+                            pkt_hdr.hop,
+                            pkt_hdr.seq,
+                            frame.len,   /* Phase 1: track avg frame length for ToA estimation */
+                            now_ms);
+        }
 
-        route_cache_learn_rx(&g_route_cache,
-                              pkt_hdr.src_id, from_id,
-                              pkt_hdr.hop,
-                              frame.rssi_dbm, frame.snr_db, now_ms);
+        if (!relay_suppressed_by_loop) {
+            route_cache_learn_rx(&g_route_cache,
+                                 pkt_hdr.src_id, from_id,
+                                 pkt_hdr.hop,
+                                 frame.rssi_dbm, frame.snr_db, now_ms);
+        }
 
         /* ── GATE 3 — Route-cache learning verification ─────────────────────── *
          * Immediately after learning, probe tx_decide so the log shows whether *
@@ -317,7 +328,7 @@ uint32_t sources_rf_rx_drain(void)
          *   • 2-hop node C via B → next_hop == B, NOT C                        *
          * Also confirms last_seen_ms is refreshed (visible via ttl trace).     *
          * ─────────────────────────────────────────────────────────────────── */
-        if (from_id != 0) {
+        if (!relay_suppressed_by_loop && from_id != 0) {
             uint32_t nh = 0;
             rcache_tx_decision_t dec = route_cache_tx_decide(
                 &g_route_cache, pkt_hdr.src_id, now_ms, &nh);
@@ -385,16 +396,20 @@ uint32_t sources_rf_rx_drain(void)
         /* ── 4a. Handle PKT_BEACON: log + learn, skip RIVR injection ────────────────── */
         if (pkt_hdr.pkt_type == PKT_BEACON) {
             char callsign[BEACON_CALLSIGN_MAX + 1] = {0};
+            uint8_t beacon_role = 0u;
             if (payload_ptr && pkt_hdr.payload_len >= BEACON_PAYLOAD_LEN) {
                 memcpy(callsign, payload_ptr, BEACON_CALLSIGN_MAX);
                 callsign[BEACON_CALLSIGN_MAX] = '\0';
+                beacon_role = payload_ptr[BEACON_CALLSIGN_MAX + 1u];
             }
-            RIVR_LOGI(TAG, "BEACON src=0x%08lx cs='%s' rssi=%d dBm",
+            RIVR_LOGI(TAG, "BEACON src=0x%08lx cs='%s' role=%u rssi=%d dBm",
                      (unsigned long)pkt_hdr.src_id, callsign,
-                     (int)frame.rssi_dbm);
-            /* Persist callsign into the neighbour table entry for this node */
+                     (unsigned)beacon_role, (int)frame.rssi_dbm);
+            /* Persist callsign and role into the neighbour table entry */
             routing_neighbor_set_callsign(&g_neighbor_table,
                                           pkt_hdr.src_id, callsign);
+            routing_neighbor_set_role(&g_neighbor_table,
+                                      pkt_hdr.src_id, beacon_role);
             {
                 const neighbor_entry_t *entry =
                     routing_neighbor_get(&g_neighbor_table, 0u);
@@ -411,7 +426,8 @@ uint32_t sources_rf_rx_drain(void)
                                              (int8_t)frame.rssi_dbm,
                                              frame.snr_db,
                                              pkt_hdr.hop,
-                                             entry ? routing_neighbor_link_score(entry, now_ms) : 0u);
+                                             entry ? routing_neighbor_link_score(entry, now_ms) : 0u,
+                                             beacon_role);
             }
             goto maybe_relay;
         }

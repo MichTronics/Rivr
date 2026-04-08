@@ -325,7 +325,41 @@ void radio_init(void)
         (sx1276_read_reg(REG_MODEM_CFG2) & 0xFCu) | 0x03u);
     sx1276_write_reg(REG_SYMB_TIMEOUT_LSB, 0xFFu);
 
-    /* Preamble length (8 symbols). */
+    /* ── IQ registers (Semtech AN1200.24 / AN1200.13 errata) ────────────
+     * RegInvertIQ  (0x33) reset = 0x27: bit6=0 (RX standard), bit0=1 (TX path)
+     * RegInvertIQ2 (0x3B) reset = 0x19: this is the "INVERTED" IQ2 value used
+     *   by LoRa gateways for downlink — wrong for peer-to-peer end-device use.
+     *   For standard (non-inverted) LoRa, AN1200.24 mandates 0x1D.
+     *   RadioLib invertIQ(false) writes exactly this; MeshCore inherits it.
+     *   Without this write the SX1276 RX correlator is in gateway/inverted
+     *   mode: a TCXO peer (E22, small freq offset) can still be decoded, but a
+     *   crystal peer (Waveshare SX1262) at the edge of the demodulator window
+     *   fails entirely.
+     */
+    sx1276_write_reg(0x33u, 0x27u);  /* RegInvertIQ  — standard IQ (reset default, explicit) */
+    sx1276_write_reg(0x3Bu, 0x1Du);  /* RegInvertIQ2 — standard IQ (NOT the reset default!) */
+
+    /* ── SX1278 Errata 2.3: Spurious Response (IM1) mitigation ─────────
+     * RegIfFreq1 (0x2F) and RegIfFreq2 (0x30) are undocumented IF-frequency
+     * control registers.  Their reset defaults (0x20, 0x00) enable an IM1
+     * spur that can block demodulation at narrow bandwidths (≤250 kHz).
+     * Semtech errata note AN1200.24 §2.3 requires:
+     *   1. 0x31[7] = 0  (clear AutomaticIFOn — prevents the chip from
+     *      overwriting 0x2F/0x30 on mode transitions or BW re-writes)
+     *   2. 0x2F = 0x40  (correct IF frequency)
+     *   3. 0x30 = 0x00  (keep)
+     * RadioLib's errataFix() applies all three before every RX and TX via
+     * stageMode().  Without this fix the SX1276 receiver can fail entirely
+     * when communicating with crystal-based peers (e.g. Waveshare SX1262).
+     */
+    sx1276_write_reg(0x31u,                          /* RegDetectOptimize    */
+        (uint8_t)(sx1276_read_reg(0x31u) & 0x7Fu));  /*   clear bit7 (AutomaticIFOn) */
+    sx1276_write_reg(0x2Fu, 0x40u);  /* RegIfFreq1: reset=0x20 → errata=0x40 */
+    sx1276_write_reg(0x30u, 0x00u);  /* RegIfFreq2: keep 0x00               */
+    RIVR_LOGI(TAG, "errata2.3: 0x31=0x%02x 0x2F=0x%02x 0x30=0x%02x",
+              sx1276_read_reg(0x31u), sx1276_read_reg(0x2Fu), sx1276_read_reg(0x30u));
+
+    /* Preamble length. */
     sx1276_write_reg(REG_PREAMBLE_MSB, 0x00u);
     sx1276_write_reg(REG_PREAMBLE_LSB, RF_PREAMBLE_LEN);
 
@@ -369,6 +403,22 @@ void radio_start_rx(void)
 
     /* Clear any stale IRQ flags. */
     sx1276_write_reg(REG_IRQ_FLAGS, 0xFFu);
+
+    /* Errata 2.3 fix — reapply before each RX (mirrors RadioLib stageMode).
+     * STDBY resets RegIfFreq1/2 and AutomaticIFOn to their POR values. */
+    sx1276_write_reg(0x31u, (uint8_t)(sx1276_read_reg(0x31u) & 0x7Fu));
+    sx1276_write_reg(0x2Fu, 0x40u);
+    sx1276_write_reg(0x30u, 0x00u);
+
+    /* IQ2 fix — reapply before each RX.
+     * STDBY also resets RegInvertIQ2 (0x3B) to 0x19 (inverted/gateway IQ2).
+     * Without 0x1D here, the SX1276 RX correlator re-enters inverted mode
+     * after every TX→STDBY→RX transition, silently dropping all frames from
+     * crystal-based SX1262 peers (Waveshare RP2040) while still receiving
+     * TCXO peers (E22) that can overcome the demodulator mismatch.
+     * RadioLib fixes this in stageMode() via fixInvertedIQ(false) on every
+     * RX entry; RIVR must mirror that behaviour. */
+    sx1276_write_reg(0x3Bu, 0x1Du);
 
     /* Enter continuous RX mode. */
     sx1276_write_reg(REG_OP_MODE, LORA_MODE | MODE_RX_C);
@@ -443,6 +493,33 @@ void radio_service_rx(void)
     frame.snr_db     = snr_db;
     frame.rx_mono_ms = (uint32_t)atomic_load_explicit(&g_mono_ms, memory_order_relaxed);
 
+    /* ── SX1276 adaptive frequency-error correction ──────────────────────
+     * At 62.5 kHz BW the ±15.6 kHz demodulator acquisition range is just
+     * exceeded by the ~±17 kHz worst-case combined offset of two crystal
+     * boards (LilyGo SX1276 + Waveshare SX1262, each ±10 ppm at 869 MHz).
+     * After every successfully decoded packet the SX1276 FEI registers
+     * (0x28–0x2A) hold the signed 20-bit frequency error measured during
+     * that packet.  Writing the derived ppm correction to RegPpmCorrection
+     * (0x27) fine-tunes the synthesiser reference so subsequent packets
+     * are demodulated with near-zero residual offset.
+     * Formula mirrors RadioLib SX127x::getFrequencyError(autoCorrect=true).
+     */
+    {
+        uint8_t fei_msb = sx1276_read_reg(0x28u) & 0x0Fu;
+        uint8_t fei_mid = sx1276_read_reg(0x29u);
+        uint8_t fei_lsb = sx1276_read_reg(0x2Au);
+        int32_t raw = ((int32_t)fei_msb << 16)
+                    | ((int32_t)fei_mid  <<  8)
+                    |  (int32_t)fei_lsb;
+        if (raw & 0x80000) raw |= (int32_t)0xFFF00000;  /* sign-extend 20→32 bit */
+        /* error_hz  = raw × 2^24 / 32e6 × (BW_kHz / 500) × 1000
+         * ppmOffset = 0.95 × (error_hz / 1000) / 32                        */
+        float err_khz  = ((float)raw * 16777216.0f / 32000000.0f)
+                         * ((float)RF_BANDWIDTH_KHZ / 500.0f);
+        int8_t ppm_val = (int8_t)(0.95f * err_khz / 32.0f);
+        sx1276_write_reg(0x27u, (uint8_t)ppm_val);
+    }
+
     /* Push to ring-buffer (drops silently if full). */
     rb_try_push(&rf_rx_ringbuf, &frame);
 }
@@ -468,6 +545,11 @@ bool radio_transmit(const rf_tx_request_t *req)
 
     /* ── 4. Clear all IRQ flags before starting TX ─────────────────── */
     sx1276_write_reg(REG_IRQ_FLAGS, 0xFFu);
+
+    /* Errata 2.3 fix — reapply before each TX (mirrors RadioLib stageMode). */
+    sx1276_write_reg(0x31u, (uint8_t)(sx1276_read_reg(0x31u) & 0x7Fu));
+    sx1276_write_reg(0x2Fu, 0x40u);
+    sx1276_write_reg(0x30u, 0x00u);
 
     /* ── 5. Start TX ──────────────────────────────────────────────────── */
     sx1276_write_reg(REG_OP_MODE, LORA_MODE | MODE_TX);

@@ -47,7 +47,8 @@ int rivr_ble_service_register(void);
  * @brief Notify the connected BLE client with a Rivr binary frame.
  *
  * Sends @p len bytes from @p data using the TX characteristic notify.
- * Silently no-ops if no client is connected or BLE is inactive.
+ * Oversize payloads are fragmented across multiple notifications when needed.
+ * Returns false if no client is connected or the link is not ready.
  *
  * Safe to call from the main-loop task only.
  * The frame bytes are copied by the active BLE stack — @p data can be stack-allocated.
@@ -59,14 +60,14 @@ int rivr_ble_service_register(void);
  * @param data         Binary Rivr frame bytes.
  * @param len          Frame length in bytes (max RF_MAX_PAYLOAD_LEN).
  */
-void rivr_ble_service_notify(uint16_t conn_handle,
-                              const uint8_t *data, uint8_t len);
+bool rivr_ble_service_notify(uint16_t conn_handle,
+                             const uint8_t *data, uint8_t len);
 
 #else  /* RIVR_FEATURE_BLE == 0 */
 
 static inline int  rivr_ble_service_register(void) { return 0; }
-static inline void rivr_ble_service_notify(uint16_t c, const uint8_t *d, uint8_t l)
-    { (void)c; (void)d; (void)l; }
+static inline bool rivr_ble_service_notify(uint16_t c, const uint8_t *d, uint8_t l)
+    { (void)c; (void)d; (void)l; return false; }
 
 #endif /* RIVR_FEATURE_BLE */
 

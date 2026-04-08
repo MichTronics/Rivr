@@ -24,6 +24,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -559,6 +560,19 @@ static void display_init(const display_stats_t *initial)
     s_flush_fail_cnt = 0u;
     s_last_update_ms = 0u;
     s_last_rotate_ms = 0u;
+
+    /* ── OLED hardware reset (Heltec V3 / any board with PIN_DISPLAY_RST) ──────
+     * RST_OLED (GPIO 21 on Heltec V3) is an active-low reset input on the
+     * SSD1306.  The SSD1306 datasheet requires RES# LOW for ≥ 3 µs; we use
+     * 10 ms to handle slow bus rise times and cheap clone controllers.
+     * Without this pulse the display stays in reset and never ACKs on I2C.   */
+#ifdef PIN_DISPLAY_RST
+    gpio_set_direction(PIN_DISPLAY_RST, GPIO_MODE_OUTPUT);
+    gpio_set_level(PIN_DISPLAY_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(PIN_DISPLAY_RST, 1);
+    /* The 150 ms settling delay below serves as the post-reset wait.         */
+#endif
 
     /* ── I2C bus ── */
     i2c_master_bus_config_t bus_cfg = {

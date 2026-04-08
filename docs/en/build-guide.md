@@ -8,6 +8,8 @@
 | ESP-IDF | 5.1+ | https://docs.espressif.com/projects/esp-idf |
 | espup | latest | `cargo install espup` (for Xtensa cross-compile) |
 | PlatformIO | 6.x *(optional)* | `pip install platformio` |
+| adafruit-nrfutil | 0.5.3+ | `pip install adafruit-nrfutil` *(nRF52840 boards only)* |
+| picotool | 1.x *(optional)* | `sudo apt install picotool` *(RP2040 boards only)* |
 
 ---
 
@@ -36,13 +38,42 @@ cargo build --features ffi --release
 # Install the Xtensa Rust toolchain (once):
 espup install
 
-# Cross-compile:
+# Cross-compile for ESP32 (DevKit, LilyGo v2.1, Heltec V2, T-Beam):
 cargo +esp build --target xtensa-esp32-espidf --features ffi --release
 # Output:  target/xtensa-esp32-espidf/release/librivr_core.a
+
+# Cross-compile for ESP32-S3 (Heltec V3/V4, LilyGo T3-S3, Seeed XIAO):
+cargo +esp build --target xtensa-esp32s3-espidf --features ffi --release
+# Output:  target/xtensa-esp32s3-espidf/release/librivr_core.a
 ```
 
-> `main/CMakeLists.txt` automatically finds the library — it searches
-> `target/release/` first, then `target/debug/`. No manual copy needed.
+### Cross-compile for nRF52840 (Cortex-M4F — RAK4631, Heltec T114, Seeed T1000-E)
+
+```bash
+# Install the target + rust-src once:
+rustup target add thumbv7em-none-eabihf
+rustup component add rust-src
+
+# Cross-compile:
+cargo build -p rivr_core --target thumbv7em-none-eabihf \
+    --no-default-features --features ffi --release \
+    -Zbuild-std=core,alloc,panic_abort
+# Output:  target/thumbv7em-none-eabihf/release/librivr_core.a
+```
+
+### Cross-compile for RP2040 (Cortex-M0+ — Waveshare RP2040-LoRa-HF)
+
+```bash
+# Install the target + rust-src once:
+rustup target add thumbv6m-none-eabi
+rustup component add rust-src
+
+# Cross-compile:
+cargo build -p rivr_core --target thumbv6m-none-eabi \
+    --no-default-features --features ffi --release \
+    -Zbuild-std=core,alloc,panic_abort
+# Output:  target/thumbv6m-none-eabi/release/librivr_core.a
+```
 
 ### Host demos (no hardware)
 
@@ -92,7 +123,22 @@ ID    NAME                      KIND / PARAMS
 | `client_<board>` | Chat/data receiver; no relay | `RIVR_ROLE_CLIENT=1`, `FEATURE_DISPLAY=1` |
 | `client_<board>_ble` | Client + BLE bridge | `RIVR_ROLE_CLIENT=1`, `RIVR_FEATURE_BLE=1`, `sdkconfig.ble` |
 
-Supported boards: `esp32devkit_e22_900`, `lilygo_lora32_v21`, `heltec_lora32_v2`, `heltec_lora32_v3`, `lilygo_t3s3`, `lilygo_tbeam_sx1262`.
+Supported boards:
+
+| Board | Environment suffix | MCU | Radio |
+|---|---|---|---|
+| ESP32 DevKit + E22-900M30S | `esp32devkit_e22_900` | ESP32 | SX1262 |
+| LilyGo LoRa32 v2.1 | `lilygo_lora32_v21` | ESP32 | SX1276 |
+| Heltec WiFi LoRa 32 V2 | `heltec_lora32_v2` | ESP32 | SX1276 |
+| Heltec WiFi LoRa 32 V3 | `heltec_lora32_v3` | ESP32-S3 | SX1262 |
+| Heltec WiFi LoRa 32 V4 | `heltec_lora32_v4` | ESP32-S3 | SX1262 |
+| LilyGo T3-S3 | `lilygo_t3s3` | ESP32-S3 | SX1262 |
+| LilyGo T-Beam (SX1262) | `lilygo_tbeam_sx1262` | ESP32 | SX1262 |
+| Seeed XIAO ESP32S3 + Wio-SX1262 | `seeed_xiao_sx1262` | ESP32-S3 | SX1262 |
+| RAK WisMesh / WisPocket (RAK4631) | `rak4631` | nRF52840 | SX1262 |
+| Heltec T114 | `heltec_t114` | nRF52840 | SX1262 |
+| Seeed SenseCAP T1000-E | `seeed_t1000_e` | nRF52840 | LR1110 |
+| Waveshare RP2040-LoRa-HF | `waveshare_rp2040_lora_hf` | RP2040 | SX1262 |
 
 The repeater and client environments include a board-specific variant header via `-include`:  
 `variants/esp32devkit_e22_900_repeater/config.h` and  
@@ -442,6 +488,97 @@ All three are already included in `radio_init()` in `firmware_core/radio_sx1262.
 | Coding rate | 4/8 |
 | Output power | +22 dBm (≈ +30 dBm after E22 PA) |
 | Preamble | 8 symbols |
+
+---
+
+## Linux / Raspberry Pi (native SX1262)
+
+RIVR runs natively on a Raspberry Pi connected to an E22-900M30S (SX1262) module
+via SPI.  The full build lives in `variants/rpi_e22_900/`; `Makefile.linux` at the
+project root is a compatibility shim that forwards to it.
+
+### Prerequisites
+
+```bash
+sudo apt install gcc libgpiod-dev
+```
+
+Enable the SPI peripheral once (if not already done):
+
+```bash
+# Edit /boot/firmware/config.txt  (use /boot/config.txt on older Pi OS releases)
+dtparam=spi=on
+# Reboot after saving.
+```
+
+### Build
+
+```bash
+# Client node (default)
+make -f Makefile.linux
+# or equivalently:
+make -C variants/rpi_e22_900
+
+# Repeater node
+make -f Makefile.linux ROLE=repeater
+
+# With a custom callsign
+make -f Makefile.linux CALLSIGN=MYCALL
+
+# Clean (run once per role)
+make -f Makefile.linux clean
+make -f Makefile.linux clean ROLE=repeater
+```
+
+Output binaries (in the project root):
+
+| Role | Binary |
+|---|---|
+| Client | `./rivr` |
+| Repeater | `./rivr-repeater` |
+
+### Run
+
+```bash
+# Group membership for /dev/spidev0.0 and /dev/gpiochip0 required,
+# or prefix with sudo:
+sudo ./rivr              # client
+sudo ./rivr-repeater     # repeater
+```
+
+### GPIO / SPI wiring (BCM numbers)
+
+| Signal | BCM GPIO | Notes |
+|---|---|---|
+| SCK | 11 | SPI0 clock → `/dev/spidev0.0` |
+| MOSI | 10 | SPI0 data out |
+| MISO | 9 | SPI0 data in |
+| NSS (CS) | 8 (CE0) | Active low, hardware chip-select |
+| BUSY | 24 | SX1262 busy flag |
+| RESET | 17 | Active low |
+| DIO1 (IRQ) | 25 | TxDone / RxDone / Timeout |
+| RXEN | 23 | RF switch — HIGH = receive |
+| TXEN | 22 | RF switch — HIGH = transmit |
+
+Pin assignments are defined in `firmware_core/platform_linux.h` and are
+`#ifndef`-guarded, so any `-D` override at compile time wins.
+
+### Variant header
+
+RF and LoRa parameters for this variant live in `variants/rpi_e22_900/config.h`
+and are force-included by the build:
+
+| Parameter | Default |
+|---|---|
+| Frequency | 869.480 MHz (`RIVR_RF_FREQ_HZ`) |
+| Spreading factor | SF8 |
+| Bandwidth | 62.5 kHz |
+| Coding rate | 4/8 |
+| TX power | +22 dBm |
+
+Every macro is `#ifndef`-guarded.  To change a parameter for a given build,
+edit `variants/rpi_e22_900/config.h` or create a new variant directory with
+its own `config.h` and `Makefile`.
 
 ---
 

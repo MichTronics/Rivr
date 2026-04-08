@@ -77,7 +77,7 @@ jobs:
       - name: Install PlatformIO and esptool
         run: |
           pip install --upgrade pip
-          pip install platformio esptool
+          pip install platformio esptool adafruit-nrfutil
 
       # ── 4. Install Espressif Rust toolchain (Xtensa) or ARM target ──────
       - name: Install Espressif Rust toolchain via espup
@@ -174,7 +174,11 @@ jobs:
     needs: build   # wait for all matrix builds to finish
 
     steps:
-      # ── 10. Download all firmware ZIPs ────────────────────────────────────
+      # ── 10. Checkout (needed for bundle script + bundles JSON) ────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 11. Download all firmware ZIPs ────────────────────────────────────
       #
       # pattern: "rivr_*" matches every artifact uploaded by the build matrix.
       # merge-multiple: true flattens them into the zips/ directory.
@@ -188,10 +192,26 @@ jobs:
       - name: List collected ZIPs
         run: ls -lh zips/
 
-      # ── 11. Create GitHub Release and attach ZIPs ─────────────────────────
+      # ── 12. Assemble per-board bundle ZIPs ────────────────────────────────
+      #
+      # scripts/bundle_firmware.py reads .github/firmware-bundles.json and
+      # combines client / client_ble / repeater per-variant ZIPs into a single
+      # board-level bundle ZIP (rivr_<board>_bundle.zip).
+      # These are the files linked from the download page.
+      - name: Create board bundle ZIPs
+        run: |
+          python3 scripts/bundle_firmware.py \
+            zips \
+            .github/firmware-bundles.json \
+            zips
+
+      - name: List all ZIPs (variants + bundles)
+        run: ls -lh zips/
+
+      # ── 13. Create GitHub Release and attach ZIPs ─────────────────────────
       #
       # softprops/action-gh-release creates the release from the pushed tag and
-      # attaches every .zip file found in zips/.
+      # attaches every .zip file found in zips/ — both per-variant and bundles.
       # Release notes are auto-generated from git log between tags.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

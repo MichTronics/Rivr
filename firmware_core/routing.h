@@ -99,7 +99,8 @@ typedef struct {
     /* ── Step 5: per-neighbor link stats ─────────────────────────────── */
     uint32_t  rx_ok;          /**< Count of valid frames received           */
     int8_t    last_snr_db;    /**< EWMA of observed SNR in dB (α=1/8)      */
-    uint8_t   _pad[3];        /**< Alignment padding                        */
+    uint8_t   role;           /**< Node role from last PKT_BEACON (rivr_node_role_t, 0=unknown) */
+    uint8_t   _pad[2];        /**< Alignment padding                        */
 } neighbor_entry_t;
 
 /** Complete neighbour tracking state. */
@@ -209,6 +210,13 @@ const neighbor_entry_t *routing_neighbor_get(const neighbor_table_t *tbl,
 void routing_neighbor_set_callsign(neighbor_table_t *tbl,
                                    uint32_t          node_id,
                                    const char       *callsign);
+
+/**
+ * @brief Store a role value into the entry matching @p node_id.
+ */
+void routing_neighbor_set_role(neighbor_table_t *tbl,
+                               uint32_t          node_id,
+                               uint8_t           role);
 
 /**
  * @brief Compute the effective link score (0..100) for a neighbour.

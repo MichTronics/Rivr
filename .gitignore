@@ -7,6 +7,8 @@ sdkconfig
 sdkconfig.*
 !sdkconfig.defaults
 !sdkconfig.ble
+!sdkconfig.heltec_v3_8mb
+!sdkconfig.xiao_usb_console
 managed_components/
 dependencies.lock
 
@@ -55,3 +57,5 @@ rivr
 
 .vscode/c_cpp_properties.json
 .vscode/launch.json
+rivr-repeater
+GPPy

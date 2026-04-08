@@ -87,11 +87,11 @@
 
 /* ── On-board SSD1306 OLED ────────────────────────────────────────────────
  * Non-default I²C pins on Heltec V2 (SDA=4, SCL=15); OLED RST on GPIO16.  */
-#ifndef PIN_OLED_SDA
-#  define PIN_OLED_SDA  4
+#ifndef PIN_DISPLAY_SDA
+#  define PIN_DISPLAY_SDA  4
 #endif
-#ifndef PIN_OLED_SCL
-#  define PIN_OLED_SCL  15
+#ifndef PIN_DISPLAY_SCL
+#  define PIN_DISPLAY_SCL  15
 #endif
 #ifndef PIN_OLED_RESET
 #  define PIN_OLED_RESET 16

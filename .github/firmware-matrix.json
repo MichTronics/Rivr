@@ -106,6 +106,21 @@
       "rust_target": "xtensa-esp32s3-espidf"
     },
     {
+      "pio_env": "client_seeed_xiao_sx1262",
+      "artifact": "client_seeed_xiao_sx1262",
+      "rust_target": "xtensa-esp32s3-espidf"
+    },
+    {
+      "pio_env": "client_seeed_xiao_sx1262_ble",
+      "artifact": "client_seeed_xiao_sx1262_ble",
+      "rust_target": "xtensa-esp32s3-espidf"
+    },
+    {
+      "pio_env": "repeater_seeed_xiao_sx1262",
+      "artifact": "relay_seeed_xiao_sx1262",
+      "rust_target": "xtensa-esp32s3-espidf"
+    },
+    {
       "pio_env": "client_heltec_t114",
       "artifact": "client_heltec_t114",
       "rust_target": "thumbv7em-none-eabihf"
@@ -134,6 +149,31 @@
       "pio_env": "repeater_seeed_t1000_e",
       "artifact": "relay_seeed_t1000_e",
       "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "client_rak4631",
+      "artifact": "client_rak4631",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "client_rak4631_ble",
+      "artifact": "client_rak4631_ble",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "repeater_rak4631",
+      "artifact": "relay_rak4631",
+      "rust_target": "thumbv7em-none-eabihf"
+    },
+    {
+      "pio_env": "client_waveshare_rp2040_lora_hf",
+      "artifact": "client_waveshare_rp2040_lora_hf",
+      "rust_target": "thumbv6m-none-eabi"
+    },
+    {
+      "pio_env": "repeater_waveshare_rp2040_lora_hf",
+      "artifact": "relay_waveshare_rp2040_lora_hf",
+      "rust_target": "thumbv6m-none-eabi"
     }
   ]
 }

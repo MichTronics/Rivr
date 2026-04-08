@@ -34,14 +34,15 @@
  *
  * THREADING MODEL
  * ───────────────
- *  ESP-IDF Bluedroid runs its BLE callbacks from the BT host context.
+ *  ESP32 builds run their BLE callbacks from the BT host context.
+ *  nRF52 builds run their BLE callbacks from the SoftDevice event task.
  *
  *  rf_rx_ringbuf is an SPSC ring buffer:
  *    producer = BLE callback context (BLE write callback)
  *    consumer = main-loop task  (sources_rf_rx_drain)
  *
  *  rivr_ble_service_notify() is called from the main-loop task, which is
- *  safe for the Bluedroid GATTS send path used by this module.
+ *  safe for the server send path used by this module on both stacks.
  *
  *  rivr_ble_tick() and rivr_ble_activate/deactivate() must ONLY be called
  *  from the main-loop task.
@@ -116,15 +117,21 @@ typedef enum {
 /** How long a button-press BLE window lasts (ms). */
 #define BLE_BUTTON_WINDOW_MS   300000UL
 
+/** Preferred ATT MTU for Rivr BLE links. */
+#define RIVR_BLE_ATT_PREFERRED_MTU 247u
+
+/** Maximum payload bytes inside a single ATT write/notify at the preferred MTU. */
+#define RIVR_BLE_MAX_ATT_PAYLOAD  ((uint16_t)(RIVR_BLE_ATT_PREFERRED_MTU - 3u))
+
 /* ── Lifecycle ───────────────────────────────────────────────────────────── */
 
 /**
- * @brief Initialise the ESP-IDF Bluedroid BLE stack and register the GATT service.
+ * @brief Initialise the active BLE stack and register the GATT service.
  *
  * Must be called once from app_main() AFTER g_my_node_id is set and AFTER
  * platform_init() / timebase_init() have completed.
  *
- * On return, the Bluedroid BLE host is running and will begin advertising once
+ * On return, the platform BLE host is running and will begin advertising once
  * the GAP advertising data and GATT attribute table are ready.
  */
 void rivr_ble_init(void);
@@ -178,6 +185,12 @@ bool rivr_ble_is_connected(void);
 uint16_t rivr_ble_conn_handle(void);
 
 /**
+ * @return The current maximum bytes that fit in one BLE write/notify on the
+ *         active link, or 0 when no BLE data path is ready yet.
+ */
+uint16_t rivr_ble_link_payload_limit(void);
+
+/**
  * @return The active 6-digit BLE passkey for the current boot session, or 0
  *         when BLE security is open / disabled.
  */
@@ -208,6 +221,7 @@ static inline void    rivr_ble_deactivate(void)                     {}
 static inline bool    rivr_ble_is_active(void)   { return false; }
 static inline bool    rivr_ble_is_connected(void){ return false; }
 static inline uint16_t rivr_ble_conn_handle(void){ return 0xFFFFu; }
+static inline uint16_t rivr_ble_link_payload_limit(void) { return 0u; }
 static inline uint32_t rivr_ble_passkey(void)    { return 0u; }
 static inline bool    rivr_ble_has_bond(void)    { return false; }
 static inline int     rivr_ble_clear_bonds(void) { return 0; }

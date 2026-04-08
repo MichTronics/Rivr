@@ -9,10 +9,19 @@ For full hardware wiring tables see [docs/en/build-guide.md](en/build-guide.md).
 
 ## Supported radio hardware
 
-| Radio chip | Module | Driver | Environments |
+| Radio chip | Module / board | Driver | Environments |
 |---|---|---|---|
 | **SX1262** | EBYTE E22-900M30S / E22-900M33S | `radio_sx1262.c` | `esp32devkit_e22_900_*` |
+| **SX1262** | Heltec V3 / V4 onboard | `radio_sx1262.c` | `heltec_lora32_v3_*`, `heltec_lora32_v4_*` |
+| **SX1262** | LilyGo T-Beam v1.1 onboard | `radio_sx1262.c` | `lilygo_tbeam_sx1262_*` |
+| **SX1262** | LilyGo T3-S3 onboard | `radio_sx1262.c` | `lilygo_t3s3_*` |
+| **SX1262** | Seeed Wio-SX1262 (XIAO module) | `radio_sx1262.c` | `seeed_xiao_sx1262_*` |
+| **SX1262** | RAK4631 onboard (nRF52840) | `radio_sx1262_nrf52.cpp` | `rak4631_*` |
+| **SX1262** | Heltec T114 onboard (nRF52840) | `radio_sx1262_nrf52.cpp` | `heltec_t114_*` |
+| **SX1262** | Waveshare RP2040-LoRa-HF onboard | `radio_sx1262_rp2040.cpp` | `waveshare_rp2040_lora_hf_*` |
 | **SX1276** | LilyGo LoRa32 v2.1 built-in | `radio_sx1276.c` | `lilygo_lora32_v21_*` |
+| **SX1276** | Heltec V2 built-in | `radio_sx1276.c` | `heltec_lora32_v2_*` |
+| **LR1110** | Seeed SenseCAP T1000-E (nRF52840) | `radio_lr1110_nrf52.cpp` | `seeed_t1000_e_*` |
 
 The radio chip is selected at compile time by the variant `config.h`:
 

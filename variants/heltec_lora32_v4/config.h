@@ -88,11 +88,11 @@
  * The I²C bus uses SDA=17, SCL=18 — these override the defaults in
  * display/display.h which assume SDA=21, SCL=22.
  * FEATURE_DISPLAY=1 enables the OLED path in display.c.                    */
-#ifndef PIN_OLED_SDA
-#  define PIN_OLED_SDA 17
+#ifndef PIN_DISPLAY_SDA
+#  define PIN_DISPLAY_SDA 17
 #endif
-#ifndef PIN_OLED_SCL
-#  define PIN_OLED_SCL 18
+#ifndef PIN_DISPLAY_SCL
+#  define PIN_DISPLAY_SCL 18
 #endif
 #ifndef FEATURE_DISPLAY
 #  define FEATURE_DISPLAY 1

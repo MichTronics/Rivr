@@ -24,7 +24,8 @@ void rivr_ble_companion_push_node(uint32_t node_id,
                                   int8_t rssi_dbm,
                                   int8_t snr_db,
                                   uint8_t hop_count,
-                                  uint8_t link_score);
+                                  uint8_t link_score,
+                                  uint8_t role);
 
 #else
 
@@ -51,7 +52,8 @@ static inline void rivr_ble_companion_push_node(uint32_t node_id,
                                                 int8_t rssi_dbm,
                                                 int8_t snr_db,
                                                 uint8_t hop_count,
-                                                uint8_t link_score)
+                                                uint8_t link_score,
+                                                uint8_t role)
 {
     (void)node_id;
     (void)callsign;
@@ -59,6 +61,7 @@ static inline void rivr_ble_companion_push_node(uint32_t node_id,
     (void)snr_db;
     (void)hop_count;
     (void)link_score;
+    (void)role;
 }
 
 #endif

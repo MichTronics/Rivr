@@ -1,0 +1,22 @@
+[
+  {
+    "bundle": "rak4631",
+    "board": "RAK WisMesh / WisPocket (RAK4631)",
+    "artifacts": ["client_rak4631", "client_rak4631_ble", "relay_rak4631"]
+  },
+  {
+    "bundle": "heltec_t114",
+    "board": "Heltec T114 (nRF52840 + SX1262)",
+    "artifacts": ["client_heltec_t114", "client_heltec_t114_ble", "relay_heltec_t114"]
+  },
+  {
+    "bundle": "seeed_t1000_e",
+    "board": "Seeed SenseCAP T1000-E (nRF52840 + LR1110)",
+    "artifacts": ["client_seeed_t1000_e", "client_seeed_t1000_e_ble", "relay_seeed_t1000_e"]
+  },
+  {
+    "bundle": "waveshare_rp2040_lora_hf",
+    "board": "Waveshare RP2040-LoRa-HF",
+    "artifacts": ["client_waveshare_rp2040_lora_hf", "relay_waveshare_rp2040_lora_hf"]
+  }
+]
