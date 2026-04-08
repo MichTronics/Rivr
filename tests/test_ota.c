@@ -1,6 +1,6 @@
 /**
  * @file  test_ota.c
- * @brief Unit tests for the P2 signed OTA gate (rivr_ota.c).
+ * @brief Unit tests for the P2 signed OTA gate (rivr_ota_core.c).
  *
  * Tests:
  *   1. Valid payload (seq=1)          → rivr_ota_verify() returns true

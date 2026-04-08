@@ -50,7 +50,8 @@ Rivr/
 │   ├── neighbor_table.c/h    # 16-slot EWMA koppelkwaliteitstabel; neighbor_update/best/expire
 │   ├── pending_queue.c/h     # 16-slot wachtrij voor ACK-afwachtende unicastframes
 │   ├── rivr_policy.c/h       # @PARAMS beleid, rolhandhaving, oorsprongspoort, HMAC-handtekening
-│   ├── rivr_ota.c/h          # ondertekende PKT_PROG_PUSH-poort (Ed25519 + anti-replay)
+│   ├── rivr_ota_core.c/h     # ondertekende PKT_PROG_PUSH-poort (Ed25519 + anti-replay)
+│   ├── rivr_ota_platform.c   # NVS-backend (ESP-IDF); nrf52- en rp2040-varianten naast elkaar
 │   └── crypto/               # zelfstandige SHA-256 + HMAC-SHA-256 (geen heap)
 ├── rivr_layer/               # C — lijmlaag RIVR↔firmware
 │   ├── rivr_embed.c/h        # engine_init, tick, NVS opslaan/laden, hot-reload

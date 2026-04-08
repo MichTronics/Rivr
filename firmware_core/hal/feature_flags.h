@@ -124,7 +124,7 @@
 /**
  * Require Ed25519 signature on all PKT_PROG_PUSH OTA payloads.
  * Should be set in production builds; defaults off for dev convenience.
- * Implementation: firmware_core/rivr_ota.c + ed25519_verify.c
+ * Implementation: firmware_core/rivr_ota_core.c (logic) + rivr_ota_platform.c (NVS)
  */
 #ifndef RIVR_SIGNED_PROG
 #  define RIVR_SIGNED_PROG          0

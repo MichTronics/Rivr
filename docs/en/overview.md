@@ -70,7 +70,8 @@ rivr/
 │   ├── neighbor_table.c/.h 16-slot EWMA link-quality table; `neighbor_update/best/expire`
 │   ├── pending_queue.c/.h  16-slot pending queue (ACK-awaiting unicast frames)
 │   ├── rivr_policy.c/.h    Runtime @PARAMS policy, role enforcement, origination gate, HMAC sig
-│   ├── rivr_ota.c/.h       Signed PKT_PROG_PUSH gate (Ed25519 + anti-replay)
+│   ├── rivr_ota_core.c/.h  Signed PKT_PROG_PUSH gate (Ed25519 + anti-replay, platform-agnostic)
+│   ├── rivr_ota_platform.c OTA NVS backend (ESP-IDF); nrf52 + rp2040 variants alongside
 │   └── crypto/             Self-contained SHA-256 + HMAC-SHA-256 (no heap)
 └── rivr_layer/         RIVR ↔ firmware glue (C)
     ├── rivr_embed.c/.h     Engine init, rivr_tick(), rivr_register_sink()
