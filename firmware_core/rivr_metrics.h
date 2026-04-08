@@ -198,6 +198,22 @@ typedef struct {
     uint32_t lora_rx_frames;   /**< LoRa-sourced frames entering bus            */
     uint32_t usb_rx_frames;    /**< USB-sourced frames entering bus             */
     uint32_t rx_net_id_drop;   /**< inbound frames discarded: net_id mismatch   */
+
+    /* ── Private chat counters (firmware_core/private_chat.c) ───────────────
+     * All counters zero-initialised (BSS).  Incremented by the private chat
+     * engine; read by rivr_metrics_print() and private_chat_print_diag().   */
+    uint32_t private_chat_tx_total;              /**< PKT_PRIVATE_CHAT frames sent (originated)  */
+    uint32_t private_chat_rx_total;              /**< PKT_PRIVATE_CHAT frames accepted at dest   */
+    uint32_t private_chat_receipt_tx_total;      /**< PKT_DELIVERY_RECEIPT frames sent           */
+    uint32_t private_chat_receipt_rx_total;      /**< PKT_DELIVERY_RECEIPT frames received       */
+    uint32_t private_chat_retry_total;           /**< Private chat frame retransmits             */
+    uint32_t private_chat_expired_total;         /**< Outgoing entries expired without delivery  */
+    uint32_t private_chat_failed_no_route_total; /**< Expired in AWAITING_ROUTE state            */
+    uint32_t private_chat_failed_retry_budget_total; /**< Retry budget exhausted                 */
+    uint32_t private_chat_dedup_drop_total;      /**< Duplicate incoming private chat dropped    */
+    uint32_t private_chat_invalid_total;         /**< Malformed/invalid private chat frames      */
+    uint32_t private_chat_receipt_timeout_total; /**< FORWARDED→UNCONFIRMED receipt timeouts     */
+    uint32_t private_chat_queue_depth;           /**< Gauge: current outgoing queue occupancy    */
 } rivr_metrics_t;
 
 /* ── BLE metrics payload ────────────────────────────────────────────────────

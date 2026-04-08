@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "../build_info.h"
+#include "../private_chat.h"
 #include "../radio_sx1262.h"
 #include "../routing.h"
 #include "../rivr_log.h"
@@ -30,19 +31,27 @@
 #define RIVR_BLE_CP_MAX_CHAT_LEN 180u
 
 enum {
-    RIVR_CP_CMD_APP_START     = 0x01u,
-    RIVR_CP_CMD_DEVICE_QUERY  = 0x02u,
-    RIVR_CP_CMD_SET_CALLSIGN  = 0x03u,
-    RIVR_CP_CMD_GET_NEIGHBORS = 0x04u,
+    RIVR_CP_CMD_APP_START        = 0x01u,
+    RIVR_CP_CMD_DEVICE_QUERY     = 0x02u,
+    RIVR_CP_CMD_SET_CALLSIGN     = 0x03u,
+    RIVR_CP_CMD_GET_NEIGHBORS    = 0x04u,
+    RIVR_CP_CMD_SET_POSITION     = 0x05u,
+    RIVR_CP_CMD_GET_POSITION     = 0x06u,
+    RIVR_CP_CMD_SEND_PRIVATE     = 0x07u,  /**< Send private message */
 };
 
 enum {
-    RIVR_CP_PKT_OK             = 0x80u,
-    RIVR_CP_PKT_ERR            = 0x81u,
-    RIVR_CP_PKT_DEVICE_INFO    = 0x82u,
-    RIVR_CP_PKT_NODE_INFO      = 0x83u,
-    RIVR_CP_PKT_NODE_LIST_DONE = 0x84u,
-    RIVR_CP_PKT_CHAT_RX        = 0x85u,
+    RIVR_CP_PKT_OK                   = 0x80u,
+    RIVR_CP_PKT_ERR                  = 0x81u,
+    RIVR_CP_PKT_DEVICE_INFO          = 0x82u,
+    RIVR_CP_PKT_NODE_INFO            = 0x83u,
+    RIVR_CP_PKT_NODE_LIST_DONE       = 0x84u,
+    RIVR_CP_PKT_CHAT_RX              = 0x85u,
+    RIVR_CP_PKT_GPS_UPDATE           = 0x86u,
+    RIVR_CP_PKT_DEVICE_POSITION      = 0x87u,
+    RIVR_CP_PKT_PRIVATE_CHAT_RX      = 0x88u,  /**< Incoming private message event */
+    RIVR_CP_PKT_PRIVATE_CHAT_STATE   = 0x89u,  /**< Outgoing message state update  */
+    RIVR_CP_PKT_DELIVERY_RECEIPT     = 0x8Au,  /**< End-to-end delivery receipt     */
 };
 
 typedef struct {
@@ -242,6 +251,43 @@ static void cp_handle_get_neighbors(void)
     (void)cp_send_packet(RIVR_CP_PKT_NODE_LIST_DONE, 0u, NULL, 0u);
 }
 
+static void cp_handle_send_private(const uint8_t *payload, uint8_t payload_len)
+{
+    /* Payload: [dst_id:4 LE][body:N] */
+    if (!payload || payload_len < 4u) {
+        cp_send_err(RIVR_CP_CMD_SEND_PRIVATE, "payload too short");
+        return;
+    }
+
+    uint32_t dst_id = (uint32_t)payload[0]
+                    | ((uint32_t)payload[1] << 8)
+                    | ((uint32_t)payload[2] << 16)
+                    | ((uint32_t)payload[3] << 24);
+
+    const uint8_t *body     = &payload[4];
+    uint8_t        body_len = (uint8_t)(payload_len - 4u);
+
+    if (body_len > PRIVATE_CHAT_MAX_BODY) {
+        cp_send_err(RIVR_CP_CMD_SEND_PRIVATE, "body too long");
+        return;
+    }
+
+    uint64_t msg_id = 0u;
+    pchat_error_t rc = private_chat_send(dst_id, body, body_len, &msg_id);
+    if (rc != PCHAT_OK) {
+        cp_send_err(RIVR_CP_CMD_SEND_PRIVATE, "send failed");
+        return;
+    }
+
+    /* Respond with OK + the 8-byte msg_id so the app can track state. */
+    uint8_t ok_payload[9];
+    ok_payload[0] = RIVR_CP_CMD_SEND_PRIVATE;
+    for (uint8_t i = 0u; i < 8u; i++) {
+        ok_payload[1u + i] = (uint8_t)((msg_id >> (i * 8u)) & 0xFFu);
+    }
+    (void)cp_send_packet(RIVR_CP_PKT_OK, 0u, ok_payload, sizeof(ok_payload));
+}
+
 bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len)
 {
     uint8_t next_head;
@@ -309,6 +355,14 @@ void rivr_ble_companion_tick(void)
                 break;
             }
             cp_handle_get_neighbors();
+            break;
+
+        case RIVR_CP_CMD_SEND_PRIVATE:
+            if (!s_session_active) {
+                cp_send_err(cmd, "app start required");
+                break;
+            }
+            cp_handle_send_private(payload, payload_len);
             break;
 
         default:
@@ -388,4 +442,112 @@ void rivr_ble_companion_push_node(uint32_t node_id,
     (void)cp_send_packet(RIVR_CP_PKT_NODE_INFO, 0u, payload, sizeof(payload));
 }
 
+void rivr_ble_companion_push_private_chat_rx(uint64_t msg_id,
+                                              uint32_t from_id,
+                                              uint32_t to_id,
+                                              uint32_t sender_seq,
+                                              uint32_t timestamp_s,
+                                              uint16_t flags,
+                                              const uint8_t *body,
+                                              uint8_t body_len)
+{
+    /* Payload: [msg_id:8][from_id:4][to_id:4][sender_seq:4][ts:4][flags:2][blen:1][body:N]
+     * Fixed header = 27 bytes + body. */
+    uint8_t payload[27u + PRIVATE_CHAT_MAX_BODY];
+    uint8_t blen = body_len;
+
+    if (!s_session_active) {
+        return;
+    }
+    if (blen > PRIVATE_CHAT_MAX_BODY) {
+        blen = PRIVATE_CHAT_MAX_BODY;
+    }
+
+    uint8_t *d = payload;
+    /* msg_id LE8 */
+    for (int i = 0; i < 8; i++) { d[i] = (uint8_t)((msg_id >> (i*8)) & 0xFFu); }
+    d += 8;
+    /* from_id LE4 */
+    d[0]=(uint8_t)(from_id&0xFF); d[1]=(uint8_t)((from_id>>8)&0xFF);
+    d[2]=(uint8_t)((from_id>>16)&0xFF); d[3]=(uint8_t)((from_id>>24)&0xFF);
+    d += 4;
+    /* to_id LE4 */
+    d[0]=(uint8_t)(to_id&0xFF); d[1]=(uint8_t)((to_id>>8)&0xFF);
+    d[2]=(uint8_t)((to_id>>16)&0xFF); d[3]=(uint8_t)((to_id>>24)&0xFF);
+    d += 4;
+    /* sender_seq LE4 */
+    d[0]=(uint8_t)(sender_seq&0xFF); d[1]=(uint8_t)((sender_seq>>8)&0xFF);
+    d[2]=(uint8_t)((sender_seq>>16)&0xFF); d[3]=(uint8_t)((sender_seq>>24)&0xFF);
+    d += 4;
+    /* timestamp_s LE4 */
+    d[0]=(uint8_t)(timestamp_s&0xFF); d[1]=(uint8_t)((timestamp_s>>8)&0xFF);
+    d[2]=(uint8_t)((timestamp_s>>16)&0xFF); d[3]=(uint8_t)((timestamp_s>>24)&0xFF);
+    d += 4;
+    /* flags LE2 */
+    d[0]=(uint8_t)(flags&0xFF); d[1]=(uint8_t)((flags>>8)&0xFF);
+    d += 2;
+    /* body_len */
+    d[0] = blen;
+    d += 1;
+    /* body */
+    if (blen > 0u && body) {
+        memcpy(d, body, blen);
+    }
+
+    uint8_t total = (uint8_t)(27u + blen);
+    (void)cp_send_packet(RIVR_CP_PKT_PRIVATE_CHAT_RX, 0u, payload, total);
+}
+
+void rivr_ble_companion_push_pchat_state(uint64_t msg_id,
+                                          uint32_t peer_id,
+                                          uint8_t state)
+{
+    /* Payload: [msg_id:8 LE][peer_id:4 LE][state:1] = 13 bytes */
+    uint8_t payload[13];
+
+    if (!s_session_active) {
+        return;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        payload[i] = (uint8_t)((msg_id >> (i*8)) & 0xFFu);
+    }
+    payload[8]  = (uint8_t)(peer_id & 0xFFu);
+    payload[9]  = (uint8_t)((peer_id >> 8) & 0xFFu);
+    payload[10] = (uint8_t)((peer_id >> 16) & 0xFFu);
+    payload[11] = (uint8_t)((peer_id >> 24) & 0xFFu);
+    payload[12] = state;
+
+    (void)cp_send_packet(RIVR_CP_PKT_PRIVATE_CHAT_STATE, 0u, payload, sizeof(payload));
+}
+
+void rivr_ble_companion_push_delivery_receipt(uint64_t orig_msg_id,
+                                               uint32_t sender_id,
+                                               uint32_t timestamp_s,
+                                               uint8_t status)
+{
+    /* Payload: [orig_msg_id:8 LE][sender_id:4 LE][ts:4 LE][status:1] = 17 bytes */
+    uint8_t payload[17];
+
+    if (!s_session_active) {
+        return;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        payload[i] = (uint8_t)((orig_msg_id >> (i*8)) & 0xFFu);
+    }
+    payload[8]  = (uint8_t)(sender_id & 0xFFu);
+    payload[9]  = (uint8_t)((sender_id >> 8) & 0xFFu);
+    payload[10] = (uint8_t)((sender_id >> 16) & 0xFFu);
+    payload[11] = (uint8_t)((sender_id >> 24) & 0xFFu);
+    payload[12] = (uint8_t)(timestamp_s & 0xFFu);
+    payload[13] = (uint8_t)((timestamp_s >> 8) & 0xFFu);
+    payload[14] = (uint8_t)((timestamp_s >> 16) & 0xFFu);
+    payload[15] = (uint8_t)((timestamp_s >> 24) & 0xFFu);
+    payload[16] = status;
+
+    (void)cp_send_packet(RIVR_CP_PKT_DELIVERY_RECEIPT, 0u, payload, sizeof(payload));
+}
+
 #endif
+

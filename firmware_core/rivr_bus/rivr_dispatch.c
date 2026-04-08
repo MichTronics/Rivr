@@ -15,7 +15,9 @@ bool rivr_dispatch_is_app_relevant(uint8_t pkt_type)
         case PKT_DATA:      /* fall-through */
         case PKT_TELEMETRY: /* fall-through */
         case PKT_MAILBOX:   /* fall-through */
-        case PKT_ALERT:
+        case PKT_ALERT:     /* fall-through */
+        case PKT_PRIVATE_CHAT:       /* private 1-to-1 messages are app-relevant */
+        case PKT_DELIVERY_RECEIPT:   /* delivery receipts must reach the app */
             return true;
 
         case PKT_ROUTE_REQ: /* mesh-internal routing control — not for clients */

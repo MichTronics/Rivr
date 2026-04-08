@@ -99,6 +99,22 @@ extern "C" {
  *  Total wire size = 23 + 48 + 2 = 73 bytes — fits in one 128-byte MTU. */
 #define PKT_METRICS       11u
 
+/** 1-to-1 private/direct chat message.
+ *  dst_id MUST be non-zero.  Not a broadcast; relay nodes forward as any
+ *  unicast toward dst_id via the route cache (Phase D).
+ *  Payload — see private_chat.h for full layout.
+ *  Compatible note: nodes running firmware that predates PKT_PRIVATE_CHAT
+ *  will drop these on receipt (rx_invalid_type counter).  The sender's retry
+ *  budget exhausts and reports FAILED_RETRY.  No silent discard ambiguity. */
+#define PKT_PRIVATE_CHAT  12u
+
+/** End-to-end delivery receipt for a PKT_PRIVATE_CHAT message.
+ *  src_id = receipt-sending node (original destination of the chat msg).
+ *  dst_id = original message sender.
+ *  Payload — fixed 17 bytes, see delivery_receipt_payload_t in private_chat.h.
+ *  Not relayed beyond its direct unicast path. */
+#define PKT_DELIVERY_RECEIPT 13u
+
 /* ── Service payload lengths ─────────────────────────────────────────────── */
 
 #define SVC_TELEMETRY_PAYLOAD_LEN  11u   /**< Fixed telemetry field size             */

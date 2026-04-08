@@ -121,7 +121,20 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
            "\"bus_fwd_usb\":%" PRIu32 ","
            "\"bus_err\":%" PRIu32 ","
            "\"lora_rx\":%" PRIu32 ","
-           "\"usb_rx\":%" PRIu32
+           "\"usb_rx\":%" PRIu32 ","
+           /* private chat counters */
+           "\"pcht_tx\":%" PRIu32 ","
+           "\"pcht_rx\":%" PRIu32 ","
+           "\"pcht_rtx\":%" PRIu32 ","
+           "\"pcht_rxp\":%" PRIu32 ","
+           "\"pcht_retry\":%" PRIu32 ","
+           "\"pcht_exp\":%" PRIu32 ","
+           "\"pcht_noroute\":%" PRIu32 ","
+           "\"pcht_fail\":%" PRIu32 ","
+           "\"pcht_dup\":%" PRIu32 ","
+           "\"pcht_inv\":%" PRIu32 ","
+           "\"pcht_rtmo\":%" PRIu32 ","
+           "\"pcht_qdepth\":%" PRIu32
            "}\n",
         live->node_id,
         live->dc_pct,
@@ -226,7 +239,20 @@ void rivr_metrics_print(const rivr_live_stats_t *live)
         g_rivr_metrics.bus_forward_usb,
         g_rivr_metrics.bus_errors,
         g_rivr_metrics.lora_rx_frames,
-        g_rivr_metrics.usb_rx_frames);
+        g_rivr_metrics.usb_rx_frames,
+        /* private chat */
+        g_rivr_metrics.private_chat_tx_total,
+        g_rivr_metrics.private_chat_rx_total,
+        g_rivr_metrics.private_chat_receipt_tx_total,
+        g_rivr_metrics.private_chat_receipt_rx_total,
+        g_rivr_metrics.private_chat_retry_total,
+        g_rivr_metrics.private_chat_expired_total,
+        g_rivr_metrics.private_chat_failed_no_route_total,
+        g_rivr_metrics.private_chat_failed_retry_budget_total,
+        g_rivr_metrics.private_chat_dedup_drop_total,
+        g_rivr_metrics.private_chat_invalid_total,
+        g_rivr_metrics.private_chat_receipt_timeout_total,
+        (uint32_t)g_rivr_metrics.private_chat_queue_depth);
 }
 
 void rivr_metrics_ble_push(const rivr_live_stats_t *live,

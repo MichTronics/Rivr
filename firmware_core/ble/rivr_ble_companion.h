@@ -27,6 +27,43 @@ void rivr_ble_companion_push_node(uint32_t node_id,
                                   uint8_t link_score,
                                   uint8_t role);
 
+/**
+ * @brief Push an incoming private chat message to the connected companion.
+ *
+ * CP packet type 0x88 (RIVR_CP_PKT_PRIVATE_CHAT_RX).
+ * Payload: [msg_id:8 LE][from_id:4 LE][to_id:4 LE][sender_seq:4 LE]
+ *          [timestamp_s:4 LE][flags:2 LE][body_len:1][body:N]
+ */
+void rivr_ble_companion_push_private_chat_rx(uint64_t msg_id,
+                                              uint32_t from_id,
+                                              uint32_t to_id,
+                                              uint32_t sender_seq,
+                                              uint32_t timestamp_s,
+                                              uint16_t flags,
+                                              const uint8_t *body,
+                                              uint8_t body_len);
+
+/**
+ * @brief Push a delivery state change for an outgoing private chat message.
+ *
+ * CP packet type 0x89 (RIVR_CP_PKT_PRIVATE_CHAT_STATE).
+ * Payload: [msg_id:8 LE][peer_id:4 LE][state:1]
+ */
+void rivr_ble_companion_push_pchat_state(uint64_t msg_id,
+                                          uint32_t peer_id,
+                                          uint8_t state);
+
+/**
+ * @brief Push a delivery receipt event to the companion.
+ *
+ * CP packet type 0x8A (RIVR_CP_PKT_DELIVERY_RECEIPT).
+ * Payload: [orig_msg_id:8 LE][sender_id:4 LE][timestamp_s:4 LE][status:1]
+ */
+void rivr_ble_companion_push_delivery_receipt(uint64_t orig_msg_id,
+                                               uint32_t sender_id,
+                                               uint32_t timestamp_s,
+                                               uint8_t status);
+
 #else
 
 static inline bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len)
@@ -62,6 +99,31 @@ static inline void rivr_ble_companion_push_node(uint32_t node_id,
     (void)hop_count;
     (void)link_score;
     (void)role;
+}
+static inline void rivr_ble_companion_push_private_chat_rx(uint64_t msg_id,
+                                                            uint32_t from_id,
+                                                            uint32_t to_id,
+                                                            uint32_t sender_seq,
+                                                            uint32_t timestamp_s,
+                                                            uint16_t flags,
+                                                            const uint8_t *body,
+                                                            uint8_t body_len)
+{
+    (void)msg_id; (void)from_id; (void)to_id; (void)sender_seq;
+    (void)timestamp_s; (void)flags; (void)body; (void)body_len;
+}
+static inline void rivr_ble_companion_push_pchat_state(uint64_t msg_id,
+                                                        uint32_t peer_id,
+                                                        uint8_t state)
+{
+    (void)msg_id; (void)peer_id; (void)state;
+}
+static inline void rivr_ble_companion_push_delivery_receipt(uint64_t orig_msg_id,
+                                                             uint32_t sender_id,
+                                                             uint32_t timestamp_s,
+                                                             uint8_t status)
+{
+    (void)orig_msg_id; (void)sender_id; (void)timestamp_s; (void)status;
 }
 
 #endif

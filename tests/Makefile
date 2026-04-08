@@ -164,6 +164,28 @@ BEACON_BIN   := beacon_test
 BEACON_FLAGS := $(COMMON_FLAGS)
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PRIVATE CHAT ENGINE TEST
+#   Tests: payload encode/decode, receipt round-trip, dedup, receipt
+#   correlation, queue full, invalid peer, body-too-long, dst_mismatch,
+#   malformed payload, expiry-tick, wire-ACK success/failure, rate-limiting.
+# ─────────────────────────────────────────────────────────────────────────────
+PCHAT_SRCS := \
+    $(FW)/protocol.c       \
+    $(FW)/routing.c        \
+    $(FW)/route_cache.c    \
+    $(FW)/neighbor_table.c \
+    $(FW)/pending_queue.c  \
+    $(FW)/rivr_metrics.c   \
+    $(FW)/rivr_log.c       \
+    $(FW)/retry_table.c    \
+    $(FW)/private_chat.c   \
+    test_stubs.c            \
+    test_private_chat.c
+
+PCHAT_BIN   := private_chat_test
+PCHAT_FLAGS := $(COMMON_FLAGS) -DRIVR_FEATURE_BLE=0
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ASAN / UBSAN (P3.2)
 #   Rebuilds the four main suites + P2 suites with AddressSanitizer and
 #   UndefinedBehaviourSanitizer.  Binaries are suffixed _asan so they do
@@ -173,10 +195,10 @@ ASAN_FLAGS := $(COMMON_FLAGS) -O1 -g -fsanitize=address,undefined \
               -fno-omit-frame-pointer
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all test acceptance recovery replay dutycycle policy ota retry fabric beacon asan fuzz_harness clean \
+.PHONY: all test acceptance recovery replay dutycycle policy ota retry fabric beacon private_chat asan fuzz_harness clean \
         size_check update_baselines determinism_check variant_check
 
-all: acceptance recovery replay dutycycle policy ota retry fabric beacon
+all: acceptance recovery replay dutycycle policy ota retry fabric beacon private_chat
 
 # `make test` is the CI-friendly single-command alias.
 test: all
@@ -235,8 +257,14 @@ beacon: $(BEACON_BIN)
 	@echo "── Running beacon scheduler tests ────────────────────────────"
 	./$(BEACON_BIN)
 	@echo
+private_chat: $(PCHAT_BIN)
+	@echo "── Running private chat engine tests ─────────────────────────"
+	./$(PCHAT_BIN)
+	@echo
 $(BEACON_BIN): $(BEACON_SRCS)
 	$(CC) $(BEACON_FLAGS) $^ -o $@
+$(PCHAT_BIN): $(PCHAT_SRCS)
+	$(CC) $(PCHAT_FLAGS) $^ -o $@
 asan:
 	@echo "── ASan/UBSan: acceptance ────────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) $(ACC_SRCS) -o acceptance_asan && ./acceptance_asan
@@ -264,8 +292,9 @@ asan:
 	@echo
 	@echo "── ASan/UBSan: beacon ────────────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) $(BEACON_SRCS) -o beacon_asan && ./beacon_asan
-	@echo
-$(POL_BIN): $(POL_SRCS)
+	@echo	@echo "── ASan/UBSan: private_chat ─────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) -DRIVR_FEATURE_BLE=0 $(PCHAT_SRCS) -o private_chat_asan && ./private_chat_asan
+	@echo$(POL_BIN): $(POL_SRCS)
 	$(CC) $(POL_FLAGS) $^ -o $@
 
 $(OTA_BIN): $(OTA_SRCS)
@@ -303,7 +332,7 @@ $(FUZZ_BIN): $(FUZZ_SRCS)
 	$(CC) $(FUZZ_FLAGS) $^ -o $@
 
 clean:
-	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FABRIC_BIN) $(BEACON_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan fabric_asan beacon_asan
+	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FABRIC_BIN) $(BEACON_BIN) $(PCHAT_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan fabric_asan beacon_asan private_chat_asan
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Release workflow utilities
