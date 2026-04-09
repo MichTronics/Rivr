@@ -75,6 +75,7 @@
 #include "../firmware_core/rivr_policy.h"
 #include "../firmware_core/routing_stats.h"
 #include "../firmware_core/ble/rivr_ble.h"
+#include "../firmware_core/ble/rivr_ble_companion.h"
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 
@@ -104,6 +105,19 @@
 
 static char    s_buf[CLI_LINE_MAX];   /**< Current input line buffer          */
 static uint8_t s_pos = 0u;           /**< Write cursor inside s_buf          */
+
+/* ─── SLIP CP frame assembler ────────────────────────────────────────────────
+ * Binary Companion Protocol (CP) packets from the app are SLIP-encoded
+ * (RFC 1055) so they can ride the same UART0 alongside ASCII CLI input.
+ * 0xC0 (SLIP_END) is the frame boundary byte; it never appears in printable
+ * ASCII (range 0x20-0x7E), so there is no ambiguity with typed commands.
+ * When a complete SLIP frame is received it is dispatched to
+ * rivr_serial_cp_handle_rx() and rivr_ble_companion_tick() is called
+ * immediately to process the queued command.                                 */
+static uint8_t s_slip_buf[RF_MAX_PAYLOAD_LEN];
+static uint8_t s_slip_len  = 0u;
+static bool    s_slip_esc  = false;
+static bool    s_in_slip   = false;
 
 /* ─── Forward declarations ───────────────────────────────────────────────── */
 
@@ -178,6 +192,40 @@ void rivr_cli_poll(void)
     /* Drain all available bytes until the RX FIFO is empty.                  */
     while (CLI_READ_BYTE(&ch) == 1) {
 
+        /* ── SLIP binary CP path (companion protocol) ───────────────────────
+         * 0xC0 (SLIP_END) is the frame boundary and is never printable ASCII.
+         * Any byte sequence starting with SLIP_END is treated as a binary CP
+         * packet and routed to rivr_serial_cp_handle_rx(); it never touches
+         * the ASCII CLI buffer.                                              */
+        if (ch == 0xC0u) {
+            if (s_in_slip && s_slip_len > 0u) {
+                if (rivr_serial_cp_handle_rx(s_slip_buf, (uint16_t)s_slip_len)) {
+                    rivr_ble_companion_tick();
+                }
+            }
+            s_slip_len = 0u;
+            s_slip_esc = false;
+            s_in_slip  = true;
+            continue;
+        }
+        if (s_in_slip) {
+            if (ch == 0xDBu) {
+                s_slip_esc = true;
+            } else if (s_slip_esc) {
+                s_slip_esc = false;
+                uint8_t decoded = (ch == 0xDCu) ? 0xC0u
+                                : (ch == 0xDDu) ? 0xDBu
+                                : ch;
+                if (s_slip_len < sizeof(s_slip_buf)) {
+                    s_slip_buf[s_slip_len++] = decoded;
+                }
+            } else if (s_slip_len < sizeof(s_slip_buf)) {
+                s_slip_buf[s_slip_len++] = ch;
+            }
+            continue;
+        }
+
+        /* ── ASCII CLI path ─────────────────────────────────────────────── */
         if (ch == '\n' || ch == '\r') {
             /* ── End of line: execute command ── */
             printf("\r\n");

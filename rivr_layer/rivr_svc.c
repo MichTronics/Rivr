@@ -73,13 +73,18 @@ void handle_chat_message(const rivr_pkt_hdr_t *hdr,
     char msg_buf[RIVR_PKT_MAX_PAYLOAD + 1u];
     svc_json_text(payload, len, msg_buf, sizeof(msg_buf));
 
-    printf("@CHT {\"src\":\"0x%08lx\",\"dst\":\"0x%08lx\","
-           "\"rssi\":%d,\"len\":%u,\"text\":\"%s\"}\r\n",
-           (unsigned long)hdr->src_id,
-           (unsigned long)hdr->dst_id,
-           (int)rssi_dbm,
-           (unsigned)len,
-           msg_buf);
+    /* Suppress ASCII @CHT when a binary serial CP session is active — the
+     * companion app receives the same chat event via the SLIP CHAT_RX packet
+     * pushed below, so the printf would cause visible duplicate messages. */
+    if (!rivr_serial_cp_session_active()) {
+        printf("@CHT {\"src\":\"0x%08lx\",\"dst\":\"0x%08lx\","
+               "\"rssi\":%d,\"len\":%u,\"text\":\"%s\"}\r\n",
+               (unsigned long)hdr->src_id,
+               (unsigned long)hdr->dst_id,
+               (int)rssi_dbm,
+               (unsigned)len,
+               msg_buf);
+    }
 
     /* ── Serial console display (client builds) ──────────────────────────── */
     /* rivr_cli_on_chat_rx is a zero-cost stub on non-client variants. */

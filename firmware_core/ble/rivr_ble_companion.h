@@ -16,6 +16,30 @@ bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len);
 void rivr_ble_companion_tick(void);
 void rivr_ble_companion_on_disconnect(void);
 bool rivr_ble_companion_raw_bridge_enabled(void);
+
+/**
+ * @brief Feed a SLIP-decoded CP packet received from UART0 into the shared
+ *        command queue, tagged as serial origin so APP_START activates the
+ *        serial session (UART0 TX) rather than the BLE session.
+ */
+bool rivr_serial_cp_handle_rx(const uint8_t *data, uint16_t len);
+
+/**
+ * @brief Terminate the active serial/UART0 CP session (call on USB disconnect).
+ */
+void rivr_serial_cp_session_stop(void);
+
+/**
+ * @brief Returns true while the UART0 serial CP session is active.
+ *        Used to suppress duplicate ASCII log lines (@CHT, @MET).
+ */
+bool rivr_serial_cp_session_active(void);
+
+/**
+ * @brief Push a DEVICE_INFO CP packet over the SLIP/UART0 channel.
+ *        No-op when the serial session is not active.
+ */
+void rivr_serial_cp_push_device_info(void);
 void rivr_ble_companion_push_chat(uint32_t src_id,
                                   const uint8_t *text,
                                   uint8_t text_len);
@@ -125,6 +149,13 @@ static inline void rivr_ble_companion_push_delivery_receipt(uint64_t orig_msg_id
 {
     (void)orig_msg_id; (void)sender_id; (void)timestamp_s; (void)status;
 }
+static inline bool rivr_serial_cp_handle_rx(const uint8_t *data, uint16_t len)
+{
+    (void)data; (void)len; return false;
+}
+static inline void rivr_serial_cp_session_stop(void) {}
+static inline bool rivr_serial_cp_session_active(void) { return false; }
+static inline void rivr_serial_cp_push_device_info(void) {}
 
 #endif
 

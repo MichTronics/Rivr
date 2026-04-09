@@ -940,6 +940,10 @@ void app_main(void)
                  * or RIVR_FEATURE_BLE=0.                                    */
                 rivr_metrics_ble_push(&ls, g_my_node_id, g_net_id,
                                       (uint16_t)++g_ctrl_seq);
+                /* Push a DEVICE_INFO CP packet over the serial SLIP channel
+                 * so the companion app learns the real node ID immediately
+                 * (and keeps it refreshed — no-op when not connected).     */
+                rivr_serial_cp_push_device_info();
             }
         }
 

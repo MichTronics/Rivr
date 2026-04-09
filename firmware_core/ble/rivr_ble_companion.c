@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "driver/uart.h"
 #include "../build_info.h"
 #include "../private_chat.h"
 #include "../radio_sx1262.h"
@@ -56,13 +57,18 @@ enum {
 
 typedef struct {
     uint8_t len;
+    uint8_t origin;  /**< 0 = BLE, 1 = serial/UART0 */
     uint8_t data[RF_MAX_PAYLOAD_LEN];
 } rivr_ble_companion_packet_t;
 
 static rivr_ble_companion_packet_t s_rx_queue[RIVR_BLE_CP_QUEUE_LEN];
 static volatile uint8_t s_rx_head = 0u;
 static volatile uint8_t s_rx_tail = 0u;
-static volatile bool s_session_active = false;
+/** Combined session flag — true while any transport session is active. */
+static volatile bool s_session_active      = false;
+/** Per-transport session flags for TX fan-out routing. */
+static volatile bool s_ble_session_active    = false;
+static volatile bool s_serial_session_active = false;
 
 static bool cp_callsign_valid(const char *callsign)
 {
@@ -92,8 +98,9 @@ static bool cp_send_packet(uint8_t type, uint8_t status,
 {
     uint8_t packet[RF_MAX_PAYLOAD_LEN];
     size_t total_len = RIVR_BLE_CP_HDR_LEN + (size_t)payload_len;
+    bool sent = false;
 
-    if (!rivr_ble_is_connected() || !s_session_active) {
+    if (!s_ble_session_active && !s_serial_session_active) {
         return false;
     }
     if (total_len > RF_MAX_PAYLOAD_LEN) {
@@ -109,7 +116,36 @@ static bool cp_send_packet(uint8_t type, uint8_t status,
         memcpy(&packet[RIVR_BLE_CP_HDR_LEN], payload, payload_len);
     }
 
-    return rivr_ble_service_notify(rivr_ble_conn_handle(), packet, (uint8_t)total_len);
+    /* BLE transport */
+    if (rivr_ble_is_connected() && s_ble_session_active) {
+        sent |= rivr_ble_service_notify(rivr_ble_conn_handle(), packet, (uint8_t)total_len);
+    }
+
+    /* Serial/UART0 transport — SLIP-encode the packet and write to stdout.
+     * SLIP (RFC 1055): each CP packet is framed between two 0xC0 (END) bytes.
+     * 0xC0 in data → 0xDB 0xDC;  0xDB in data → 0xDB 0xDD. */
+    if (s_serial_session_active) {
+        /* Worst-case SLIP size: every byte is escaped (2×) + 2 END bytes */
+        uint8_t slip_buf[RF_MAX_PAYLOAD_LEN * 2u + 2u];
+        size_t slen = 0u;
+        slip_buf[slen++] = 0xC0u;  /* SLIP_END — start-of-frame */
+        for (size_t i = 0u; i < total_len; i++) {
+            if (packet[i] == 0xC0u) {
+                slip_buf[slen++] = 0xDBu;
+                slip_buf[slen++] = 0xDCu;
+            } else if (packet[i] == 0xDBu) {
+                slip_buf[slen++] = 0xDBu;
+                slip_buf[slen++] = 0xDDu;
+            } else {
+                slip_buf[slen++] = packet[i];
+            }
+        }
+        slip_buf[slen++] = 0xC0u;  /* SLIP_END — end-of-frame */
+        uart_write_bytes(UART_NUM_0, (const char *)slip_buf, slen);
+        sent = true;
+    }
+
+    return sent;
 }
 
 static void cp_send_ok(uint8_t cmd)
@@ -311,10 +347,56 @@ bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len)
     }
 
     memcpy(s_rx_queue[s_rx_head].data, data, len);
-    s_rx_queue[s_rx_head].len = (uint8_t)len;
+    s_rx_queue[s_rx_head].len    = (uint8_t)len;
+    s_rx_queue[s_rx_head].origin = 0u;  /* BLE */
     s_rx_head = next_head;
     g_rivr_metrics.ble_rx_frames++;
     return true;
+}
+
+bool rivr_serial_cp_handle_rx(const uint8_t *data, uint16_t len)
+{
+    uint8_t next_head;
+
+    if (!data || len < RIVR_BLE_CP_HDR_LEN || len > RF_MAX_PAYLOAD_LEN) {
+        return false;
+    }
+    if (data[0] != RIVR_BLE_CP_MAGIC0 || data[1] != RIVR_BLE_CP_MAGIC1) {
+        return false;
+    }
+    if (data[2] != RIVR_BLE_CP_VERSION) {
+        return true;
+    }
+
+    next_head = (uint8_t)((s_rx_head + 1u) % RIVR_BLE_CP_QUEUE_LEN);
+    if (next_head == s_rx_tail) {
+        RIVR_LOGW(TAG, "serial cp rx queue full");
+        return true;
+    }
+
+    memcpy(s_rx_queue[s_rx_head].data, data, len);
+    s_rx_queue[s_rx_head].len    = (uint8_t)len;
+    s_rx_queue[s_rx_head].origin = 1u;  /* serial */
+    s_rx_head = next_head;
+    return true;
+}
+
+void rivr_serial_cp_session_stop(void)
+{
+    s_serial_session_active = false;
+    s_session_active        = s_ble_session_active;
+}
+
+bool rivr_serial_cp_session_active(void)
+{
+    return s_serial_session_active;
+}
+
+void rivr_serial_cp_push_device_info(void)
+{
+    if (s_serial_session_active) {
+        cp_send_device_info();
+    }
 }
 
 void rivr_ble_companion_tick(void)
@@ -329,6 +411,11 @@ void rivr_ble_companion_tick(void)
 
         switch (cmd) {
         case RIVR_CP_CMD_APP_START:
+            if (packet.origin == 1u) {
+                s_serial_session_active = true;
+            } else {
+                s_ble_session_active = true;
+            }
             s_session_active = true;
             cp_send_ok(RIVR_CP_CMD_APP_START);
             break;
@@ -376,7 +463,9 @@ void rivr_ble_companion_tick(void)
 
 void rivr_ble_companion_on_disconnect(void)
 {
-    s_session_active = false;
+    s_ble_session_active = false;
+    /* Keep serial session alive if one exists */
+    s_session_active = s_serial_session_active;
     s_rx_head = 0u;
     s_rx_tail = 0u;
 }

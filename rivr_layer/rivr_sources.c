@@ -949,6 +949,17 @@ static char s_cli_buf[126];
 static uint8_t s_cli_pos = 0;
 static bool    s_uart_cli_ready = false;  /**< true only if UART driver installed */
 
+/* ── SLIP CP frame assembler (binary CP-over-serial) ──────────────────────
+ * CP packets from the companion app are SLIP-framed (RFC 1055) so they can
+ * be multiplexed alongside ASCII CLI output on UART0.
+ *   0xC0 (SLIP_END) — frame boundary; 0xDB 0xDC → 0xC0; 0xDB 0xDD → 0xDB
+ * Any received SLIP frame starting with the CP magic bytes (0x52 0x43) is
+ * dispatched to rivr_serial_cp_handle_rx() + rivr_ble_companion_tick().       */
+static uint8_t s_slip_buf[RF_MAX_PAYLOAD_LEN];
+static uint8_t s_slip_len = 0u;
+static bool    s_slip_esc = false;
+static bool    s_in_slip  = false;
+
 uint32_t sources_cli_drain(void)
 {
     if (!s_uart_cli_ready) return 0;  /* no UART driver — non-blocking early exit */
@@ -956,6 +967,39 @@ uint32_t sources_cli_drain(void)
     /* Read pending chars from UART0 FIFO */
     uint8_t ch;
     while (uart_read_bytes(UART_NUM_0, &ch, 1, 0) == 1) {
+
+        /* ── SLIP frame detection for binary CP (companion protocol) ── */
+        if (ch == 0xC0u) {  /* SLIP_END */
+            if (s_in_slip && s_slip_len > 0u) {
+                /* Complete SLIP frame — dispatch to CP handler */
+                if (rivr_serial_cp_handle_rx(s_slip_buf, (uint16_t)s_slip_len)) {
+                    rivr_ble_companion_tick();
+                }
+            }
+            /* Reset assembler; mark that next bytes are SLIP content */
+            s_slip_len = 0u;
+            s_slip_esc = false;
+            s_in_slip  = true;
+            continue;
+        }
+        if (s_in_slip) {
+            if (ch == 0xDBu) {          /* SLIP_ESC — next byte is escaped */
+                s_slip_esc = true;
+            } else if (s_slip_esc) {
+                s_slip_esc = false;
+                uint8_t decoded = (ch == 0xDCu) ? 0xC0u
+                                : (ch == 0xDDu) ? 0xDBu
+                                : ch;            /* unknown escape: pass through */
+                if (s_slip_len < sizeof(s_slip_buf)) {
+                    s_slip_buf[s_slip_len++] = decoded;
+                }
+            } else if (s_slip_len < sizeof(s_slip_buf)) {
+                s_slip_buf[s_slip_len++] = ch;
+            }
+            continue;  /* don't fall through to ASCII CLI processing */
+        }
+
+        /* ── Regular ASCII CLI ── */
         if (ch == '\n' || ch == '\r') {
             if (s_cli_pos == 0) continue;   /* skip empty lines */
 
