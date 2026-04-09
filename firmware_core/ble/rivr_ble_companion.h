@@ -34,6 +34,12 @@ bool rivr_serial_cp_handle_rx(const uint8_t *data, uint16_t len);
 void rivr_serial_cp_session_stop(void);
 
 /**
+ * @brief Activate a serial CP session immediately (e.g. via the "appmode"
+ *        CLI command).  Sets the serial session active and sends DEVICE_INFO.
+ */
+void rivr_serial_cp_start_session(void);
+
+/**
  * @brief Returns true while the UART0 serial CP session is active.
  *        Used to suppress duplicate ASCII log lines (@CHT, @MET).
  */
@@ -171,6 +177,7 @@ static inline bool rivr_serial_cp_handle_rx(const uint8_t *data, uint16_t len)
     (void)data; (void)len; return false;
 }
 static inline void rivr_serial_cp_session_stop(void) {}
+static inline void rivr_serial_cp_start_session(void) {}
 static inline bool rivr_serial_cp_session_active(void) { return false; }
 static inline void rivr_serial_cp_push_device_info(void) {}
 static inline void rivr_serial_cp_push_metrics(const rivr_live_stats_t *live,

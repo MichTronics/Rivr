@@ -400,6 +400,13 @@ void rivr_serial_cp_session_stop(void)
     s_session_active        = s_ble_session_active;
 }
 
+void rivr_serial_cp_start_session(void)
+{
+    s_serial_session_active = true;
+    s_session_active        = true;
+    cp_send_device_info();
+}
+
 bool rivr_serial_cp_session_active(void)
 {
     return s_serial_session_active;

@@ -198,14 +198,22 @@ void rivr_cli_poll(void)
          * packet and routed to rivr_serial_cp_handle_rx(); it never touches
          * the ASCII CLI buffer.                                              */
         if (ch == 0xC0u) {
-            if (s_in_slip && s_slip_len > 0u) {
-                if (rivr_serial_cp_handle_rx(s_slip_buf, (uint16_t)s_slip_len)) {
-                    rivr_ble_companion_tick();
+            if (s_in_slip) {
+                /* Closing 0xC0: complete frame — process then back to ASCII. */
+                if (s_slip_len > 0u) {
+                    if (rivr_serial_cp_handle_rx(s_slip_buf, (uint16_t)s_slip_len)) {
+                        rivr_ble_companion_tick();
+                    }
                 }
+                s_slip_len = 0u;
+                s_slip_esc = false;
+                s_in_slip  = false;   /* return to ASCII CLI */
+            } else {
+                /* Opening 0xC0: start frame accumulation. */
+                s_slip_len = 0u;
+                s_slip_esc = false;
+                s_in_slip  = true;
             }
-            s_slip_len = 0u;
-            s_slip_esc = false;
-            s_in_slip  = true;
             continue;
         }
         if (s_in_slip) {
@@ -340,6 +348,8 @@ static void cli_handle_line(void)
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
                "  ble-clear-bonds       remove all persisted BLE bonds from this node\r\n"
+               "  appmode               enter binary companion protocol (serial app mode)\r\n"
+               "  appmode stop          exit binary companion protocol mode\r\n"
                "  reboot                software reset the device\r\n"
                "  help                  show this list\r\n");
         fflush(stdout);
@@ -724,6 +734,21 @@ static void cli_handle_line(void)
         vTaskDelay(pdMS_TO_TICKS(50));   /* allow UART TX buffer to flush */
         esp_restart();
         return; /* unreachable */
+    }
+
+    /* ── "appmode" ── */
+    if (strncmp(p, "appmode", 7u) == 0 && (p[7] == '\0' || p[7] == ' ')) {
+        char *arg = p + 7;
+        while (*arg == ' ') { arg++; }
+        if (strcmp(arg, "stop") == 0) {
+            rivr_serial_cp_session_stop();
+            printf("OK binary mode off — ASCII CLI active\r\n");
+        } else {
+            rivr_serial_cp_start_session();
+            printf("OK binary mode on — node ready for companion app over USB\r\n");
+        }
+        fflush(stdout);
+        return;
     }
 
     /* ── Unknown command ── */
