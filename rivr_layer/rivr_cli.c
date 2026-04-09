@@ -282,13 +282,6 @@ void rivr_cli_on_chat_rx(uint32_t src_id, const uint8_t *payload, uint8_t len)
     cli_print_prompt();
 }
 
-void rivr_cli_enqueue_chat_binary(const uint8_t *text, uint8_t len)
-{
-    /* Thin wrapper: cast and forward to the existing internal helper so that
-     * the CP SEND_CHAT (0x08) command follows the exact same origination
-     * path as a typed 'chat <msg>' CLI command.                              */
-    cli_enqueue_chat((const char *)text, (size_t)len);
-}
 #endif /* RIVR_ROLE_CLIENT */
 
 /* ═══════════════════════════════════════════════════════════════════════════

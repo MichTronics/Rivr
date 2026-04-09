@@ -61,24 +61,12 @@ void rivr_cli_poll(void);
 #  if RIVR_ROLE_CLIENT
 void rivr_cli_on_chat_rx(uint32_t src_id, const uint8_t *payload, uint8_t len);
 
-/**
- * @brief Enqueue a broadcast PKT_CHAT frame for transmission.
- *
- * Called from rivr_ble_companion.c when the companion app sends a
- * SEND_CHAT (0x08) CP command over the binary serial (SLIP) path.
- * Identical to typing 'chat <text>' on the serial CLI.
- *
- * @param text  UTF-8 message bytes (not NUL-terminated).
- * @param len   Number of bytes to send (1–RIVR_PKT_MAX_PAYLOAD).
- */
-void rivr_cli_enqueue_chat_binary(const uint8_t *text, uint8_t len);
+void rivr_cli_on_chat_rx(uint32_t src_id, const uint8_t *payload, uint8_t len);
 #  else
 static inline void rivr_cli_on_chat_rx(uint32_t src_id,
                                         const uint8_t *payload,
                                         uint8_t len)
 { (void)src_id; (void)payload; (void)len; }
-static inline void rivr_cli_enqueue_chat_binary(const uint8_t *text, uint8_t len)
-{ (void)text; (void)len; }
 #  endif
 
 #else   /* no matching role — zero-cost stubs */

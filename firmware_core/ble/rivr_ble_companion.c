@@ -22,7 +22,6 @@
 #include "rivr_ble.h"
 #include "rivr_ble_service.h"
 #include "rivr_layer/rivr_embed.h"
-#include "rivr_layer/rivr_cli.h"
 
 #define TAG "RIVR_BLE_CP"
 
@@ -551,9 +550,31 @@ void rivr_ble_companion_tick(void)
                 cp_send_err(cmd, "invalid text length");
                 break;
             }
-            rivr_cli_enqueue_chat_binary(payload, payload_len);
-            /* Echo the sent message back so it appears in the app chat list
-             * immediately (same behaviour as the BLE raw-frame path).       */
+            /* Inject a PKT_CHAT frame into rf_rx_ringbuf tagged as USB origin.
+             * Identical to the BLE raw-frame path — works for all node roles. */
+            {
+                rivr_pkt_hdr_t tx_hdr;
+                memset(&tx_hdr, 0, sizeof(tx_hdr));
+                tx_hdr.pkt_type    = PKT_CHAT;
+                tx_hdr.ttl         = RIVR_PKT_DEFAULT_TTL;
+                tx_hdr.net_id      = g_net_id;
+                tx_hdr.src_id      = g_my_node_id;
+                tx_hdr.dst_id      = 0u;
+                tx_hdr.seq         = (uint16_t)++g_ctrl_seq;
+                tx_hdr.pkt_id      = (uint16_t)g_ctrl_seq;
+                tx_hdr.payload_len = payload_len;
+                rf_rx_frame_t usb_frame;
+                memset(&usb_frame, 0, sizeof(usb_frame));
+                int enc = protocol_encode(&tx_hdr, payload, payload_len,
+                                         usb_frame.data, sizeof(usb_frame.data));
+                if (enc > 0) {
+                    usb_frame.len        = (uint8_t)enc;
+                    usb_frame.rx_mono_ms = tb_millis();
+                    usb_frame.iface      = 2u;  /* RIVR_IFACE_USB */
+                    (void)rb_try_push(&rf_rx_ringbuf, &usb_frame);
+                }
+            }
+            /* Echo back so the message appears immediately in the app. */
             rivr_ble_companion_push_chat(g_my_node_id, payload, payload_len);
             break;
 
