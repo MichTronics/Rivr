@@ -933,17 +933,23 @@ void app_main(void)
                      * during actual relay decisions, not here). */
                     .relay_density = _lnk.count,
                 };
-                rivr_metrics_print(&ls);
+                /* Suppress @MET ASCII when the companion app is connected
+                 * over serial binary — the same data arrives via the binary
+                 * RIVR_CP_PKT_METRICS_PUSH packet pushed below.            */
+                if (!rivr_serial_cp_session_active()) {
+                    rivr_metrics_print(&ls);
+                }
                 /* Push the same snapshot as a compact binary PKT_METRICS
                  * frame to any connected BLE client (73-byte frame, fits
                  * in one 128-byte MTU notification).  No-op if not connected
                  * or RIVR_FEATURE_BLE=0.                                    */
                 rivr_metrics_ble_push(&ls, g_my_node_id, g_net_id,
                                       (uint16_t)++g_ctrl_seq);
-                /* Push a DEVICE_INFO CP packet over the serial SLIP channel
-                 * so the companion app learns the real node ID immediately
-                 * (and keeps it refreshed — no-op when not connected).     */
-                rivr_serial_cp_push_device_info();
+                /* Push the same PKT_METRICS frame to the serial companion
+                 * (SLIP-encoded CP packet 0x8B).  App parses it identically
+                 * to the BLE path via RivrFrameCodec.parseFrame().          */
+                rivr_serial_cp_push_metrics(&ls, g_my_node_id, g_net_id,
+                                            (uint16_t)g_ctrl_seq);
             }
         }
 

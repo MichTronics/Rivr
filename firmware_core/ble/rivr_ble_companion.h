@@ -9,8 +9,12 @@ extern "C" {
 #include <stdint.h>
 
 #include "rivr_config.h"
+/* rivr_live_stats_t is used in declarations on both sides of RIVR_FEATURE_BLE */
+#include "../rivr_metrics.h"
 
 #if RIVR_FEATURE_BLE
+
+/* rivr_metrics.h already included above */
 
 bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len);
 void rivr_ble_companion_tick(void);
@@ -40,6 +44,19 @@ bool rivr_serial_cp_session_active(void);
  *        No-op when the serial session is not active.
  */
 void rivr_serial_cp_push_device_info(void);
+
+/**
+ * @brief Push a full PKT_METRICS snapshot over the SLIP/UART0 channel.
+ *
+ * Encodes @p live into the same compact rivr_met_ble_payload_t used by
+ * rivr_metrics_ble_push() and wraps it in a RIVR_CP_PKT_METRICS_PUSH (0x8B)
+ * CP packet.  The companion app parses it with RivrFrameCodec.parseFrame()
+ * — identical to the BLE metrics path.  No-op when the serial session is
+ * not active.
+ */
+void rivr_serial_cp_push_metrics(const rivr_live_stats_t *live,
+                                 uint32_t src_id, uint16_t net_id,
+                                 uint16_t seq);
 void rivr_ble_companion_push_chat(uint32_t src_id,
                                   const uint8_t *text,
                                   uint8_t text_len);
@@ -156,6 +173,11 @@ static inline bool rivr_serial_cp_handle_rx(const uint8_t *data, uint16_t len)
 static inline void rivr_serial_cp_session_stop(void) {}
 static inline bool rivr_serial_cp_session_active(void) { return false; }
 static inline void rivr_serial_cp_push_device_info(void) {}
+static inline void rivr_serial_cp_push_metrics(const rivr_live_stats_t *live,
+                                                uint32_t src_id,
+                                                uint16_t net_id,
+                                                uint16_t seq)
+{ (void)live; (void)src_id; (void)net_id; (void)seq; }
 
 #endif
 

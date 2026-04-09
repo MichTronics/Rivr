@@ -56,6 +56,7 @@ enum {
     RIVR_CP_PKT_PRIVATE_CHAT_RX      = 0x88u,  /**< Incoming private message event */
     RIVR_CP_PKT_PRIVATE_CHAT_STATE   = 0x89u,  /**< Outgoing message state update  */
     RIVR_CP_PKT_DELIVERY_RECEIPT     = 0x8Au,  /**< End-to-end delivery receipt     */
+    RIVR_CP_PKT_METRICS_PUSH         = 0x8Bu,  /**< Full metrics snapshot — same payload as PKT_METRICS BLE frame */
 };
 
 typedef struct {
@@ -403,6 +404,82 @@ void rivr_serial_cp_session_stop(void)
 bool rivr_serial_cp_session_active(void)
 {
     return s_serial_session_active;
+}
+
+void rivr_serial_cp_push_metrics(const rivr_live_stats_t *live,
+                                 uint32_t src_id, uint16_t net_id, uint16_t seq)
+{
+    if (!s_serial_session_active || !live) {
+        return;
+    }
+
+    /* Build the exact same compact payload as rivr_metrics_ble_push() so
+     * the app can reuse the existing RivrFrameCodec.parseFrame() path.     */
+    rivr_met_ble_payload_t pl;
+    memset(&pl, 0, sizeof(pl));
+    pl.node_id       = live->node_id;
+    pl.dc_pct        = live->dc_pct;
+    pl.q_depth       = live->q_depth;
+    pl.tx_total      = live->tx_total;
+    pl.rx_total      = live->rx_total;
+    pl.route_cache   = live->route_cache;
+    pl.lnk_cnt       = live->lnk_cnt;
+    pl.lnk_best      = live->lnk_best;
+    pl.lnk_rssi      = live->lnk_best_rssi;
+    pl.lnk_loss      = live->lnk_avg_loss;
+    pl.relay_skip    = g_rivr_metrics.flood_fwd_cancelled_opport_total
+                       + g_rivr_metrics.flood_fwd_score_suppressed_total;
+    pl.relay_delay   = g_rivr_metrics.relay_delay_ms_total;
+    pl.relay_density = live->relay_density;
+    pl.relay_fwd     = g_rivr_metrics.relay_forwarded_total;
+    pl.relay_sel     = g_rivr_metrics.flood_fwd_attempted_total;
+    pl.relay_can     = g_rivr_metrics.flood_fwd_cancelled_opport_total;
+    pl.rx_fail       = g_rivr_metrics.rx_decode_fail;
+    pl.rx_dup        = g_rivr_metrics.rx_dedupe_drop;
+    pl.rx_ttl        = g_rivr_metrics.rx_ttl_drop;
+    pl.rx_bad_type   = g_rivr_metrics.rx_invalid_type;
+    pl.rx_bad_hop    = g_rivr_metrics.rx_invalid_hop;
+    pl.tx_full       = g_rivr_metrics.tx_queue_full;
+    pl.dc_blk        = g_rivr_metrics.duty_blocked;
+    pl.no_route      = g_rivr_metrics.drop_no_route;
+    pl.loop_drop_total = g_rivr_metrics.loop_detect_drop_total;
+    pl.rad_rst       = g_rivr_metrics.radio_hard_reset;
+    pl.rad_txfail    = g_rivr_metrics.radio_tx_fail;
+    pl.rad_crc       = g_rivr_metrics.radio_rx_crc_fail;
+    pl.rc_hit        = g_rivr_metrics.route_cache_hit_total;
+    pl.rc_miss       = g_rivr_metrics.route_cache_miss_total;
+    pl.ack_tx        = g_rivr_metrics.ack_tx_total;
+    pl.ack_rx        = g_rivr_metrics.ack_rx_total;
+    pl.retry_att     = g_rivr_metrics.retry_attempt_total;
+    pl.retry_ok      = g_rivr_metrics.retry_success_total;
+    pl.retry_fail    = g_rivr_metrics.retry_fail_total;
+    pl.ble_conn      = g_rivr_metrics.ble_connections;
+    pl.ble_rx        = g_rivr_metrics.ble_rx_frames;
+    pl.ble_tx        = g_rivr_metrics.ble_tx_frames;
+    pl.ble_err       = g_rivr_metrics.ble_errors;
+
+    /* Encode as a PKT_METRICS Rivr frame — same wire format as BLE path.   */
+    rivr_pkt_hdr_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.pkt_type    = PKT_METRICS;
+    hdr.ttl         = 1u;
+    hdr.hop         = 0u;
+    hdr.net_id      = net_id;
+    hdr.src_id      = src_id;
+    hdr.dst_id      = 0u;
+    hdr.seq         = seq;
+    hdr.pkt_id      = seq;
+    hdr.payload_len = (uint8_t)sizeof(pl);
+
+    uint8_t frame[23u + RIVR_MET_BLE_PAYLOAD_LEN + 2u];
+    int len = protocol_encode(&hdr, (const uint8_t *)&pl,
+                              (uint8_t)sizeof(pl),
+                              frame, (uint8_t)sizeof(frame));
+    if (len <= 0) {
+        return;
+    }
+
+    (void)cp_send_packet(RIVR_CP_PKT_METRICS_PUSH, 0u, frame, (uint8_t)len);
 }
 
 void rivr_serial_cp_push_device_info(void)
