@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>   /* write(), STDOUT_FILENO */
 
 #include "driver/uart.h"
 #include "../build_info.h"
@@ -141,7 +142,17 @@ static bool cp_send_packet(uint8_t type, uint8_t status,
             }
         }
         slip_buf[slen++] = 0xC0u;  /* SLIP_END — end-of-frame */
+        /* Use the same console abstraction as the RX side (rivr_cli.c) so
+         * that SLIP frames reach the USB host on both UART and USB_SERIAL_JTAG
+         * boards.  The UART VFS adds \n→\r\n translation that corrupts binary
+         * frames, so bypass it with the raw driver.  On USB_SERIAL_JTAG boards
+         * the UART0 peripheral is not connected to USB at all — write(STDOUT)
+         * is required.                                                       */
+#ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+        (void)write(STDOUT_FILENO, slip_buf, slen);
+#else
         uart_write_bytes(UART_NUM_0, (const char *)slip_buf, slen);
+#endif
         sent = true;
     }
 
