@@ -22,6 +22,7 @@
 #include "rivr_ble.h"
 #include "rivr_ble_service.h"
 #include "rivr_layer/rivr_embed.h"
+#include "rivr_layer/rivr_cli.h"
 
 #define TAG "RIVR_BLE_CP"
 
@@ -40,6 +41,7 @@ enum {
     RIVR_CP_CMD_SET_POSITION     = 0x05u,
     RIVR_CP_CMD_GET_POSITION     = 0x06u,
     RIVR_CP_CMD_SEND_PRIVATE     = 0x07u,  /**< Send private message */
+    RIVR_CP_CMD_SEND_CHAT         = 0x08u,  /**< Broadcast a PKT_CHAT frame */
 };
 
 enum {
@@ -461,6 +463,21 @@ void rivr_ble_companion_tick(void)
                 break;
             }
             cp_handle_send_private(payload, payload_len);
+            break;
+
+        case RIVR_CP_CMD_SEND_CHAT:
+            if (!s_session_active) {
+                cp_send_err(cmd, "app start required");
+                break;
+            }
+            if (payload_len == 0u || payload_len > RIVR_BLE_CP_MAX_CHAT_LEN) {
+                cp_send_err(cmd, "invalid text length");
+                break;
+            }
+            rivr_cli_enqueue_chat_binary(payload, payload_len);
+            /* Echo the sent message back so it appears in the app chat list
+             * immediately (same behaviour as the BLE raw-frame path).       */
+            rivr_ble_companion_push_chat(g_my_node_id, payload, payload_len);
             break;
 
         default:
