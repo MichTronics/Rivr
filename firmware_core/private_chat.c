@@ -493,7 +493,6 @@ pchat_error_t private_chat_send(uint32_t peer,
     }
 
     uint32_t now_ms = tb_millis();
-    uint32_t now_s  = now_ms / 1000u; /* coarse; good enough for timestamp */
 
     uint32_t seq = s_sender_seq++;
     uint64_t msg_id = make_msg_id(g_my_node_id, seq);
@@ -507,9 +506,14 @@ pchat_error_t private_chat_send(uint32_t peer,
     memset(&p, 0, sizeof(p));
     p.msg_id          = msg_id;
     p.sender_seq      = seq;
-    p.timestamp_s     = now_s;
+    /* timestamp_s encodes Unix wall-clock time; nodes lack an RTC so uptime
+     * must NOT be used here — the receiver would compare its own uptime against
+     * the sender's uptime and falsely expire every message when the receiver
+     * has higher uptime (e.g. ran longer before the sender booted).
+     * Setting 0 means "unknown" and disables the expiry check on the receiver. */
+    p.timestamp_s     = 0u;
     p.flags           = PCHAT_FLAGS_DEFAULT;
-    p.expires_delta_s = (uint16_t)(PRIVATE_CHAT_QUEUE_EXPIRY_MS / 1000u);
+    p.expires_delta_s = 0u;   /* no expiry without a real clock */
     p.reply_to_msg_id = 0u;
     p.body_len        = body_len;
     if (body_len > 0u) {
