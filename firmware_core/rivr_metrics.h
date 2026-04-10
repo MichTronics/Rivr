@@ -8,7 +8,7 @@ typedef struct {
     uint32_t rx_decode_fail;   /* malformed / foreign frames silently discarded */
     uint32_t rx_dedupe_drop;   /* already-seen (src,seq) discarded              */
     uint32_t rx_ttl_drop;      /* arrived with TTL == 0                         */
-    uint32_t rx_invalid_type;  /* pkt_type 0 or > PKT_METRICS — unsupported type */
+    uint32_t rx_invalid_type;  /* pkt_type 0 or > PKT_DELIVERY_RECEIPT — unsupported type */
     uint32_t rx_invalid_hop;   /* hop count already >= max TTL (corrupt frame)  */
     uint32_t tx_queue_full;    /* rf_tx_sink_cb could not push to TX ring       */
     uint32_t duty_blocked;     /* dutycycle_check() denied a TX attempt         */

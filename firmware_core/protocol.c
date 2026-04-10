@@ -143,7 +143,7 @@ int protocol_encode(const rivr_pkt_hdr_t *hdr,
  *   2. Magic word == RIVR_MAGIC ("RV").
  *   3. Version in [RIVR_PROTO_MIN, RIVR_PROTO_MAX] (range-checked for
  *      backward and forward compatibility).
- *   4. Packet type in [1, PKT_METRICS] (0 and >11 are undefined).
+ *   4. Packet type in [1, PKT_DELIVERY_RECEIPT] (0 is unassigned; >13 is reserved).
  *   5. payload_len ≤ RIVR_PKT_MAX_PAYLOAD (guards uint8_t wrap below).
  *   6. buf length ≥ RIVR_PKT_HDR_LEN + payload_len + RIVR_PKT_CRC_LEN.
  *   7. CRC-16/CCITT over the header and payload region.
@@ -166,10 +166,10 @@ static bool validate_wire_frame(const uint8_t *buf, uint8_t len,
         return false;
     }
 
-    /* Type 0 is unassigned; values above PKT_METRICS are undefined.
+    /* Type 0 is unassigned; values above PKT_DELIVERY_RECEIPT are reserved.
      * Count these separately from CRC failures so operators can
      * distinguish "foreign device" from "corrupted frame". */
-    if (buf[3] == 0u || buf[3] > PKT_METRICS) {
+    if (buf[3] == 0u || buf[3] > PKT_DELIVERY_RECEIPT) {
         g_rivr_metrics.rx_invalid_type++;
         return false;
     }

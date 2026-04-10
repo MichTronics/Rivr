@@ -17,6 +17,8 @@
  * RUN 12 — wire-ACK success: PCHAT_STATE_SENT → PCHAT_STATE_FORWARDED
  * RUN 13 — wire-ACK failure (retry exhausted): → PCHAT_STATE_FAILED_RETRY
  * RUN 14 — receipt rate-limiting (> PRIVATE_CHAT_RECEIPT_RATE_MAX per window)
+ * RUN 15 — route-known TX uses next-hop dst_id while preserving final target in payload
+ * RUN 16 — awaiting-route private chat reissues ROUTE_REQ periodically
  *
  * Build: see tests/Makefile target 'private_chat'.
  * Exit:  0 = all checks passed, 1 = at least one failure.
@@ -54,6 +56,7 @@ uint32_t         g_my_node_id   = 0u;
 pending_queue_t  g_pending_queue;
 retry_table_t    g_retry_table;
 route_cache_t    g_route_cache;
+uint32_t         g_ctrl_seq     = 0u;
 
 /* BLE push stubs — private_chat.c calls these; keep them no-ops here */
 void rivr_ble_companion_push_private_chat_rx(
@@ -165,6 +168,7 @@ static void reset(void)
     memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
     drain_tx();
     s_pkt_id_ctr = 0x1000u;
+    g_ctrl_seq = 0u;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
@@ -183,7 +187,8 @@ static void run1_payload_roundtrip(void)
         in.timestamp_s     = 1700000000u;
         in.flags           = PCHAT_FLAGS_DEFAULT;
         in.expires_delta_s = 30u;
-        in.reply_to_msg_id = 0u;
+        in.recipient_id    = PEER_NODE;
+        in.reserved        = 0u;
         in.body_len        = 0u;
 
         uint8_t buf[PRIVATE_CHAT_MAX_PAYLOAD_LEN];
@@ -197,6 +202,7 @@ static void run1_payload_roundtrip(void)
         CHECK(out.timestamp_s == in.timestamp_s,          "timestamp_s round-trips");
         CHECK(out.flags       == in.flags,                "flags round-trips");
         CHECK(out.expires_delta_s == in.expires_delta_s,  "expires_delta_s round-trips");
+        CHECK(out.recipient_id == in.recipient_id,        "recipient_id round-trips");
         CHECK(out.body_len    == 0u,                      "body_len==0 round-trips");
     }
 
@@ -209,7 +215,8 @@ static void run1_payload_roundtrip(void)
         in.timestamp_s     = 0u;
         in.flags           = PCHAT_FLAG_USER_VISIBLE;
         in.expires_delta_s = 0u;
-        in.reply_to_msg_id = 0xABCDF00D12345678ULL;
+        in.recipient_id    = OTHER_NODE;
+        in.reserved        = 0x12345678u;
         const char *txt    = "Hello, mesh!";
         in.body_len        = (uint8_t)strlen(txt);
         memcpy(in.body, txt, in.body_len);
@@ -223,7 +230,8 @@ static void run1_payload_roundtrip(void)
         CHECK(rc == PCHAT_OK, "body decode returns PCHAT_OK");
         CHECK(out.body_len == in.body_len, "body_len preserved");
         CHECK(memcmp(out.body, in.body, in.body_len) == 0, "body content preserved");
-        CHECK(out.reply_to_msg_id == in.reply_to_msg_id, "reply_to_msg_id preserved");
+        CHECK(out.recipient_id == in.recipient_id, "recipient_id preserved");
+        CHECK(out.reserved == in.reserved, "reserved field preserved");
     }
 
     /* 1c: max body */
@@ -300,6 +308,7 @@ static void run3_dedup(void)
     p.timestamp_s     = 0u;
     p.flags           = PCHAT_FLAGS_DEFAULT & ~((uint16_t)PCHAT_FLAG_RECEIPT_REQ);
     p.expires_delta_s = 0u;
+    p.recipient_id    = MY_NODE;
     p.body_len        = 4u;
     memcpy(p.body, "test", 4u);
 
@@ -452,19 +461,20 @@ static void run8_dst_mismatch(void)
     p.msg_id     = 0xAABBCCDD00000001ULL;
     p.sender_seq = 1u;
     p.flags      = PCHAT_FLAGS_DEFAULT;
+    p.recipient_id = OTHER_NODE;
     p.body_len   = 3u;
     memcpy(p.body, "abc", 3u);
 
     uint8_t pay[PRIVATE_CHAT_MAX_PAYLOAD_LEN];
     int plen = private_chat_encode_payload(&p, pay, sizeof(pay));
 
-    /* Frame addressed to OTHER_NODE, not MY_NODE → must be rejected. */
-    rivr_pkt_hdr_t hdr = make_rx_hdr(PEER_NODE, OTHER_NODE, 0xDEADu);
+    /* Transit hop frame: current hop is us, final recipient is OTHER_NODE. */
+    rivr_pkt_hdr_t hdr = make_rx_hdr(PEER_NODE, MY_NODE, 0xDEADu);
     hdr.payload_len = (uint8_t)plen;
 
     pchat_error_t rc = private_chat_on_rx(&hdr, pay, (uint8_t)plen);
-    CHECK(rc == PCHAT_ERR_DST_MISMATCH, "dst!=my_node → PCHAT_ERR_DST_MISMATCH");
-    CHECK(g_rivr_metrics.private_chat_invalid_total >= 1u, "invalid_total incremented");
+    CHECK(rc == PCHAT_ERR_DST_MISMATCH, "transit hop ignored locally → PCHAT_ERR_DST_MISMATCH");
+    CHECK(g_rivr_metrics.private_chat_invalid_total == 0u, "transit hop does not count as invalid");
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
@@ -621,6 +631,7 @@ static void run14_receipt_rate_limit(void)
     private_chat_payload_t p;
     memset(&p, 0, sizeof(p));
     p.flags    = PCHAT_FLAGS_DEFAULT; /* includes PCHAT_FLAG_RECEIPT_REQ */
+    p.recipient_id = MY_NODE;
     p.body_len = 2u;
     memcpy(p.body, "hi", 2u);
 
@@ -637,6 +648,7 @@ static void run14_receipt_rate_limit(void)
         rivr_pkt_hdr_t hdr = make_rx_hdr((uint32_t)(0xBB000000u | i), MY_NODE, (uint16_t)i);
         hdr.payload_len = (uint8_t)plen;
         private_chat_on_rx(&hdr, pay, (uint8_t)plen);
+        drain_tx();
     }
 
     uint32_t rcpt_tx_after = g_rivr_metrics.private_chat_receipt_tx_total;
@@ -650,6 +662,7 @@ static void run14_receipt_rate_limit(void)
     rivr_pkt_hdr_t hdr2 = make_rx_hdr(0xCC000001u, MY_NODE, 0x0999u);
     hdr2.payload_len = (uint8_t)plen2;
     private_chat_on_rx(&hdr2, pay, (uint8_t)plen2);
+    drain_tx();
 
     CHECK(g_rivr_metrics.private_chat_receipt_tx_total == rcpt_tx_after,
           "rate-limited: receipt_tx_total not incremented beyond window max");
@@ -662,9 +675,147 @@ static void run14_receipt_rate_limit(void)
     rivr_pkt_hdr_t hdr3 = make_rx_hdr(0xDD000001u, MY_NODE, 0x1001u);
     hdr3.payload_len = (uint8_t)plen3;
     private_chat_on_rx(&hdr3, pay, (uint8_t)plen3);
+    drain_tx();
 
     CHECK(g_rivr_metrics.private_chat_receipt_tx_total == rcpt_tx_after + 1u,
           "after rate window expiry, receipt emitted again");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ *
+ * RUN 15 — route-known TX uses next-hop dst_id
+ * ══════════════════════════════════════════════════════════════════════════ */
+static void run15_preserve_final_dst(void)
+{
+    printf("\n── RUN 15: route-known TX uses next-hop dst_id ──────────────────\n");
+    reset();
+
+    /* Simulate a learned route to PEER_NODE via OTHER_NODE. */
+    route_cache_update(&g_route_cache, PEER_NODE, OTHER_NODE, 2u, 90u, 0u, tb_millis());
+
+    /* 15a: outgoing private chat frame targets the next hop while the payload
+     * still carries the final peer. */
+    {
+        uint64_t msg_id = 0u;
+        pchat_error_t rc = private_chat_send(PEER_NODE,
+                                             (const uint8_t *)"mesh", 4u,
+                                             &msg_id);
+        CHECK(rc == PCHAT_OK, "send with known route returns OK");
+
+        pchat_entry_t *e = find_entry(msg_id);
+        CHECK(e != NULL, "entry created for routed send");
+        if (!e) return;
+        CHECK(e->state == PCHAT_STATE_SENT, "known route sends immediately");
+
+        rf_tx_request_t req;
+        bool popped = rb_pop(&rf_tx_queue, &req);
+        CHECK(popped, "private chat frame queued to rf_tx_queue");
+        if (popped) {
+            rivr_pkt_hdr_t hdr;
+            const uint8_t *pl = NULL;
+            bool ok = protocol_decode(req.data, req.len, &hdr, &pl);
+            CHECK(ok, "queued private chat frame decodes");
+            if (ok) {
+                private_chat_payload_t out;
+                CHECK(hdr.pkt_type == PKT_PRIVATE_CHAT, "queued frame type is PKT_PRIVATE_CHAT");
+                CHECK(hdr.dst_id == OTHER_NODE, "private chat header targets next hop");
+                CHECK(private_chat_decode_payload(pl, hdr.payload_len, &out) == PCHAT_OK,
+                      "queued private chat payload decodes");
+                CHECK(out.recipient_id == PEER_NODE, "private chat payload keeps final recipient");
+            }
+        }
+    }
+
+    drain_tx();
+
+    /* 15b: generated delivery receipt also targets the current next hop. */
+    {
+        private_chat_payload_t p;
+        memset(&p, 0, sizeof(p));
+        p.msg_id      = 0xABCD000000000001ULL;
+        p.sender_seq  = 1u;
+        p.flags       = PCHAT_FLAGS_DEFAULT;
+        p.recipient_id = MY_NODE;
+        p.body_len    = 2u;
+        memcpy(p.body, "ok", 2u);
+
+        uint8_t pay[PRIVATE_CHAT_MAX_PAYLOAD_LEN];
+        int plen = private_chat_encode_payload(&p, pay, sizeof(pay));
+        rivr_pkt_hdr_t hdr = make_rx_hdr(PEER_NODE, MY_NODE, 0x2222u);
+        hdr.payload_len = (uint8_t)plen;
+
+        pchat_error_t rc = private_chat_on_rx(&hdr, pay, (uint8_t)plen);
+        CHECK(rc == PCHAT_OK, "incoming private chat with receipt request accepted");
+
+        rf_tx_request_t req;
+        bool popped = rb_pop(&rf_tx_queue, &req);
+        CHECK(popped, "delivery receipt queued to rf_tx_queue");
+        if (popped) {
+            rivr_pkt_hdr_t out_hdr;
+            const uint8_t *pl = NULL;
+            bool ok = protocol_decode(req.data, req.len, &out_hdr, &pl);
+            CHECK(ok, "queued delivery receipt decodes");
+            if (ok) {
+                delivery_receipt_payload_t out;
+                CHECK(out_hdr.pkt_type == PKT_DELIVERY_RECEIPT,
+                      "queued frame type is PKT_DELIVERY_RECEIPT");
+                CHECK(out_hdr.dst_id == OTHER_NODE, "delivery receipt header targets next hop");
+                CHECK(private_chat_decode_receipt(pl, out_hdr.payload_len, &out) == PCHAT_OK,
+                      "queued delivery receipt payload decodes");
+                CHECK(out.sender_id == MY_NODE, "receipt payload keeps original sender as final destination");
+            }
+        }
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ *
+ * RUN 16 — awaiting-route reissues ROUTE_REQ
+ * ══════════════════════════════════════════════════════════════════════════ */
+static void run16_route_req_retry(void)
+{
+    printf("\n── RUN 16: awaiting-route reissues ROUTE_REQ ────────────────────\n");
+    reset();
+
+    uint64_t msg_id = 0u;
+    pchat_error_t rc = private_chat_send(PEER_NODE,
+                                         (const uint8_t *)"route", 5u,
+                                         &msg_id);
+    CHECK(rc == PCHAT_OK, "send without route returns OK");
+
+    pchat_entry_t *e = find_entry(msg_id);
+    CHECK(e != NULL, "entry found for route retry test");
+    if (!e) return;
+    CHECK(e->state == PCHAT_STATE_AWAITING_ROUTE, "entry waits for route");
+
+    rf_tx_request_t req;
+    bool popped = rb_pop(&rf_tx_queue, &req);
+    CHECK(popped, "initial ROUTE_REQ queued");
+    if (popped) {
+        rivr_pkt_hdr_t hdr;
+        const uint8_t *pl = NULL;
+        bool ok = protocol_decode(req.data, req.len, &hdr, &pl);
+        CHECK(ok, "initial ROUTE_REQ decodes");
+        if (ok) {
+            CHECK(hdr.pkt_type == PKT_ROUTE_REQ, "initial queued frame is ROUTE_REQ");
+        }
+    }
+
+    private_chat_tick(tb_millis() + PRIVATE_CHAT_ROUTE_REQ_RETRY_MS - 1u);
+    CHECK(!rb_pop(&rf_tx_queue, &req), "no ROUTE_REQ reissued before retry interval");
+
+    test_advance_ms(PRIVATE_CHAT_ROUTE_REQ_RETRY_MS);
+    private_chat_tick(tb_millis());
+
+    popped = rb_pop(&rf_tx_queue, &req);
+    CHECK(popped, "ROUTE_REQ reissued after retry interval");
+    if (popped) {
+        rivr_pkt_hdr_t hdr;
+        const uint8_t *pl = NULL;
+        bool ok = protocol_decode(req.data, req.len, &hdr, &pl);
+        CHECK(ok, "reissued ROUTE_REQ decodes");
+        if (ok) {
+            CHECK(hdr.pkt_type == PKT_ROUTE_REQ, "reissued queued frame is ROUTE_REQ");
+        }
+    }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
@@ -688,6 +839,8 @@ int main(void)
     run12_wire_ack_success();
     run13_wire_ack_failure();
     run14_receipt_rate_limit();
+    run15_preserve_final_dst();
+    run16_route_req_retry();
 
     printf("\n══════════════════════════════════════════════════════════════════\n");
     printf("  Private chat tests: %u passed, %u failed\n", s_pass, s_fail);

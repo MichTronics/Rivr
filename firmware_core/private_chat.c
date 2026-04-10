@@ -30,7 +30,6 @@
 #include "protocol.h"
 #include "routing.h"
 #include "route_cache.h"
-#include "pending_queue.h"
 #include "retry_table.h"
 #include "rivr_metrics.h"
 #include "rivr_log.h"
@@ -57,9 +56,6 @@ static pchat_receipt_rate_t s_receipt_rate = {0u, 0u};
 
 /* ── Exported node ID (defined in main.c, main_linux.c) ─────────────────── */
 extern uint32_t g_my_node_id;
-
-/* ── Pending-queue integration (from pending_queue.c) ───────────────────── */
-extern pending_queue_t g_pending_queue;
 
 /* ── Retry table (from retry_table.c) ────────────────────────────────────── */
 extern retry_table_t g_retry_table;
@@ -169,7 +165,7 @@ static void pchat_notify_state(const pchat_entry_t *e)
 
 /**
  * Push a received private chat event to the companion app.
- * Payload: [msg_id:8][from:4][timestamp_s:4][flags:2][body_len:1][body:N]
+ * Payload: [msg_id:8][from:4][to:4][sender_seq:4][timestamp_s:4][flags:2][body_len:1][body:N]
  */
 static void pchat_notify_rx(const rivr_pkt_hdr_t *hdr,
                              const private_chat_payload_t *p)
@@ -177,7 +173,7 @@ static void pchat_notify_rx(const rivr_pkt_hdr_t *hdr,
     rivr_ble_companion_push_private_chat_rx(
         p->msg_id,
         hdr->src_id,
-        hdr->dst_id,
+        p->recipient_id,
         p->sender_seq,
         p->timestamp_s,
         p->flags,
@@ -257,6 +253,27 @@ static bool pchat_receipt_rate_ok(uint32_t now_ms)
     return true;
 }
 
+static void pchat_issue_route_req(uint32_t peer_id, uint32_t now_ms)
+{
+    uint8_t req_buf[255];
+
+    ++g_ctrl_seq;
+    int req_frame_len = routing_build_route_req(g_my_node_id, peer_id,
+                                                (uint16_t)g_ctrl_seq,
+                                                (uint16_t)g_ctrl_seq,
+                                                req_buf, sizeof(req_buf));
+    if (req_frame_len > 0) {
+        rf_tx_request_t rreq;
+        memset(&rreq, 0, sizeof(rreq));
+        rreq.len = (uint8_t)req_frame_len;
+        rreq.due_ms = 0u;
+        memcpy(rreq.data, req_buf, (size_t)req_frame_len);
+        (void)rb_try_push(&rf_tx_queue, &rreq);
+    }
+
+    (void)now_ms;
+}
+
 /**
  * Encode a delivery receipt and push it to the TX queue.
  */
@@ -297,13 +314,12 @@ static void pchat_emit_receipt(uint32_t to_node_id,
     hdr.payload_len = (uint8_t)pay_len;
     hdr.loop_guard  = 0u;
 
-    /* Look up route. */
     const route_cache_entry_t *route = route_cache_lookup(&g_route_cache,
-                                                            to_node_id,
-                                                            tb_millis());
+                                                          to_node_id,
+                                                          tb_millis());
     if (route) {
         hdr.dst_id = route->next_hop;
-        hdr.ttl    = 1u; /* unicast — one hop to next relay */
+        hdr.ttl    = 1u;
     }
 
     uint8_t frame[255];
@@ -331,8 +347,9 @@ static void pchat_emit_receipt(uint32_t to_node_id,
 
 /**
  * Attempt to transmit an outgoing private chat message.
- * Looks up route; if found, builds unicast frame and pushes to TX queue.
- * Returns true if frame pushed, false if no route (caller should await route).
+ * Looks up route; if found, emits the frame to the current next hop while the
+ * final destination remains in the payload. Returns true if frame pushed,
+ * false if no route (caller should await route).
  */
 static bool pchat_try_send_frame(pchat_entry_t *e, uint32_t now_ms)
 {
@@ -345,7 +362,6 @@ static bool pchat_try_send_frame(pchat_entry_t *e, uint32_t now_ms)
                                                             now_ms);
     uint32_t next_hop = e->peer_id;
     uint8_t  ttl      = RIVR_PKT_DEFAULT_TTL;
-
     if (route) {
         next_hop = route->next_hop;
         ttl = 1u;
@@ -353,35 +369,16 @@ static bool pchat_try_send_frame(pchat_entry_t *e, uint32_t now_ms)
     } else {
         g_rivr_metrics.route_cache_miss_total++;
 
-        /* Issue route discovery and park in pending queue. */
-        uint8_t req_buf[255];
-        ++g_ctrl_seq;
-        int req_frame_len = routing_build_route_req(g_my_node_id, e->peer_id,
-                                                     (uint16_t)g_ctrl_seq,
-                                                     (uint16_t)g_ctrl_seq,
-                                                     req_buf, sizeof(req_buf));
-        if (req_frame_len > 0) {
-            rf_tx_request_t rreq;
-            memset(&rreq, 0, sizeof(rreq));
-            rreq.len = (uint8_t)req_frame_len;
-            rreq.due_ms = 0u;
-            memcpy(rreq.data, req_buf, (size_t)req_frame_len);
-            (void)rb_try_push(&rf_tx_queue, &rreq);
-        }
-
-        /* Park the frame in the pending queue. */
-        if (!pending_queue_enqueue(&g_pending_queue, e->peer_id,
-                                    e->frame, e->frame_len, 0u, now_ms)) {
-            g_rivr_metrics.pq_dropped++;
-        }
-
+        /* Issue route discovery and wait in the private-chat queue. */
+        pchat_issue_route_req(e->peer_id, now_ms);
+        e->last_route_req_ms = now_ms;
         e->state = PCHAT_STATE_AWAITING_ROUTE;
         pchat_notify_state(e);
         return false;
     }
 
-    /* Route known: patch dst_id → next_hop and update TTL in the stored frame,
-     * then push. */
+    /* Route known: send to the current next hop. The final destination stays
+     * in the payload so transit relays can ignore it locally. */
     rivr_pkt_hdr_t hdr;
     uint8_t        pay_buf[PRIVATE_CHAT_MAX_PAYLOAD_LEN];
     uint8_t        pay_len = 0u;
@@ -514,7 +511,8 @@ pchat_error_t private_chat_send(uint32_t peer,
     p.timestamp_s     = 0u;
     p.flags           = PCHAT_FLAGS_DEFAULT;
     p.expires_delta_s = 0u;   /* no expiry without a real clock */
-    p.reply_to_msg_id = 0u;
+    p.recipient_id    = peer;
+    p.reserved        = 0u;
     p.body_len        = body_len;
     if (body_len > 0u) {
         memcpy(p.body, body, body_len);
@@ -527,7 +525,8 @@ pchat_error_t private_chat_send(uint32_t peer,
         return PCHAT_ERR_ENCODE_FAIL;
     }
 
-    /* Build tentative wire frame (dst may be replaced once route is resolved). */
+    /* Build the stored wire frame with the final peer encoded in the payload.
+     * The header dst_id may be rewritten to the current next hop on send. */
     rivr_pkt_hdr_t hdr;
     memset(&hdr, 0, sizeof(hdr));
     hdr.magic       = RIVR_MAGIC;
@@ -538,7 +537,7 @@ pchat_error_t private_chat_send(uint32_t peer,
     hdr.hop         = 0u;
     hdr.net_id      = 0u;
     hdr.src_id      = g_my_node_id;
-    hdr.dst_id      = peer;          /* will be replaced with next_hop if route found */
+    hdr.dst_id      = peer;
     hdr.seq         = (uint16_t)(seq & 0xFFFFu);
     hdr.pkt_id      = (uint16_t)++g_ctrl_seq;
     hdr.payload_len = (uint8_t)pay_len;
@@ -556,6 +555,7 @@ pchat_error_t private_chat_send(uint32_t peer,
     e->frame_len    = (uint8_t)frame_len;
     e->pkt_id       = hdr.pkt_id;
     e->enqueued_ms  = now_ms;
+    e->last_route_req_ms = 0u;
     e->sent_ms      = 0u;
     e->state        = PCHAT_STATE_QUEUED;
 
@@ -598,12 +598,6 @@ pchat_error_t private_chat_on_rx(const rivr_pkt_hdr_t *hdr,
         return PCHAT_ERR_INVALID_PAYLOAD;
     }
 
-    /* Destination validation — must be for us specifically. */
-    if (hdr->dst_id != g_my_node_id) {
-        g_rivr_metrics.private_chat_invalid_total++;
-        return PCHAT_ERR_DST_MISMATCH;
-    }
-
     /* Minimum payload size check. */
     if (pay_len < PRIVATE_CHAT_PAYLOAD_HDR_LEN) {
         g_rivr_metrics.private_chat_invalid_total++;
@@ -615,6 +609,11 @@ pchat_error_t private_chat_on_rx(const rivr_pkt_hdr_t *hdr,
     if (private_chat_decode_payload(payload, pay_len, &p) != PCHAT_OK) {
         g_rivr_metrics.private_chat_invalid_total++;
         return PCHAT_ERR_INVALID_PAYLOAD;
+    }
+
+    /* Final-destination validation — transit next hops must ignore locally. */
+    if (p.recipient_id != g_my_node_id) {
+        return PCHAT_ERR_DST_MISMATCH;
     }
 
     /* Body length coherence check. */
@@ -661,7 +660,6 @@ pchat_error_t private_chat_on_rx(const rivr_pkt_hdr_t *hdr,
         if (pchat_receipt_rate_ok(now_ms)) {
             pchat_emit_receipt(hdr->src_id, p.msg_id, g_my_node_id,
                                RCPT_STATUS_DELIVERED, now_ms / 1000u);
-            g_rivr_metrics.private_chat_receipt_tx_total++;
         } else {
             RIVR_LOGW(TAG, "receipt rate-limited for msg 0x%016" PRIx64, p.msg_id);
         }
@@ -680,21 +678,15 @@ pchat_error_t private_chat_on_receipt(const rivr_pkt_hdr_t *hdr,
         return PCHAT_ERR_INVALID_PAYLOAD;
     }
 
-    /* Receipt must be addressed to us. */
-    if (hdr->dst_id != g_my_node_id) {
-        g_rivr_metrics.private_chat_invalid_total++;
-        return PCHAT_ERR_DST_MISMATCH;
-    }
-
     delivery_receipt_payload_t r;
     if (private_chat_decode_receipt(payload, pay_len, &r) != PCHAT_OK) {
         g_rivr_metrics.private_chat_invalid_total++;
         return PCHAT_ERR_INVALID_PAYLOAD;
     }
 
-    /* sender_id in receipt should match our local node (we sent the original). */
+    /* sender_id carries the final receipt destination (the original sender).
+     * Transit next hops must ignore the frame locally. */
     if (r.sender_id != g_my_node_id) {
-        g_rivr_metrics.private_chat_invalid_total++;
         return PCHAT_ERR_DST_MISMATCH;
     }
 
@@ -786,8 +778,10 @@ void private_chat_tick(uint32_t now_ms)
             if (route) {
                 RIVR_LOGI(TAG, "route resolved for 0x%08" PRIx32
                               " -> 0x%08" PRIx32, e->peer_id, route->next_hop);
-                g_rivr_metrics.pending_queue_drained_total++;
                 (void)pchat_try_send_frame(e, now_ms);
+            } else if ((now_ms - e->last_route_req_ms) >= PRIVATE_CHAT_ROUTE_REQ_RETRY_MS) {
+                pchat_issue_route_req(e->peer_id, now_ms);
+                e->last_route_req_ms = now_ms;
             }
         }
     }
@@ -838,15 +832,16 @@ int private_chat_encode_payload(const private_chat_payload_t *p,
     /* expires_delta_s — 2 bytes LE */
     d[18] = (uint8_t)(p->expires_delta_s & 0xFFu);
     d[19] = (uint8_t)((p->expires_delta_s >> 8) & 0xFFu);
-    /* reply_to_msg_id — 8 bytes LE */
-    d[20] = (uint8_t)(p->reply_to_msg_id & 0xFFu);
-    d[21] = (uint8_t)((p->reply_to_msg_id >>  8) & 0xFFu);
-    d[22] = (uint8_t)((p->reply_to_msg_id >> 16) & 0xFFu);
-    d[23] = (uint8_t)((p->reply_to_msg_id >> 24) & 0xFFu);
-    d[24] = (uint8_t)((p->reply_to_msg_id >> 32) & 0xFFu);
-    d[25] = (uint8_t)((p->reply_to_msg_id >> 40) & 0xFFu);
-    d[26] = (uint8_t)((p->reply_to_msg_id >> 48) & 0xFFu);
-    d[27] = (uint8_t)((p->reply_to_msg_id >> 56) & 0xFFu);
+    /* recipient_id — 4 bytes LE */
+    d[20] = (uint8_t)(p->recipient_id & 0xFFu);
+    d[21] = (uint8_t)((p->recipient_id >> 8) & 0xFFu);
+    d[22] = (uint8_t)((p->recipient_id >> 16) & 0xFFu);
+    d[23] = (uint8_t)((p->recipient_id >> 24) & 0xFFu);
+    /* reserved — 4 bytes LE */
+    d[24] = (uint8_t)(p->reserved & 0xFFu);
+    d[25] = (uint8_t)((p->reserved >> 8) & 0xFFu);
+    d[26] = (uint8_t)((p->reserved >> 16) & 0xFFu);
+    d[27] = (uint8_t)((p->reserved >> 24) & 0xFFu);
     /* body_len — 1 byte */
     d[28] = p->body_len;
     /* body */
@@ -890,14 +885,15 @@ pchat_error_t private_chat_decode_payload(const uint8_t *buf,
 
     out->expires_delta_s = (uint16_t)d[18] | ((uint16_t)d[19] << 8);
 
-    out->reply_to_msg_id = (uint64_t)d[20]
-                         | ((uint64_t)d[21] <<  8)
-                         | ((uint64_t)d[22] << 16)
-                         | ((uint64_t)d[23] << 24)
-                         | ((uint64_t)d[24] << 32)
-                         | ((uint64_t)d[25] << 40)
-                         | ((uint64_t)d[26] << 48)
-                         | ((uint64_t)d[27] << 56);
+    out->recipient_id = (uint32_t)d[20]
+                      | ((uint32_t)d[21] << 8)
+                      | ((uint32_t)d[22] << 16)
+                      | ((uint32_t)d[23] << 24);
+
+    out->reserved = (uint32_t)d[24]
+                  | ((uint32_t)d[25] << 8)
+                  | ((uint32_t)d[26] << 16)
+                  | ((uint32_t)d[27] << 24);
 
     out->body_len = d[28];
 

@@ -9,7 +9,8 @@
  *  [12–15] timestamp_s     u32 LE  sender Unix time in seconds (0 = unknown)
  *  [16–17] flags           u16 LE  PCHAT_FLAG_* bitmask
  *  [18–19] expires_delta_s u16 LE  0=no expiry; else seconds after timestamp_s
- *  [20–27] reply_to_msg_id u64 LE  0=not a reply; else original msg_id
+ *  [20–23] recipient_id    u32 LE  final destination node ID
+ *  [24–27] reserved        u32 LE  reserved for future reply/thread metadata
  *  [28]    body_len        u8      byte count of body (0..PRIVATE_CHAT_MAX_BODY)
  *  [29..]  body            UTF-8   message text
  *
@@ -33,6 +34,13 @@
  * ──────
  * All state in BSS (PRIVATE_CHAT_QUEUE_SIZE × sizeof(pchat_entry_t) + dedup
  * cache).  No heap.  No dynamic allocation in hot paths.
+ *
+ * ADDRESSING
+ * ──────────
+ * The outer Rivr header's dst_id is the current unicast next hop. The final
+ * private-chat destination therefore lives in the payload as recipient_id so
+ * intermediate relays can ACK and forward hop-by-hop without consuming the
+ * message locally.
  *
  * COMPATIBILITY
  * ─────────────
@@ -85,6 +93,7 @@ _Static_assert(DELIVERY_RECEIPT_PAYLOAD_LEN <= RIVR_PKT_MAX_PAYLOAD,
 #define PRIVATE_CHAT_RECEIPT_TMO_MS   60000u  /**< Max sent→receipt before UNCONFIRMED */
 #define PRIVATE_CHAT_DEDUP_SIZE       32u     /**< RX dedup cache slots              */
 #define PRIVATE_CHAT_RATE_INTERVAL_MS 5000u   /**< Min ms between sends to same peer */
+#define PRIVATE_CHAT_ROUTE_REQ_RETRY_MS 5000u /**< Re-issue ROUTE_REQ while awaiting route */
 #define PRIVATE_CHAT_RECEIPT_RATE_MAX 4u      /**< Max receipts per time window      */
 #define PRIVATE_CHAT_RECEIPT_RATE_WIN_MS 10000u /**< Receipt rate window (ms)        */
 
@@ -149,7 +158,8 @@ typedef struct __attribute__((packed)) {
     uint32_t timestamp_s;      /**< Sender Unix time (seconds); 0=unknown       */
     uint16_t flags;            /**< PCHAT_FLAG_* bitmask                        */
     uint16_t expires_delta_s;  /**< 0=no expiry; else seconds after timestamp_s */
-    uint64_t reply_to_msg_id;  /**< 0=not a reply                               */
+    uint32_t recipient_id;     /**< Final destination node ID                   */
+    uint32_t reserved;         /**< Reserved for future reply/thread metadata   */
     uint8_t  body_len;         /**< Byte count of body (0..200)                 */
     uint8_t  body[PRIVATE_CHAT_MAX_BODY]; /**< UTF-8 message text               */
 } private_chat_payload_t;
@@ -175,6 +185,7 @@ typedef struct {
     uint8_t                 frame[255];       /**< Encoded wire frame               */
     uint8_t                 frame_len;        /**< Frame byte count                 */
     uint32_t                enqueued_ms;      /**< tb_millis() at enqueue           */
+    uint32_t                last_route_req_ms;/**< Last ROUTE_REQ emission          */
     uint32_t                sent_ms;          /**< tb_millis() when first sent      */
     uint16_t                pkt_id;           /**< Current wire pkt_id for retry    */
     pchat_delivery_state_t  state;            /**< Current delivery state           */
