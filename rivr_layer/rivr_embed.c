@@ -45,6 +45,7 @@
 #include "../firmware_core/routing.h"
 #include "../firmware_core/route_cache.h"
 #include "../firmware_core/pending_queue.h"
+#include "../firmware_core/private_chat.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
@@ -285,6 +286,7 @@ void rivr_embed_init(void)
     neighbor_table_init(&g_ntable);
     route_cache_init(&g_route_cache);
     pending_queue_init(&g_pending_queue);
+    private_chat_init();
     ESP_LOGD(TAG, "routing + route_cache + pending_queue + neighbor_table initialised");
 
     /* Register sinks before engine init (callbacks must be ready before

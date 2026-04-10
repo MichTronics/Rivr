@@ -27,6 +27,7 @@
 #include "../firmware_core/policy.h"
 #include "../firmware_core/rivr_policy.h"
 #include "../firmware_core/retry_table.h"
+#include "../firmware_core/private_chat.h"
 #include "rivr_svc.h"
 /* Multi-transport packet bus — registers every valid frame, dispatches mirrors
  * to BLE/USB, and detects cross-transport duplicates before routing sees them. */
@@ -135,6 +136,7 @@ uint32_t sources_rf_rx_drain(void)
     uint32_t injected = 0;
     uint32_t now_ms   = tb_millis();
     retry_table_tick(&g_retry_table, &rf_tx_queue, &g_ctrl_seq, now_ms);
+    private_chat_tick(now_ms);
 
     dedupe_cache_t   *dedupe = routing_get_dedupe();
     forward_budget_t *fb     = routing_get_fwdbudget();
@@ -360,6 +362,7 @@ uint32_t sources_rf_rx_drain(void)
                     g_rivr_metrics.retry_success_total++;
                     RIVR_LOGI(TAG, "[ACK] cleared retry pkt_id=0x%04x src=0x%08lx",
                              (unsigned)ack_pid, (unsigned long)ack_src);
+                    private_chat_on_wire_ack(ack_pid, ack_src, true);
                 }
             }
             goto maybe_relay;
@@ -724,6 +727,17 @@ uint32_t sources_rf_rx_drain(void)
                 && payload_ptr != NULL
                 && pkt_hdr.payload_len >= SVC_ALERT_PAYLOAD_LEN) {
             handle_alert_event(&pkt_hdr, payload_ptr, pkt_hdr.payload_len);
+        }
+        /* ── 5e. Private chat and delivery receipt — handled by C engine ─── */
+        if (pkt_hdr.pkt_type == PKT_PRIVATE_CHAT
+                && pkt_hdr.dst_id == g_my_node_id
+                && payload_ptr != NULL && pkt_hdr.payload_len > 0u) {
+            (void)private_chat_on_rx(&pkt_hdr, payload_ptr, pkt_hdr.payload_len);
+        }
+        if (pkt_hdr.pkt_type == PKT_DELIVERY_RECEIPT
+                && pkt_hdr.dst_id == g_my_node_id
+                && payload_ptr != NULL && pkt_hdr.payload_len > 0u) {
+            (void)private_chat_on_receipt(&pkt_hdr, payload_ptr, pkt_hdr.payload_len);
         }
 
         /* ── 6. Inject non-control frames into RIVR ── */
