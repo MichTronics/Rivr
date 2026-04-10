@@ -45,6 +45,7 @@ enum {
     RIVR_CP_CMD_GET_POSITION     = 0x06u,
     RIVR_CP_CMD_SEND_PRIVATE     = 0x07u,  /**< Send private message */
     RIVR_CP_CMD_SEND_CHAT         = 0x08u,  /**< Broadcast a PKT_CHAT frame */
+    RIVR_CP_CMD_SEND_PRIVATE_V2  = 0x09u,  /**< Send private message with client_ref */
 };
 
 enum {
@@ -343,6 +344,69 @@ static void cp_handle_send_private(const uint8_t *payload, uint8_t payload_len)
     (void)cp_send_packet(RIVR_CP_PKT_OK, 0u, ok_payload, sizeof(ok_payload));
 }
 
+static void cp_handle_send_private_v2(const uint8_t *payload, uint8_t payload_len)
+{
+    /* Payload: [dst_id:4 LE][client_ref:4 LE][body:N] */
+    if (!payload || payload_len < 8u) {
+        cp_send_err(RIVR_CP_CMD_SEND_PRIVATE_V2, "payload too short");
+        return;
+    }
+
+    uint32_t dst_id = (uint32_t)payload[0]
+                    | ((uint32_t)payload[1] << 8)
+                    | ((uint32_t)payload[2] << 16)
+                    | ((uint32_t)payload[3] << 24);
+    uint32_t client_ref = (uint32_t)payload[4]
+                        | ((uint32_t)payload[5] << 8)
+                        | ((uint32_t)payload[6] << 16)
+                        | ((uint32_t)payload[7] << 24);
+
+    const uint8_t *body     = &payload[8];
+    uint8_t        body_len = (uint8_t)(payload_len - 8u);
+
+    if (body_len > PRIVATE_CHAT_MAX_BODY) {
+        uint8_t err_payload[5u + 32u];
+        size_t msg_len = strlen("body too long");
+        if (msg_len > 31u) msg_len = 31u;
+        err_payload[0] = RIVR_CP_CMD_SEND_PRIVATE_V2;
+        err_payload[1] = (uint8_t)(client_ref & 0xFFu);
+        err_payload[2] = (uint8_t)((client_ref >> 8) & 0xFFu);
+        err_payload[3] = (uint8_t)((client_ref >> 16) & 0xFFu);
+        err_payload[4] = (uint8_t)((client_ref >> 24) & 0xFFu);
+        memcpy(&err_payload[5], "body too long", msg_len);
+        (void)cp_send_packet(RIVR_CP_PKT_ERR, 1u, err_payload, (uint8_t)(5u + msg_len));
+        return;
+    }
+
+    uint64_t msg_id = 0u;
+    pchat_error_t rc = private_chat_send(dst_id, body, body_len, &msg_id);
+    if (rc != PCHAT_OK) {
+        uint8_t err_payload[5u + 32u];
+        size_t msg_len = strlen("send failed");
+        if (msg_len > 31u) msg_len = 31u;
+        err_payload[0] = RIVR_CP_CMD_SEND_PRIVATE_V2;
+        err_payload[1] = (uint8_t)(client_ref & 0xFFu);
+        err_payload[2] = (uint8_t)((client_ref >> 8) & 0xFFu);
+        err_payload[3] = (uint8_t)((client_ref >> 16) & 0xFFu);
+        err_payload[4] = (uint8_t)((client_ref >> 24) & 0xFFu);
+        memcpy(&err_payload[5], "send failed", msg_len);
+        (void)cp_send_packet(RIVR_CP_PKT_ERR, 1u, err_payload, (uint8_t)(5u + msg_len));
+        return;
+    }
+
+    /* Respond with OK + echoed client_ref + real msg_id. */
+    uint8_t ok_payload[13];
+    ok_payload[0] = RIVR_CP_CMD_SEND_PRIVATE_V2;
+    ok_payload[1] = (uint8_t)(client_ref & 0xFFu);
+    ok_payload[2] = (uint8_t)((client_ref >> 8) & 0xFFu);
+    ok_payload[3] = (uint8_t)((client_ref >> 16) & 0xFFu);
+    ok_payload[4] = (uint8_t)((client_ref >> 24) & 0xFFu);
+    for (uint8_t i = 0u; i < 8u; i++) {
+        ok_payload[5u + i] = (uint8_t)((msg_id >> (i * 8u)) & 0xFFu);
+    }
+    (void)cp_send_packet(RIVR_CP_PKT_OK, 0u, ok_payload, sizeof(ok_payload));
+}
+
 #if RIVR_FEATURE_BLE
 bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len)
 {
@@ -554,6 +618,14 @@ void rivr_ble_companion_tick(void)
                 break;
             }
             cp_handle_send_private(payload, payload_len);
+            break;
+
+        case RIVR_CP_CMD_SEND_PRIVATE_V2:
+            if (!s_session_active) {
+                cp_send_err(cmd, "app start required");
+                break;
+            }
+            cp_handle_send_private_v2(payload, payload_len);
             break;
 
         case RIVR_CP_CMD_SEND_CHAT:
@@ -784,4 +856,3 @@ void rivr_ble_companion_push_delivery_receipt(uint64_t orig_msg_id,
 }
 
 #endif
-

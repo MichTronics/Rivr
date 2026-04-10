@@ -56,6 +56,7 @@ uint32_t         g_my_node_id   = 0u;
 pending_queue_t  g_pending_queue;
 retry_table_t    g_retry_table;
 route_cache_t    g_route_cache;
+rivr_neighbor_table_t g_ntable;
 uint32_t         g_ctrl_seq     = 0u;
 
 /* BLE push stubs — private_chat.c calls these; keep them no-ops here */
@@ -164,6 +165,7 @@ static void reset(void)
     memset(&g_pending_queue, 0, sizeof(g_pending_queue));
     retry_table_init(&g_retry_table);
     route_cache_init(&g_route_cache);
+    neighbor_table_init(&g_ntable);
     private_chat_init();
     memset(&g_rivr_metrics, 0, sizeof(g_rivr_metrics));
     drain_tx();
@@ -819,6 +821,70 @@ static void run16_route_req_retry(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ *
+ * RUN 17 — transit relay rewrites private-chat next hop
+ * ══════════════════════════════════════════════════════════════════════════ */
+static void run17_relay_next_hop_rewrite(void)
+{
+    printf("\n── RUN 17: transit relay rewrites next-hop dst_id ───────────────\n");
+    reset();
+
+    route_cache_update(&g_route_cache, PEER_NODE, OTHER_NODE, 2u, 90u, 0u, tb_millis());
+
+    {
+        private_chat_payload_t p;
+        memset(&p, 0, sizeof(p));
+        p.msg_id       = 0x1234000000000001ULL;
+        p.sender_seq   = 1u;
+        p.flags        = PCHAT_FLAGS_DEFAULT;
+        p.recipient_id = PEER_NODE;
+        p.body_len     = 4u;
+        memcpy(p.body, "ping", 4u);
+
+        uint8_t pay[PRIVATE_CHAT_MAX_PAYLOAD_LEN];
+        int plen = private_chat_encode_payload(&p, pay, sizeof(pay));
+
+        rivr_pkt_hdr_t hdr = make_rx_hdr(MY_NODE, MY_NODE, 0x0101u);
+        hdr.hop = 2u;
+        hdr.ttl = 4u;
+        hdr.payload_len = (uint8_t)plen;
+
+        uint32_t final_dst = 0u;
+        bool ok = private_chat_prepare_relay_header(&hdr, pay, (uint8_t)plen,
+                                                    tb_millis(), &final_dst);
+        CHECK(ok, "private-chat relay rewrite succeeds");
+        CHECK(final_dst == PEER_NODE, "private-chat relay exposes final destination");
+        CHECK(hdr.dst_id == OTHER_NODE, "private-chat relay header retargets next hop");
+        CHECK(hdr.ttl == 1u, "private-chat relay header forces one-hop ttl");
+        CHECK(hdr.hop == 2u, "private-chat relay preserves existing hop count");
+    }
+
+    {
+        delivery_receipt_payload_t r;
+        memset(&r, 0, sizeof(r));
+        r.orig_msg_id = 0x1234000000000001ULL;
+        r.sender_id   = PEER_NODE;
+        r.status      = RCPT_STATUS_DELIVERED;
+
+        uint8_t pay[DELIVERY_RECEIPT_PAYLOAD_LEN];
+        int plen = private_chat_encode_receipt(&r, pay, sizeof(pay));
+
+        rivr_pkt_hdr_t hdr = make_rcpt_hdr(MY_NODE, MY_NODE);
+        hdr.hop = 3u;
+        hdr.ttl = 5u;
+        hdr.payload_len = (uint8_t)plen;
+
+        uint32_t final_dst = 0u;
+        bool ok = private_chat_prepare_relay_header(&hdr, pay, (uint8_t)plen,
+                                                    tb_millis(), &final_dst);
+        CHECK(ok, "receipt relay rewrite succeeds");
+        CHECK(final_dst == PEER_NODE, "receipt relay exposes final destination");
+        CHECK(hdr.dst_id == OTHER_NODE, "receipt relay header retargets next hop");
+        CHECK(hdr.ttl == 1u, "receipt relay header forces one-hop ttl");
+        CHECK(hdr.hop == 3u, "receipt relay preserves existing hop count");
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ *
  * MAIN
  * ══════════════════════════════════════════════════════════════════════════ */
 int main(void)
@@ -841,6 +907,7 @@ int main(void)
     run14_receipt_rate_limit();
     run15_preserve_final_dst();
     run16_route_req_retry();
+    run17_relay_next_hop_rewrite();
 
     printf("\n══════════════════════════════════════════════════════════════════\n");
     printf("  Private chat tests: %u passed, %u failed\n", s_pass, s_fail);

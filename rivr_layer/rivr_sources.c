@@ -730,12 +730,10 @@ uint32_t sources_rf_rx_drain(void)
         }
         /* ── 5e. Private chat and delivery receipt — handled by C engine ─── */
         if (pkt_hdr.pkt_type == PKT_PRIVATE_CHAT
-                && pkt_hdr.dst_id == g_my_node_id
                 && payload_ptr != NULL && pkt_hdr.payload_len > 0u) {
             (void)private_chat_on_rx(&pkt_hdr, payload_ptr, pkt_hdr.payload_len);
         }
         if (pkt_hdr.pkt_type == PKT_DELIVERY_RECEIPT
-                && pkt_hdr.dst_id == g_my_node_id
                 && payload_ptr != NULL && pkt_hdr.payload_len > 0u) {
             (void)private_chat_on_receipt(&pkt_hdr, payload_ptr, pkt_hdr.payload_len);
         }
@@ -907,6 +905,27 @@ uint32_t sources_rf_rx_drain(void)
             }
 #endif /* RIVR_FEATURE_OPPORTUNISTIC_FWD */
 
+            uint32_t relay_final_dst = 0u;
+            if (fwd_hdr.pkt_type == PKT_PRIVATE_CHAT
+                    || fwd_hdr.pkt_type == PKT_DELIVERY_RECEIPT) {
+                if (!private_chat_prepare_relay_header(&fwd_hdr, payload_ptr,
+                                                       fwd_hdr.payload_len,
+                                                       now_ms,
+                                                       &relay_final_dst)) {
+                    RIVR_LOGW(TAG,
+                        "rf_rx: private relay dropped type=%u src=0x%08lx reason=no_next_hop",
+                        (unsigned)fwd_hdr.pkt_type,
+                        (unsigned long)fwd_hdr.src_id);
+#if RIVR_FABRIC_REPEATER
+                    goto skip_enqueue;
+#elif RIVR_ROLE_CLIENT
+                    goto skip_enqueue_client;
+#else
+                    goto skip_relay_policy;
+#endif
+                }
+            }
+
             rf_tx_request_t fwd_req;
             memset(&fwd_req, 0, sizeof(fwd_req));
             int enc = protocol_encode(&fwd_hdr, payload_ptr,
@@ -917,6 +936,19 @@ uint32_t sources_rf_rx_drain(void)
                 fwd_req.toa_us = toa_us;
                 fwd_req.due_ms = now_ms + delay_ms;  /* 0 when delay_ms==0 */
                 if (rb_try_push(&rf_tx_queue, &fwd_req)) {
+                    if ((fwd_hdr.pkt_type == PKT_PRIVATE_CHAT
+                            || fwd_hdr.pkt_type == PKT_DELIVERY_RECEIPT)
+                            && relay_final_dst != 0u) {
+                        (void)retry_table_enqueue(&g_retry_table,
+                                                  fwd_hdr.src_id,
+                                                  fwd_hdr.pkt_id,
+                                                  relay_final_dst,
+                                                  fwd_hdr.dst_id,
+                                                  fwd_req.data,
+                                                  fwd_req.len,
+                                                  fwd_req.toa_us,
+                                                  now_ms);
+                    }
                     uint32_t _occ = rb_available(&rf_tx_queue);
                     if (_occ > g_rivr_metrics.tx_queue_peak) { g_rivr_metrics.tx_queue_peak = _occ; }
                     ESP_LOGD(TAG,

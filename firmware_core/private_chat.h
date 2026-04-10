@@ -291,6 +291,30 @@ pchat_error_t private_chat_on_receipt(const rivr_pkt_hdr_t *hdr,
                                        const uint8_t *payload,
                                        uint8_t pay_len);
 
+/**
+ * @brief Rewrite a relayed private-chat/receipt header for the next hop.
+ *
+ * Transit hops receive PKT_PRIVATE_CHAT / PKT_DELIVERY_RECEIPT with hdr.dst_id
+ * set to the current hop. Before re-enqueueing the frame they must resolve the
+ * final destination from the payload and rewrite hdr.dst_id to the next hop
+ * toward that final node, while keeping hop count progression intact.
+ *
+ * For PKT_PRIVATE_CHAT the final destination is payload.recipient_id.
+ * For PKT_DELIVERY_RECEIPT the final destination is payload.sender_id.
+ *
+ * @param hdr      Header already mutated for relay (hop incremented, ttl decremented).
+ * @param payload  Decoded wire payload bytes.
+ * @param pay_len  Payload length in bytes.
+ * @param now_ms   Current monotonic timestamp for route-cache lookup.
+ * @return true if a next hop was resolved and hdr rewritten; false on decode
+ *         failure or route miss.
+ */
+bool private_chat_prepare_relay_header(rivr_pkt_hdr_t *hdr,
+                                       const uint8_t *payload,
+                                       uint8_t pay_len,
+                                       uint32_t now_ms,
+                                       uint32_t *out_final_dst);
+
 /* ── Periodic tick ───────────────────────────────────────────────────────── */
 
 /**

@@ -63,6 +63,9 @@ extern retry_table_t g_retry_table;
 /* ── Route cache (from route_cache.c) ────────────────────────────────────── */
 extern route_cache_t g_route_cache;
 
+/* ── Standalone neighbor-quality table (from rivr_embed.c) ───────────────── */
+extern rivr_neighbor_table_t g_ntable;
+
 /* ── rf_tx_queue ring buffer (from test_stubs.c or radio_sx1262.c) ─────── */
 extern rb_t rf_tx_queue;
 
@@ -723,6 +726,53 @@ pchat_error_t private_chat_on_receipt(const rivr_pkt_hdr_t *hdr,
     pchat_release(e);
 
     return PCHAT_OK;
+}
+
+bool private_chat_prepare_relay_header(rivr_pkt_hdr_t *hdr,
+                                       const uint8_t *payload,
+                                       uint8_t pay_len,
+                                       uint32_t now_ms,
+                                       uint32_t *out_final_dst)
+{
+    if (!hdr || !payload) {
+        return false;
+    }
+
+    uint32_t final_dst = 0u;
+
+    if (hdr->pkt_type == PKT_PRIVATE_CHAT) {
+        private_chat_payload_t p;
+        if (private_chat_decode_payload(payload, pay_len, &p) != PCHAT_OK) {
+            return false;
+        }
+        final_dst = p.recipient_id;
+    } else if (hdr->pkt_type == PKT_DELIVERY_RECEIPT) {
+        delivery_receipt_payload_t r;
+        if (private_chat_decode_receipt(payload, pay_len, &r) != PCHAT_OK) {
+            return false;
+        }
+        final_dst = r.sender_id;
+    } else {
+        return false;
+    }
+
+    if (final_dst == 0u) {
+        return false;
+    }
+
+    if (out_final_dst) {
+        *out_final_dst = final_dst;
+    }
+
+    rivr_route_t chosen;
+    if (!route_cache_best_hop(&g_route_cache, &g_ntable,
+                              final_dst, now_ms, &chosen)) {
+        return false;
+    }
+
+    hdr->dst_id = chosen.next_hop_id;
+    hdr->ttl    = 1u;
+    return true;
 }
 
 void private_chat_tick(uint32_t now_ms)
