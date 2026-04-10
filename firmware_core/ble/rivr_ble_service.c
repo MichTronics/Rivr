@@ -14,6 +14,8 @@
 
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_gatt_common_api.h"
 
@@ -132,14 +134,20 @@ static bool rivr_ble_service_notify_one(void *ctx, const uint8_t *data, uint16_t
 {
     const uint16_t *conn_handle = (const uint16_t *)ctx;
     esp_err_t err;
+    uint8_t attempt;
 
     (void)conn_handle;
 
-    err = esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id,
-                                      s_handle_table[IDX_TX_CHAR_VAL],
-                                      (uint16_t)len, (uint8_t *)data, false);
-    if (err == ESP_OK) {
-        return true;
+    for (attempt = 0u; attempt < 3u; ++attempt) {
+        err = esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id,
+                                          s_handle_table[IDX_TX_CHAR_VAL],
+                                          (uint16_t)len, (uint8_t *)data, false);
+        if (err == ESP_OK) {
+            return true;
+        }
+        if (attempt + 1u < 3u) {
+            vTaskDelay(pdMS_TO_TICKS(12));
+        }
     }
 
     RIVR_LOGD(TAG, "BLE notify failed: %s", esp_err_to_name(err));
