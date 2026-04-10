@@ -9,6 +9,7 @@
  * BLE-specific code is further guarded inside by #if RIVR_FEATURE_BLE. */
 #if RIVR_FEATURE_BLE || RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>   /* write(), STDOUT_FILENO */
@@ -801,7 +802,10 @@ void rivr_ble_companion_push_private_chat_rx(uint64_t msg_id,
     }
 
     uint8_t total = (uint8_t)(27u + blen);
-    (void)cp_send_packet(RIVR_CP_PKT_PRIVATE_CHAT_RX, 0u, payload, total);
+    bool sent = cp_send_packet(RIVR_CP_PKT_PRIVATE_CHAT_RX, 0u, payload, total);
+    RIVR_LOGI(TAG, "PM_RX_CP_SENT msg_id=0x%016" PRIx64 " total=%u sent=%d serial=%d",
+              msg_id, (unsigned)total, (int)sent,
+              (int)s_serial_session_active);
 }
 
 void rivr_ble_companion_push_pchat_state(uint64_t msg_id,

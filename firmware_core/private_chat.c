@@ -173,6 +173,9 @@ static void pchat_notify_state(const pchat_entry_t *e)
 static void pchat_notify_rx(const rivr_pkt_hdr_t *hdr,
                              const private_chat_payload_t *p)
 {
+    RIVR_LOGI(TAG, "PM_RX_BRIDGED msg_id=0x%016" PRIx64
+                  " from=0x%08" PRIx32 " to=0x%08" PRIx32 " body_len=%u",
+              p->msg_id, hdr->src_id, p->recipient_id, (unsigned)p->body_len);
     rivr_ble_companion_push_private_chat_rx(
         p->msg_id,
         hdr->src_id,
