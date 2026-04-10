@@ -275,6 +275,11 @@ void rivr_cli_on_chat_rx(uint32_t src_id, const uint8_t *payload, uint8_t len)
      * they sent it.                                                          */
     if (src_id == g_my_node_id) return;
 
+    /* Suppress ASCII output when the binary serial CP session is active —
+     * the companion app receives the same event via CHAT_RX (0x85) over SLIP.
+     * Printing ASCII here would inject garbage into the SLIP byte stream.   */
+    if (rivr_serial_cp_session_active()) return;
+
     /* Safely copy payload into a NUL-terminated scratch buffer.              */
     char txt[CLI_MSG_MAX + 1u];
     uint8_t copy_len = (len < CLI_MSG_MAX) ? len : CLI_MSG_MAX;
@@ -298,6 +303,9 @@ void rivr_cli_on_chat_rx(uint32_t src_id, const uint8_t *payload, uint8_t len)
 
 static void cli_print_prompt(void)
 {
+    /* Suppress the prompt when the binary CP session is active — printing
+     * ASCII bytes on UART0 would corrupt the SLIP frame stream.             */
+    if (rivr_serial_cp_session_active()) return;
     /* Reprint the partial line so the user can continue editing after an
      * incoming CHAT message clears the line with \r.                         */
     printf("> ");

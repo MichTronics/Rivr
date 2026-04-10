@@ -5,7 +5,9 @@
 
 #include "rivr_ble_companion.h"
 
-#if RIVR_FEATURE_BLE
+/* Serial CP is available on any node role that owns UART0 (ESP32).
+ * BLE-specific code is further guarded inside by #if RIVR_FEATURE_BLE. */
+#if RIVR_FEATURE_BLE || RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
 
 #include <stdio.h>
 #include <string.h>
@@ -19,8 +21,10 @@
 #include "../rivr_log.h"
 #include "../rivr_metrics.h"
 #include "../timebase.h"
+#if RIVR_FEATURE_BLE
 #include "rivr_ble.h"
 #include "rivr_ble_service.h"
+#endif
 #include "rivr_layer/rivr_embed.h"
 
 #define TAG "RIVR_BLE_CP"
@@ -119,10 +123,12 @@ static bool cp_send_packet(uint8_t type, uint8_t status,
         memcpy(&packet[RIVR_BLE_CP_HDR_LEN], payload, payload_len);
     }
 
+#if RIVR_FEATURE_BLE
     /* BLE transport */
     if (rivr_ble_is_connected() && s_ble_session_active) {
         sent |= rivr_ble_service_notify(rivr_ble_conn_handle(), packet, (uint8_t)total_len);
     }
+#endif
 
     /* Serial/UART0 transport — SLIP-encode the packet and write to stdout.
      * SLIP (RFC 1055): each CP packet is framed between two 0xC0 (END) bytes.
@@ -337,6 +343,7 @@ static void cp_handle_send_private(const uint8_t *payload, uint8_t payload_len)
     (void)cp_send_packet(RIVR_CP_PKT_OK, 0u, ok_payload, sizeof(ok_payload));
 }
 
+#if RIVR_FEATURE_BLE
 bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len)
 {
     uint8_t next_head;
@@ -366,6 +373,7 @@ bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len)
     g_rivr_metrics.ble_rx_frames++;
     return true;
 }
+#endif /* RIVR_FEATURE_BLE */
 
 bool rivr_serial_cp_handle_rx(const uint8_t *data, uint16_t len)
 {
@@ -557,8 +565,10 @@ void rivr_ble_companion_tick(void)
                 cp_send_err(cmd, "invalid text length");
                 break;
             }
-            /* Inject a PKT_CHAT frame into rf_rx_ringbuf tagged as USB origin.
-             * Identical to the BLE raw-frame path — works for all node roles. */
+            /* Push directly to rf_tx_queue — the same path as the ASCII
+             * 'chat' CLI command.  Do NOT use rf_rx_ringbuf: the routing
+             * layer filters frames whose src_id == g_my_node_id as loop
+             * echoes and will silently discard them.                        */
             {
                 rivr_pkt_hdr_t tx_hdr;
                 memset(&tx_hdr, 0, sizeof(tx_hdr));
@@ -570,15 +580,15 @@ void rivr_ble_companion_tick(void)
                 tx_hdr.seq         = (uint16_t)++g_ctrl_seq;
                 tx_hdr.pkt_id      = (uint16_t)g_ctrl_seq;
                 tx_hdr.payload_len = payload_len;
-                rf_rx_frame_t usb_frame;
-                memset(&usb_frame, 0, sizeof(usb_frame));
+                rf_tx_request_t req;
+                memset(&req, 0, sizeof(req));
                 int enc = protocol_encode(&tx_hdr, payload, payload_len,
-                                         usb_frame.data, sizeof(usb_frame.data));
+                                         req.data, sizeof(req.data));
                 if (enc > 0) {
-                    usb_frame.len        = (uint8_t)enc;
-                    usb_frame.rx_mono_ms = tb_millis();
-                    usb_frame.iface      = 2u;  /* RIVR_IFACE_USB */
-                    (void)rb_try_push(&rf_rx_ringbuf, &usb_frame);
+                    req.len    = (uint8_t)enc;
+                    req.toa_us = RF_TOA_APPROX_US(req.len);
+                    req.due_ms = 0u;
+                    (void)rb_try_push(&rf_tx_queue, &req);
                 }
             }
             /* Echo back so the message appears immediately in the app. */
@@ -594,6 +604,7 @@ void rivr_ble_companion_tick(void)
     }
 }
 
+#if RIVR_FEATURE_BLE
 void rivr_ble_companion_on_disconnect(void)
 {
     s_ble_session_active = false;
@@ -607,6 +618,7 @@ bool rivr_ble_companion_raw_bridge_enabled(void)
 {
     return !s_session_active;
 }
+#endif /* RIVR_FEATURE_BLE */
 
 void rivr_ble_companion_push_chat(uint32_t src_id,
                                   const uint8_t *text,

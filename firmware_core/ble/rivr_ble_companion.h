@@ -12,14 +12,24 @@ extern "C" {
 /* rivr_live_stats_t is used in declarations on both sides of RIVR_FEATURE_BLE */
 #include "../rivr_metrics.h"
 
+/* ── BLE-only declarations (only when Bluetooth is compiled in) ──────────── */
 #if RIVR_FEATURE_BLE
-
-/* rivr_metrics.h already included above */
-
 bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len);
-void rivr_ble_companion_tick(void);
 void rivr_ble_companion_on_disconnect(void);
 bool rivr_ble_companion_raw_bridge_enabled(void);
+#else
+static inline bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len)
+{ (void)data; (void)len; return false; }
+static inline void rivr_ble_companion_on_disconnect(void) {}
+static inline bool rivr_ble_companion_raw_bridge_enabled(void) { return true; }
+#endif
+
+/* ── Serial CP + shared companion API ───────────────────────────────────────
+ * Available on any node role that owns UART0 (ESP32 client/repeater/gateway)
+ * regardless of whether BLE is compiled in.                                  */
+#if RIVR_FEATURE_BLE || RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
+
+void rivr_ble_companion_tick(void);
 
 /**
  * @brief Feed a SLIP-decoded CP packet received from UART0 into the shared
@@ -111,71 +121,11 @@ void rivr_ble_companion_push_delivery_receipt(uint64_t orig_msg_id,
                                                uint32_t timestamp_s,
                                                uint8_t status);
 
-#else
-
-static inline bool rivr_ble_companion_handle_rx(const uint8_t *data, uint16_t len)
-{
-    (void)data;
-    (void)len;
-    return false;
-}
+#else  /* no BLE and no node role — empty stubs for test/sim translation units */
 
 static inline void rivr_ble_companion_tick(void) {}
-static inline void rivr_ble_companion_on_disconnect(void) {}
-static inline bool rivr_ble_companion_raw_bridge_enabled(void) { return true; }
-static inline void rivr_ble_companion_push_chat(uint32_t src_id,
-                                                const uint8_t *text,
-                                                uint8_t text_len)
-{
-    (void)src_id;
-    (void)text;
-    (void)text_len;
-}
-static inline void rivr_ble_companion_push_node(uint32_t node_id,
-                                                const char *callsign,
-                                                int8_t rssi_dbm,
-                                                int8_t snr_db,
-                                                uint8_t hop_count,
-                                                uint8_t link_score,
-                                                uint8_t role)
-{
-    (void)node_id;
-    (void)callsign;
-    (void)rssi_dbm;
-    (void)snr_db;
-    (void)hop_count;
-    (void)link_score;
-    (void)role;
-}
-static inline void rivr_ble_companion_push_private_chat_rx(uint64_t msg_id,
-                                                            uint32_t from_id,
-                                                            uint32_t to_id,
-                                                            uint32_t sender_seq,
-                                                            uint32_t timestamp_s,
-                                                            uint16_t flags,
-                                                            const uint8_t *body,
-                                                            uint8_t body_len)
-{
-    (void)msg_id; (void)from_id; (void)to_id; (void)sender_seq;
-    (void)timestamp_s; (void)flags; (void)body; (void)body_len;
-}
-static inline void rivr_ble_companion_push_pchat_state(uint64_t msg_id,
-                                                        uint32_t peer_id,
-                                                        uint8_t state)
-{
-    (void)msg_id; (void)peer_id; (void)state;
-}
-static inline void rivr_ble_companion_push_delivery_receipt(uint64_t orig_msg_id,
-                                                             uint32_t sender_id,
-                                                             uint32_t timestamp_s,
-                                                             uint8_t status)
-{
-    (void)orig_msg_id; (void)sender_id; (void)timestamp_s; (void)status;
-}
 static inline bool rivr_serial_cp_handle_rx(const uint8_t *data, uint16_t len)
-{
-    (void)data; (void)len; return false;
-}
+{ (void)data; (void)len; return false; }
 static inline void rivr_serial_cp_session_stop(void) {}
 static inline void rivr_serial_cp_start_session(void) {}
 static inline bool rivr_serial_cp_session_active(void) { return false; }
@@ -185,6 +135,38 @@ static inline void rivr_serial_cp_push_metrics(const rivr_live_stats_t *live,
                                                 uint16_t net_id,
                                                 uint16_t seq)
 { (void)live; (void)src_id; (void)net_id; (void)seq; }
+static inline void rivr_ble_companion_push_chat(uint32_t src_id,
+                                                const uint8_t *text,
+                                                uint8_t text_len)
+{ (void)src_id; (void)text; (void)text_len; }
+static inline void rivr_ble_companion_push_node(uint32_t node_id,
+                                                const char *callsign,
+                                                int8_t rssi_dbm,
+                                                int8_t snr_db,
+                                                uint8_t hop_count,
+                                                uint8_t link_score,
+                                                uint8_t role)
+{ (void)node_id; (void)callsign; (void)rssi_dbm; (void)snr_db;
+  (void)hop_count; (void)link_score; (void)role; }
+static inline void rivr_ble_companion_push_private_chat_rx(uint64_t msg_id,
+                                                            uint32_t from_id,
+                                                            uint32_t to_id,
+                                                            uint32_t sender_seq,
+                                                            uint32_t timestamp_s,
+                                                            uint16_t flags,
+                                                            const uint8_t *body,
+                                                            uint8_t body_len)
+{ (void)msg_id; (void)from_id; (void)to_id; (void)sender_seq;
+  (void)timestamp_s; (void)flags; (void)body; (void)body_len; }
+static inline void rivr_ble_companion_push_pchat_state(uint64_t msg_id,
+                                                        uint32_t peer_id,
+                                                        uint8_t state)
+{ (void)msg_id; (void)peer_id; (void)state; }
+static inline void rivr_ble_companion_push_delivery_receipt(uint64_t orig_msg_id,
+                                                             uint32_t sender_id,
+                                                             uint32_t timestamp_s,
+                                                             uint8_t status)
+{ (void)orig_msg_id; (void)sender_id; (void)timestamp_s; (void)status; }
 
 #endif
 
