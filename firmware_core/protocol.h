@@ -182,6 +182,34 @@ _Static_assert(LOOP_GUARD_BYTE_OFFSET  == 22u,
 #define PKT_FLAG_RELAY     0x02u   /**< Packet has been relayed              */
 #define PKT_FLAG_FALLBACK  0x04u   /**< Unicast failed; re-sent as flood     */
 
+/**
+ * PKT_FLAG_CHANNEL (0x08) — channel_id prefix present in PKT_CHAT payload.
+ *
+ * When this flag is set on a PKT_CHAT frame the first two bytes of the payload
+ * carry the channel_id as a u16 little-endian value; the UTF-8 message text
+ * follows immediately at payload[2].
+ *
+ *   payload[0..1]  channel_id  u16 LE   (RIVR_CHAN_GLOBAL = 0 for public chat)
+ *   payload[2..]   text        UTF-8    (NUL not required — use payload_len)
+ *
+ * When this flag is CLEAR the payload is raw UTF-8 (v1 legacy behaviour);
+ * receivers should treat such frames as belonging to channel 0 (Global).
+ *
+ * RELAY COMPATIBILITY
+ * ───────────────────
+ * PKT_FLAG_CHANNEL is transparent to v1 relay nodes.  A v1 node relays ALL
+ * PKT_CHAT frames that pass magic + CRC validation, regardless of flags bits.
+ * The payload integrity is protected by the existing CRC-16, so no relay node
+ * can corrupt the channel_id silently.
+ *
+ * MINIMUM PAYLOAD LENGTH when PKT_FLAG_CHANNEL is set: 3 bytes
+ *   (2 channel header + at least 1 byte of text).
+ */
+#define PKT_FLAG_CHANNEL   0x08u
+
+/** Byte length of the channel_id prefix when PKT_FLAG_CHANNEL is set. */
+#define RIVR_CHAT_CHAN_HDR_LEN  2u
+
 /* ── Fallback-flood TTL ─────────────────────────────────────────────────── *
  * When a unicast TX attempt fails (queue full or route stale), the sender   *
  * re-encodes the frame as broadcast with this reduced TTL so it does not    *

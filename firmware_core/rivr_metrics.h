@@ -198,6 +198,32 @@ typedef struct {
     uint32_t lora_rx_frames;   /**< LoRa-sourced frames entering bus            */
     uint32_t usb_rx_frames;    /**< USB-sourced frames entering bus             */
     uint32_t rx_net_id_drop;   /**< inbound frames discarded: net_id mismatch   */
+
+    /* ── Channel-based messaging counters ──────────────────────────────────
+     *
+     * Aggregate across all channels; per-channel breakdowns live in
+     * rivr_channel_counters_t (channel.h) which is keyed by channel index.
+     *
+     *  chan_rx_total       — PKT_CHAT frames with PKT_FLAG_CHANNEL received
+     *  chan_rx_stored      — channel messages stored (joined channels)
+     *  chan_rx_dropped_membership
+     *                      — channel messages not stored (not joined, no relay)
+     *  chan_rx_legacy      — PKT_CHAT without PKT_FLAG_CHANNEL (v1 global chat)
+     *  chan_tx_total       — channel messages originated by this node
+     *  chan_fwd_total      — PKT_CHAT with PKT_FLAG_CHANNEL relay-forwarded
+     *  chan_dedup_total    — channel messages suppressed as duplicates
+     *  chan_ui_events      — companion / display events emitted for channel msgs
+     *  chan_unread_total   — cumulative unread increments (all channels)
+     */
+    uint32_t chan_rx_total;
+    uint32_t chan_rx_stored;
+    uint32_t chan_rx_dropped_membership;
+    uint32_t chan_rx_legacy;
+    uint32_t chan_tx_total;
+    uint32_t chan_fwd_total;
+    uint32_t chan_dedup_total;
+    uint32_t chan_ui_events;
+    uint32_t chan_unread_total;
 } rivr_metrics_t;
 
 /* ── BLE metrics payload ────────────────────────────────────────────────────

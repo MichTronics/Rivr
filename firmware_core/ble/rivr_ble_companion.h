@@ -17,6 +17,7 @@ void rivr_ble_companion_tick(void);
 void rivr_ble_companion_on_disconnect(void);
 bool rivr_ble_companion_raw_bridge_enabled(void);
 void rivr_ble_companion_push_chat(uint32_t src_id,
+                                  uint16_t channel_id,
                                   const uint8_t *text,
                                   uint8_t text_len);
 void rivr_ble_companion_push_node(uint32_t node_id,
@@ -40,10 +41,12 @@ static inline void rivr_ble_companion_tick(void) {}
 static inline void rivr_ble_companion_on_disconnect(void) {}
 static inline bool rivr_ble_companion_raw_bridge_enabled(void) { return true; }
 static inline void rivr_ble_companion_push_chat(uint32_t src_id,
+                                                uint16_t channel_id,
                                                 const uint8_t *text,
                                                 uint8_t text_len)
 {
     (void)src_id;
+    (void)channel_id;
     (void)text;
     (void)text_len;
 }

@@ -117,6 +117,25 @@ OTA_BIN   := ota_test
 OTA_FLAGS := $(COMMON_FLAGS) -DRIVR_SIGNED_PROG -DRIVR_PUBKEY_PRODUCTION=1
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# CHANNEL TEST
+#   Tests channel table init, membership predicates, join/leave, TX default,
+#   unread counters, PKT_FLAG_CHANNEL extraction, relay-vs-membership
+#   independence, dedup key correctness, and integration scenarios.
+# ─────────────────────────────────────────────────────────────────────────────
+CHAN_SRCS := \
+    $(FW)/protocol.c       \
+    $(FW)/routing.c        \
+    $(FW)/route_cache.c    \
+    $(FW)/channel.c        \
+    $(FW)/rivr_metrics.c   \
+    $(FW)/rivr_log.c       \
+    test_stubs.c            \
+    test_channel.c
+
+CHAN_BIN   := channel_test
+CHAN_FLAGS := $(COMMON_FLAGS)
+
 # RETRY / ACK RELIABILITY TEST
 #   Tests retry_table: enqueue, timeout-driven retransmit, ACK clearing,
 #   exhaustion / fallback flood, table-full rejection, routing_build_ack.
@@ -173,10 +192,10 @@ ASAN_FLAGS := $(COMMON_FLAGS) -O1 -g -fsanitize=address,undefined \
               -fno-omit-frame-pointer
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all test acceptance recovery replay dutycycle policy ota retry fabric beacon asan fuzz_harness clean \
+.PHONY: all test acceptance recovery replay dutycycle policy ota retry fabric beacon channel asan fuzz_harness clean \
         size_check update_baselines determinism_check variant_check
 
-all: acceptance recovery replay dutycycle policy ota retry fabric beacon
+all: acceptance recovery replay dutycycle policy ota retry fabric beacon channel
 
 # `make test` is the CI-friendly single-command alias.
 test: all
@@ -237,6 +256,12 @@ beacon: $(BEACON_BIN)
 	@echo
 $(BEACON_BIN): $(BEACON_SRCS)
 	$(CC) $(BEACON_FLAGS) $^ -o $@
+channel: $(CHAN_BIN)
+	@echo "── Running channel messaging tests ───────────────────────────"
+	./$(CHAN_BIN)
+	@echo
+$(CHAN_BIN): $(CHAN_SRCS)
+	$(CC) $(CHAN_FLAGS) $^ -o $@
 asan:
 	@echo "── ASan/UBSan: acceptance ────────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) $(ACC_SRCS) -o acceptance_asan && ./acceptance_asan
@@ -264,6 +289,9 @@ asan:
 	@echo
 	@echo "── ASan/UBSan: beacon ────────────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) $(BEACON_SRCS) -o beacon_asan && ./beacon_asan
+	@echo
+	@echo "── ASan/UBSan: channel ───────────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) $(CHAN_SRCS) -o channel_asan && ./channel_asan
 	@echo
 $(POL_BIN): $(POL_SRCS)
 	$(CC) $(POL_FLAGS) $^ -o $@
@@ -303,7 +331,7 @@ $(FUZZ_BIN): $(FUZZ_SRCS)
 	$(CC) $(FUZZ_FLAGS) $^ -o $@
 
 clean:
-	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FABRIC_BIN) $(BEACON_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan fabric_asan beacon_asan
+	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FABRIC_BIN) $(BEACON_BIN) $(CHAN_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan fabric_asan beacon_asan channel_asan
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Release workflow utilities

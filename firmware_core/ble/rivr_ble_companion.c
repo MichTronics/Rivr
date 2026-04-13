@@ -333,10 +333,11 @@ bool rivr_ble_companion_raw_bridge_enabled(void)
 }
 
 void rivr_ble_companion_push_chat(uint32_t src_id,
+                                  uint16_t channel_id,
                                   const uint8_t *text,
                                   uint8_t text_len)
 {
-    uint8_t payload[4u + RIVR_BLE_CP_MAX_CHAT_LEN];
+    uint8_t payload[4u + 2u + RIVR_BLE_CP_MAX_CHAT_LEN];
     uint8_t copy_len = text_len;
 
     if (!s_session_active || !text || text_len == 0u) {
@@ -346,12 +347,19 @@ void rivr_ble_companion_push_chat(uint32_t src_id,
         copy_len = RIVR_BLE_CP_MAX_CHAT_LEN;
     }
 
+    /* Payload layout:
+     *   [0-3]  src_id      u32 LE
+     *   [4-5]  channel_id  u16 LE
+     *   [6+]   text        UTF-8
+     */
     payload[0] = (uint8_t)(src_id & 0xFFu);
-    payload[1] = (uint8_t)((src_id >> 8) & 0xFFu);
+    payload[1] = (uint8_t)((src_id >> 8)  & 0xFFu);
     payload[2] = (uint8_t)((src_id >> 16) & 0xFFu);
     payload[3] = (uint8_t)((src_id >> 24) & 0xFFu);
-    memcpy(&payload[4], text, copy_len);
-    (void)cp_send_packet(RIVR_CP_PKT_CHAT_RX, 0u, payload, (uint8_t)(4u + copy_len));
+    payload[4] = (uint8_t)(channel_id & 0xFFu);
+    payload[5] = (uint8_t)((channel_id >> 8) & 0xFFu);
+    memcpy(&payload[6], text, copy_len);
+    (void)cp_send_packet(RIVR_CP_PKT_CHAT_RX, 0u, payload, (uint8_t)(6u + copy_len));
 }
 
 void rivr_ble_companion_push_node(uint32_t node_id,

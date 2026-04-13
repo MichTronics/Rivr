@@ -110,6 +110,7 @@ static uint8_t s_pos = 0u;           /**< Write cursor inside s_buf          */
 static void cli_handle_line(void);
 #if RIVR_ROLE_CLIENT
 static void cli_enqueue_chat(const char *msg, size_t len);
+static void cli_enqueue_chan_chat(uint16_t channel_id, const char *msg, size_t len);
 #endif
 static void cli_print_prompt(void);
 
@@ -271,7 +272,8 @@ static void cli_handle_line(void)
     if (strncmp(p, "help", 4u) == 0 && (p[4] == '\0' || p[4] == ' ')) {
         printf("Commands:\r\n"
 #if RIVR_ROLE_CLIENT
-               "  chat <message>        broadcast text to the mesh\r\n"
+               "  chat <message>        broadcast text to the mesh (global channel)\r\n"
+               "  chan <1-7> <message>  broadcast text on a numbered channel\r\n"
                "  send <message>        alias for chat\r\n"
 #endif
                "  id                    print node ID, callsign and net ID\r\n"
@@ -377,6 +379,28 @@ static void cli_handle_line(void)
             return;
         }
         cli_enqueue_chat(msg, strlen(msg));
+        return;
+    }
+
+    /* ── "chan <N> <message>" — channel chat (PKT_FLAG_CHANNEL) ── */
+    if (strncmp(p, "chan", 4u) == 0 && p[4] == ' ') {
+        char *arg = p + 5;
+        while (*arg == ' ') { arg++; }
+        char *end = NULL;
+        unsigned long chan_id = strtoul(arg, &end, 10);
+        if (end == arg || chan_id == 0u || chan_id > 7u || *end != ' ') {
+            printf("ERR: usage: chan <1-7> <message>\r\n");
+            fflush(stdout);
+            return;
+        }
+        char *msg = end + 1;
+        while (*msg == ' ') { msg++; }
+        if (*msg == '\0') {
+            printf("ERR: usage: chan <1-7> <message>\r\n");
+            fflush(stdout);
+            return;
+        }
+        cli_enqueue_chan_chat((uint16_t)chan_id, msg, strlen(msg));
         return;
     }
 #endif /* RIVR_ROLE_CLIENT */
@@ -689,6 +713,73 @@ static void cli_handle_line(void)
  * @param msg  NUL-terminated message text (not modified).
  * @param len  strlen(msg) — MUST be > 0.
  */
+static void cli_enqueue_chan_chat(uint16_t channel_id, const char *msg, size_t len)
+{
+    /* Channel payload: [0-1] = channel_id LE, [2+] = text */
+    uint8_t payload[2u + (size_t)CLI_MSG_MAX];
+
+    if (len > (size_t)(CLI_MSG_MAX - RIVR_CHAT_CHAN_HDR_LEN)) {
+        printf("ERR: message too long (max %u bytes)\r\n",
+               (unsigned)(CLI_MSG_MAX - RIVR_CHAT_CHAN_HDR_LEN));
+        fflush(stdout);
+        return;
+    }
+
+    if (!rivr_policy_allow_origination(PKT_CHAT, tb_millis())) {
+        printf("@DROP origination throttled type=CHAT\r\n");
+        fflush(stdout);
+        return;
+    }
+
+    payload[0] = (uint8_t)(channel_id & 0xFFu);
+    payload[1] = (uint8_t)((channel_id >> 8) & 0xFFu);
+    memcpy(&payload[2], msg, len);
+
+    uint8_t total_len = (uint8_t)(RIVR_CHAT_CHAN_HDR_LEN + len);
+
+    rivr_pkt_hdr_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.pkt_type    = PKT_CHAT;
+    hdr.flags       = PKT_FLAG_CHANNEL;
+    hdr.ttl         = RIVR_PKT_DEFAULT_TTL;
+    hdr.hop         = 0u;
+    hdr.net_id      = g_net_id;
+    hdr.src_id      = g_my_node_id;
+    hdr.dst_id      = 0u;               /* broadcast */
+    hdr.seq         = (uint16_t)++g_ctrl_seq;
+    hdr.pkt_id      = (uint16_t)g_ctrl_seq;
+    hdr.payload_len = total_len;
+
+    rf_tx_request_t req;
+    memset(&req, 0, sizeof(req));
+
+    int enc = protocol_encode(&hdr, payload, total_len,
+                               req.data, sizeof(req.data));
+    if (enc <= 0) {
+        ESP_LOGE(TAG, "protocol_encode failed (%d)", enc);
+        printf("ERR: frame encoding failed\r\n");
+        fflush(stdout);
+        return;
+    }
+
+    req.len    = (uint8_t)enc;
+    req.toa_us = RF_TOA_APPROX_US(req.len);
+    req.due_ms = 0u;
+
+    if (!rb_try_push(&rf_tx_queue, &req)) {
+        ESP_LOGW(TAG, "TX queue full — chan chat frame dropped");
+        printf("ERR: TX queue full\r\n");
+        fflush(stdout);
+        return;
+    }
+
+    RIVR_LOGI(TAG, "TX CHAN CHAT queued: chan=%u \"%.*s\" (len=%u seq=%lu)",
+             (unsigned)channel_id, (int)len, msg,
+             (unsigned)len, (unsigned long)hdr.seq);
+    printf("TX CHAN %u: %.*s\r\n", (unsigned)channel_id, (int)len, msg);
+    fflush(stdout);
+}
+
 static void cli_enqueue_chat(const char *msg, size_t len)
 {
     if (len > (size_t)CLI_MSG_MAX) {

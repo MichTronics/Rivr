@@ -16,6 +16,7 @@
 #include "rivr_embed.h"      /* g_my_node_id, g_rivr_metrics, etc. */
 #include "rivr_cli.h"        /* rivr_cli_on_chat_rx() (stub on non-client) */
 #include "../firmware_core/ble/rivr_ble_companion.h"
+#include "../firmware_core/protocol.h"   /* PKT_FLAG_CHANNEL, RIVR_CHAT_CHAN_HDR_LEN */
 #include "../firmware_core/rivr_log.h"
 #include <string.h>
 #include <stdio.h>
@@ -68,26 +69,43 @@ void handle_chat_message(const rivr_pkt_hdr_t *hdr,
 {
     if (!hdr || !payload || len == 0u) return;
 
+    /* ── Strip optional channel header (PKT_FLAG_CHANNEL = 0x08) ────────── */
+    /* When this flag is set the first two bytes are channel_id (u16 LE);    */
+    /* the actual text starts at payload[RIVR_CHAT_CHAN_HDR_LEN].            */
+    uint16_t     chan_id    = 0u;
+    const uint8_t *text_ptr = payload;
+    uint8_t       text_len  = len;
+
+    if ((hdr->flags & PKT_FLAG_CHANNEL) != 0u
+            && len >= RIVR_CHAT_CHAN_HDR_LEN) {
+        chan_id   = (uint16_t)payload[0]
+                 | ((uint16_t)payload[1] << 8u);
+        text_ptr  = payload + RIVR_CHAT_CHAN_HDR_LEN;
+        text_len  = len - RIVR_CHAT_CHAN_HDR_LEN;
+    }
+
+    if (text_len == 0u) return;
+
     /* ── Structured log line ─────────────────────────────────────────────── */
-    /* Use a local buffer: text is NUL-terminated and JSON-safe */
     char msg_buf[RIVR_PKT_MAX_PAYLOAD + 1u];
-    svc_json_text(payload, len, msg_buf, sizeof(msg_buf));
+    svc_json_text(text_ptr, text_len, msg_buf, sizeof(msg_buf));
 
     printf("@CHT {\"src\":\"0x%08lx\",\"dst\":\"0x%08lx\","
-           "\"rssi\":%d,\"len\":%u,\"text\":\"%s\"}\r\n",
+           "\"chan\":%u,\"rssi\":%d,\"len\":%u,\"text\":\"%s\"}\r\n",
            (unsigned long)hdr->src_id,
            (unsigned long)hdr->dst_id,
+           (unsigned)chan_id,
            (int)rssi_dbm,
-           (unsigned)len,
+           (unsigned)text_len,
            msg_buf);
 
     /* ── Serial console display (client builds) ──────────────────────────── */
-    /* rivr_cli_on_chat_rx is a zero-cost stub on non-client variants. */
-    rivr_cli_on_chat_rx(hdr->src_id, payload, len);
-    rivr_ble_companion_push_chat(hdr->src_id, payload, len);
+    rivr_cli_on_chat_rx(hdr->src_id, text_ptr, text_len);
+    rivr_ble_companion_push_chat(hdr->src_id, chan_id, text_ptr, text_len);
 
-    RIVR_LOGD(TAG, "[CHAT] src=0x%08lx len=%u rssi=%d",
-              (unsigned long)hdr->src_id, (unsigned)len, (int)rssi_dbm);
+    RIVR_LOGD(TAG, "[CHAT] src=0x%08lx chan=%u len=%u rssi=%d",
+              (unsigned long)hdr->src_id, (unsigned)chan_id,
+              (unsigned)text_len, (int)rssi_dbm);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── *
