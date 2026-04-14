@@ -76,6 +76,7 @@
 #include "firmware_core/ble/rivr_ble_companion.h"
 #include "firmware_core/rivr_bus/rivr_bus.h"      /* Multi-transport packet bus              */
 #include "firmware_core/iface/rivr_iface_usb.h"   /* USB-UART SLIP bridge (stub when USB=0) */
+#include "firmware_core/sensors.h"                 /* DS18B20 + AM2302 sensor subsystem     */
 
 #define TAG              "MAIN"
 #define TX_DRAIN_LIMIT   2u     /**< Max TX frames sent per main-loop iteration */
@@ -756,6 +757,7 @@ void app_main(void)
 
     load_node_identity();
     rivr_subsystems_init();
+    sensors_init();
     build_info_print_banner();
     rivr_role_init();
     emit_boot_supportpack();
@@ -824,6 +826,7 @@ void app_main(void)
         /* ─ 3. Periodic diagnostics ─ */
         uint32_t now = tb_millis();
         rivr_fabric_tick(now);
+        sensors_tick(now, g_my_node_id, g_net_id);
         /* ─ 3a. BLE activation-window timeout ─ */
 #if !RIVR_SIM_MODE
         rivr_ble_tick(now);

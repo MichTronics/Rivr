@@ -95,4 +95,30 @@
 #  define FEATURE_DISPLAY 1
 #endif
 
+/* ── DS18B20 OneWire temperature sensor ────────────────────────────────── */
+/** Enable/disable DS18B20 support.  Set to 1 in platformio.ini build_flags. */
+#ifndef RIVR_FEATURE_DS18B20
+#  define RIVR_FEATURE_DS18B20 0
+#endif
+/** GPIO for DS18B20 data line (requires external 4.7 kΩ pull-up to 3.3 V). */
+#ifndef PIN_DS18B20_ONEWIRE
+#  define PIN_DS18B20_ONEWIRE 27
+#endif
+
+/* ── AM2302 (DHT22) humidity + temperature sensor ───────────────────────── */
+/** Enable/disable AM2302 support.  Set to 1 in platformio.ini build_flags. */
+#ifndef RIVR_FEATURE_AM2302
+#  define RIVR_FEATURE_AM2302 0
+#endif
+/** GPIO for AM2302 data line (requires external 5 kΩ pull-up to 3.3 V). */
+#ifndef PIN_AM2302_DATA
+#  define PIN_AM2302_DATA 26
+#endif
+
+/* ── Sensor publish interval ────────────────────────────────────────────── */
+/** Time between sensor reads and PKT_TELEMETRY transmissions (milliseconds). */
+#ifndef RIVR_SENSOR_TX_MS
+#  define RIVR_SENSOR_TX_MS 60000U
+#endif
+
 #endif /* RIVR_VARIANT_ESP32DEVKIT_E22_900_H */
