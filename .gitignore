@@ -60,3 +60,24 @@ rivr
 .vscode/tasks.json
 rivr-repeater
 GPPy
+
+# ── GSD baseline (auto-generated) ──
+.gsd
+.gsd-id
+.bg-shell/
+*.swo
+.vscode/
+*.code-workspace
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+dist/
+*.pyc
+venv/
+vendor/
+*.log
+coverage/
+.cache/
+tmp/
