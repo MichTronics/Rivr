@@ -31,8 +31,10 @@
 /** Entry is considered expired and reusable after this many ms. */
 #define NTABLE_EXPIRY_MS     120000u
 
-/** Entry is flagged STALE (but not yet evicted) after this many ms. */
-#define NTABLE_STALE_MS      30000u
+/** Entry is flagged STALE (but not yet evicted) after this many ms.
+ *  Must be > RIVR_BEACON_INTERVAL_MS so a single slightly-late beacon does
+ *  not cause a momentary stale gap.  2× the default 30 s beacon period. */
+#define NTABLE_STALE_MS      70000u
 
 /** Maximum sequence-number gap counted as "missed" in one update call.
  *  Gaps larger than this are assumed to be a node reboot or seq rollover;
