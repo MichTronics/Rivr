@@ -118,46 +118,54 @@ void handle_telemetry_publish(const rivr_pkt_hdr_t *hdr,
 {
     if (!hdr || !payload || len < SVC_TELEMETRY_PAYLOAD_LEN) return;
 
-    /* Decode fixed-layout payload:
-     *   [0–1]  sensor_id  u16 LE
-     *   [2–5]  value      i32 LE
-     *   [6]    unit_code  u8
-     *   [7–10] timestamp  u32 LE  */
-    uint16_t sensor_id  = (uint16_t)(payload[0])
-                        | ((uint16_t)(payload[1]) << 8u);
-    int32_t  value      = (int32_t)((uint32_t)payload[2]
-                        | ((uint32_t)payload[3] <<  8u)
-                        | ((uint32_t)payload[4] << 16u)
-                        | ((uint32_t)payload[5] << 24u));
-    uint8_t  unit_code  = payload[6];
-    uint32_t timestamp  = (uint32_t)payload[7]
-                        | ((uint32_t)payload[8]  <<  8u)
-                        | ((uint32_t)payload[9]  << 16u)
-                        | ((uint32_t)payload[10] << 24u);
-
     /* Map unit code to a short ASCII label for the log */
     static const char *const unit_names[] = {
         "none", "C*100", "%RH*100", "mV", "dBm", "ppm*100"
     };
-    const char *unit_str =
-        (unit_code < 6u) ? unit_names[unit_code]
-                         : (unit_code == UNIT_CUSTOM ? "custom" : "?");
 
-    printf("@TEL {\"src\":\"0x%08lx\",\"sid\":%u,\"val\":%ld,"
-           "\"unit\":%u,\"unit_str\":\"%s\",\"ts\":%lu}\r\n",
-           (unsigned long)hdr->src_id,
-           (unsigned)sensor_id,
-           (long)value,
-           (unsigned)unit_code,
-           unit_str,
-           (unsigned long)timestamp);
+    /* Payload may contain N consecutive 11-byte readings (combined bundle). */
+    uint8_t n = len / SVC_TELEMETRY_PAYLOAD_LEN;
 
-    RIVR_LOGD(TAG, "[TEL] src=0x%08lx sid=%u val=%ld unit=%u ts=%lu",
-              (unsigned long)hdr->src_id,
-              (unsigned)sensor_id,
-              (long)value,
-              (unsigned)unit_code,
-              (unsigned long)timestamp);
+    for (uint8_t i = 0u; i < n; i++) {
+        const uint8_t *p = payload + (i * SVC_TELEMETRY_PAYLOAD_LEN);
+
+        /* Decode a single reading:
+         *   [0–1]  sensor_id  u16 LE
+         *   [2–5]  value      i32 LE
+         *   [6]    unit_code  u8
+         *   [7–10] timestamp  u32 LE  */
+        uint16_t sensor_id  = (uint16_t)(p[0])
+                            | ((uint16_t)(p[1]) << 8u);
+        int32_t  value      = (int32_t)((uint32_t)p[2]
+                            | ((uint32_t)p[3] <<  8u)
+                            | ((uint32_t)p[4] << 16u)
+                            | ((uint32_t)p[5] << 24u));
+        uint8_t  unit_code  = p[6];
+        uint32_t timestamp  = (uint32_t)p[7]
+                            | ((uint32_t)p[8]  <<  8u)
+                            | ((uint32_t)p[9]  << 16u)
+                            | ((uint32_t)p[10] << 24u);
+
+        const char *unit_str =
+            (unit_code < 6u) ? unit_names[unit_code]
+                             : (unit_code == UNIT_CUSTOM ? "custom" : "?");
+
+        printf("@TEL {\"src\":\"0x%08lx\",\"sid\":%u,\"val\":%ld,"
+               "\"unit\":%u,\"unit_str\":\"%s\",\"ts\":%lu}\r\n",
+               (unsigned long)hdr->src_id,
+               (unsigned)sensor_id,
+               (long)value,
+               (unsigned)unit_code,
+               unit_str,
+               (unsigned long)timestamp);
+
+        RIVR_LOGD(TAG, "[TEL] src=0x%08lx sid=%u val=%ld unit=%u ts=%lu",
+                  (unsigned long)hdr->src_id,
+                  (unsigned)sensor_id,
+                  (long)value,
+                  (unsigned)unit_code,
+                  (unsigned long)timestamp);
+    }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── *

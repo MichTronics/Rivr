@@ -139,6 +139,26 @@
 #  define PIN_AM2302_DATA 12
 #endif
 
+/* ── Battery voltage ADC sensor ─────────────────────────────────────────── */
+/** Enable/disable battery voltage measurement.  Set to 1 in platformio.ini. */
+#ifndef RIVR_FEATURE_VBAT
+#  define RIVR_FEATURE_VBAT 0
+#endif
+/**
+ * LilyGo LoRa32 V2.1: confirmed battery ADC on GPIO35 (ADC1_CH7).
+ * On-board 100 kΩ / 100 kΩ voltage divider → V_bat = V_adc × 2.
+ * GPIO35 is input-only (no output capability), ideal for ADC.
+ */
+#ifndef PIN_ADC_VBAT
+#  define PIN_ADC_VBAT 35
+#endif
+#ifndef RIVR_VBAT_DIV_NUM
+#  define RIVR_VBAT_DIV_NUM 2
+#endif
+#ifndef RIVR_VBAT_DIV_DEN
+#  define RIVR_VBAT_DIV_DEN 1
+#endif
+
 /* ── Sensor publish intervals (shared defaults) ─────────────────────────── */
 #ifndef RIVR_SENSOR_TX_MS
 #  define RIVR_SENSOR_TX_MS 60000U

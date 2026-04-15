@@ -123,6 +123,26 @@
 #  define PIN_AM2302_DATA 25
 #endif
 
+/* ── Battery voltage ADC sensor ─────────────────────────────────────────── */
+/** Enable/disable battery voltage measurement.  Set to 1 in platformio.ini. */
+#ifndef RIVR_FEATURE_VBAT
+#  define RIVR_FEATURE_VBAT 0
+#endif
+/**
+ * T-Beam SX1262: battery voltage is managed by AXP192 PMIC (I2C 0x34).
+ * Direct ADC measurement is not available — RIVR_FEATURE_VBAT not supported
+ * on this board; leave at 0.
+ */
+#ifndef PIN_ADC_VBAT
+#  define PIN_ADC_VBAT 0   /* AXP192 PMIC — no ADC pin available */
+#endif
+#ifndef RIVR_VBAT_DIV_NUM
+#  define RIVR_VBAT_DIV_NUM 1
+#endif
+#ifndef RIVR_VBAT_DIV_DEN
+#  define RIVR_VBAT_DIV_DEN 1
+#endif
+
 /* ── Sensor publish intervals (shared defaults) ─────────────────────────── */
 #ifndef RIVR_SENSOR_TX_MS
 #  define RIVR_SENSOR_TX_MS 60000U

@@ -10,6 +10,7 @@
  *   1 — DS18B20 temperature       (UNIT_CELSIUS,    sensor 0x0001)
  *   2 — AM2302 relative humidity  (UNIT_PERCENT_RH, sensor 0x0002)
  *   3 — AM2302 temperature        (UNIT_CELSIUS,    sensor 0x0003)
+ *   4 — Battery voltage           (UNIT_MILLIVOLTS, sensor 0x0004)
  *
  * Both sensors compile to no-ops when their respective feature flags are
  * disabled (RIVR_FEATURE_DS18B20=0 and/or RIVR_FEATURE_AM2302=0).

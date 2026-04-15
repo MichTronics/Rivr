@@ -99,12 +99,12 @@
 #endif
 
 /* ── DS18B20 OneWire temperature sensor ─────────────────────────────────── */
-/* ESP32-S3: GPIO47 is free and available on the expansion header.           */
+/* GPIO4 is free on the expansion header (no SPI/I²C/UART conflict).        */
 #ifndef RIVR_FEATURE_DS18B20
 #  define RIVR_FEATURE_DS18B20 0
 #endif
 #ifndef PIN_DS18B20_ONEWIRE
-#  define PIN_DS18B20_ONEWIRE 47
+#  define PIN_DS18B20_ONEWIRE 4
 #endif
 
 /* ── AM2302 (DHT22) humidity + temperature sensor ───────────────────────── */
@@ -113,6 +113,25 @@
 #endif
 #ifndef PIN_AM2302_DATA
 #  define PIN_AM2302_DATA 48
+#endif
+
+/* ── Battery voltage ADC sensor ─────────────────────────────────────────── */
+/** Enable/disable battery voltage measurement.  Set to 1 in platformio.ini. */
+#ifndef RIVR_FEATURE_VBAT
+#  define RIVR_FEATURE_VBAT 0
+#endif
+/**
+ * Heltec LoRa32 V4: battery sense on GPIO1 (ADC1_CH0, ESP32-S3).
+ * On-board 100 kΩ / 100 kΩ voltage divider → V_bat = V_adc × 2.
+ */
+#ifndef PIN_ADC_VBAT
+#  define PIN_ADC_VBAT 1
+#endif
+#ifndef RIVR_VBAT_DIV_NUM
+#  define RIVR_VBAT_DIV_NUM 2
+#endif
+#ifndef RIVR_VBAT_DIV_DEN
+#  define RIVR_VBAT_DIV_DEN 1
 #endif
 
 /* ── Sensor publish intervals (shared defaults) ─────────────────────────── */

@@ -95,6 +95,26 @@
 #  define PIN_AM2302_DATA 3
 #endif
 
+/* ── Battery voltage ADC sensor ─────────────────────────────────────────── */
+/** Enable/disable battery voltage measurement.  Set to 1 in platformio.ini. */
+#ifndef RIVR_FEATURE_VBAT
+#  define RIVR_FEATURE_VBAT 0
+#endif
+/**
+ * XIAO ESP32-S3 / Wio-SX1262: no on-board battery voltage divider circuit.
+ * Leave RIVR_FEATURE_VBAT=0 unless an external divider is wired to a free
+ * ADC1 GPIO (e.g. GPIO5 = D4 on the XIAO expansion pads).
+ */
+#ifndef PIN_ADC_VBAT
+#  define PIN_ADC_VBAT 0   /* No on-board circuit */
+#endif
+#ifndef RIVR_VBAT_DIV_NUM
+#  define RIVR_VBAT_DIV_NUM 2
+#endif
+#ifndef RIVR_VBAT_DIV_DEN
+#  define RIVR_VBAT_DIV_DEN 1
+#endif
+
 /* ── Sensor publish intervals (shared defaults) ─────────────────────────── */
 #ifndef RIVR_SENSOR_TX_MS
 #  define RIVR_SENSOR_TX_MS 60000U

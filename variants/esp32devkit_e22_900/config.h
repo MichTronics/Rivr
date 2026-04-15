@@ -115,6 +115,27 @@
 #  define PIN_AM2302_DATA 26
 #endif
 
+/* ── Battery voltage ADC sensor ─────────────────────────────────────────── */
+/** Enable/disable battery voltage measurement.  Set to 1 in platformio.ini. */
+#ifndef RIVR_FEATURE_VBAT
+#  define RIVR_FEATURE_VBAT 0
+#endif
+/**
+ * GPIO connected to the battery voltage divider output (must be ADC1).
+ * No built-in divider on a plain DevKit; wire externally using a free GPIO.
+ * GPIO35 (ADC1_CH7) is a safe input-only choice.
+ */
+#ifndef PIN_ADC_VBAT
+#  define PIN_ADC_VBAT 35
+#endif
+/** Voltage-divider ratio: V_bat = V_adc × RIVR_VBAT_DIV_NUM / RIVR_VBAT_DIV_DEN */
+#ifndef RIVR_VBAT_DIV_NUM
+#  define RIVR_VBAT_DIV_NUM 2
+#endif
+#ifndef RIVR_VBAT_DIV_DEN
+#  define RIVR_VBAT_DIV_DEN 1
+#endif
+
 /* ── Sensor publish interval ────────────────────────────────────────────── */
 /** Time between sensor reads and PKT_TELEMETRY transmissions (milliseconds). */
 #ifndef RIVR_SENSOR_TX_MS

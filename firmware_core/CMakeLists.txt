@@ -67,9 +67,10 @@ idf_component_register(
         "iface/rivr_iface_lora.c"
         "iface/rivr_iface_ble.c"
         "iface/rivr_iface_usb.c"
-        # Sensor drivers (guarded by RIVR_FEATURE_DS18B20 / RIVR_FEATURE_AM2302)
+        # Sensor drivers (guarded by RIVR_FEATURE_DS18B20 / RIVR_FEATURE_AM2302 / RIVR_FEATURE_VBAT)
         "sensor_ds18b20.c"
         "sensor_am2302.c"
+        "sensor_vbat.c"
         "sensors.c"
 
     INCLUDE_DIRS
@@ -80,6 +81,7 @@ idf_component_register(
         esp_driver_gpio
         esp_driver_uart
         esp_driver_i2c
+        esp_adc
         esp_timer
         esp_rom
         freertos
