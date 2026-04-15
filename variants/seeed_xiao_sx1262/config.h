@@ -77,4 +77,30 @@
 #  define PIN_SX1262_DIO1  39
 #endif
 
+/* ── DS18B20 OneWire temperature sensor ─────────────────────────────────── */
+/* XIAO ESP32-S3 pad D1 = GPIO2 (free, not used by Wio-SX1262 expansion).   */
+#ifndef RIVR_FEATURE_DS18B20
+#  define RIVR_FEATURE_DS18B20 0
+#endif
+#ifndef PIN_DS18B20_ONEWIRE
+#  define PIN_DS18B20_ONEWIRE 2
+#endif
+
+/* ── AM2302 (DHT22) humidity + temperature sensor ───────────────────────── */
+/* XIAO ESP32-S3 pad D2 = GPIO3 (free).                                      */
+#ifndef RIVR_FEATURE_AM2302
+#  define RIVR_FEATURE_AM2302 0
+#endif
+#ifndef PIN_AM2302_DATA
+#  define PIN_AM2302_DATA 3
+#endif
+
+/* ── Sensor publish intervals (shared defaults) ─────────────────────────── */
+#ifndef RIVR_SENSOR_TX_MS
+#  define RIVR_SENSOR_TX_MS 60000U
+#endif
+#ifndef RIVR_SENSOR_PKT_INTERVAL_MS
+#  define RIVR_SENSOR_PKT_INTERVAL_MS 2000U
+#endif
+
 #endif /* RIVR_VARIANT_SEEED_XIAO_SX1262_H */

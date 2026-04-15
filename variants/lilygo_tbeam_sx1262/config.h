@@ -105,4 +105,30 @@
 #  define FEATURE_DISPLAY 0
 #endif
 
+/* ── DS18B20 OneWire temperature sensor ─────────────────────────────────── */
+/* GPIO27=MOSI, GPIO34=GPS-RX (input-only) — use GPIO13 (free).             */
+#ifndef RIVR_FEATURE_DS18B20
+#  define RIVR_FEATURE_DS18B20 0
+#endif
+#ifndef PIN_DS18B20_ONEWIRE
+#  define PIN_DS18B20_ONEWIRE 13
+#endif
+
+/* ── AM2302 (DHT22) humidity + temperature sensor ───────────────────────── */
+/* GPIO26 is free on the T-Beam SX1262 variant.                             */
+#ifndef RIVR_FEATURE_AM2302
+#  define RIVR_FEATURE_AM2302 0
+#endif
+#ifndef PIN_AM2302_DATA
+#  define PIN_AM2302_DATA 25
+#endif
+
+/* ── Sensor publish intervals (shared defaults) ─────────────────────────── */
+#ifndef RIVR_SENSOR_TX_MS
+#  define RIVR_SENSOR_TX_MS 60000U
+#endif
+#ifndef RIVR_SENSOR_PKT_INTERVAL_MS
+#  define RIVR_SENSOR_PKT_INTERVAL_MS 2000U
+#endif
+
 #endif /* RIVR_VARIANT_LILYGO_TBEAM_SX1262_H */

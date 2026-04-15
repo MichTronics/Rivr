@@ -100,4 +100,29 @@
 #  define FEATURE_DISPLAY 1
 #endif
 
+/* ── DS18B20 OneWire temperature sensor ─────────────────────────────────── */
+/* GPIO27/26 are used by SPI-MOSI/DIO1; use GPIO13 and GPIO25 instead.      */
+#ifndef RIVR_FEATURE_DS18B20
+#  define RIVR_FEATURE_DS18B20 0
+#endif
+#ifndef PIN_DS18B20_ONEWIRE
+#  define PIN_DS18B20_ONEWIRE 13
+#endif
+
+/* ── AM2302 (DHT22) humidity + temperature sensor ───────────────────────── */
+#ifndef RIVR_FEATURE_AM2302
+#  define RIVR_FEATURE_AM2302 0
+#endif
+#ifndef PIN_AM2302_DATA
+#  define PIN_AM2302_DATA 25
+#endif
+
+/* ── Sensor publish intervals (shared defaults) ─────────────────────────── */
+#ifndef RIVR_SENSOR_TX_MS
+#  define RIVR_SENSOR_TX_MS 60000U
+#endif
+#ifndef RIVR_SENSOR_PKT_INTERVAL_MS
+#  define RIVR_SENSOR_PKT_INTERVAL_MS 2000U
+#endif
+
 #endif /* RIVR_VARIANT_HELTEC_LORA32_V2_H */
