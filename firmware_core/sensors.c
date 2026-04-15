@@ -130,7 +130,7 @@ static void send_bundle(void)
     hdr.version     = RIVR_PROTO_VER;
     hdr.pkt_type    = PKT_TELEMETRY;
     hdr.flags       = 0u;
-    hdr.ttl         = RIVR_PKT_DEFAULT_TTL;
+    hdr.ttl         = 1u;   /* telemetry is local — no multi-hop relay needed */
     hdr.hop         = 0u;
     hdr.net_id      = s_bundle_net_id;
     hdr.src_id      = s_bundle_node_id;
