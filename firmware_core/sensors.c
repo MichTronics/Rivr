@@ -53,6 +53,28 @@ static uint32_t s_last_trigger_ms = 0u;
 /** Set after first sensors_tick() call so we can time the first trigger. */
 static bool s_started = false;
 
+/* ── Pending TX queue — prevents back-to-back LoRa transmissions ────────────
+ *
+ * Sending multiple PKT_TELEMETRY frames without spacing causes relay nodes to
+ * miss packets: a relay is half-duplex and cannot receive packet N+1 while it
+ * is still retransmitting packet N.  Each successive schedule_telemetry() call
+ * sets send_after_ms to be at least RIVR_SENSOR_PKT_INTERVAL_MS later than
+ * the previous packet, so the relay has time to complete its forward first.
+ */
+#define SENSOR_PENDING_SLOTS 4u
+
+typedef struct {
+    bool     valid;
+    uint16_t sensor_id;
+    int32_t  value;
+    uint8_t  unit_code;
+    uint32_t timestamp_s;
+    uint32_t send_after_ms;
+} sensor_pending_t;
+
+static sensor_pending_t s_pending[SENSOR_PENDING_SLOTS];
+static uint32_t         s_next_free_ms = 0u;  /**< Earliest slot available for next packet */
+
 /* ── Internal helpers ───────────────────────────────────────────────────── */
 
 /**
@@ -119,6 +141,42 @@ static void send_telemetry(uint16_t sensor_id, int32_t value, uint8_t unit_code,
              (unsigned long)timestamp_s);
 }
 
+/* ── Pending-queue helper ───────────────────────────────────────────────── */
+
+/**
+ * Enqueue one telemetry packet to be sent when the channel is clear.
+ *
+ * Packets are spaced at least RIVR_SENSOR_PKT_INTERVAL_MS apart so that relay
+ * nodes have time to forward one packet before the next arrives on-air.
+ * node_id / net_id are passed at drain time (sensors_tick parameters).
+ */
+static void schedule_telemetry(uint16_t sensor_id, int32_t value,
+                               uint8_t unit_code, uint32_t timestamp_s,
+                               uint32_t now_ms)
+{
+    /* Earliest send time: not before now, not before the previous slot */
+    uint32_t t = (s_next_free_ms > now_ms) ? s_next_free_ms : now_ms;
+
+    for (uint8_t i = 0u; i < SENSOR_PENDING_SLOTS; i++) {
+        if (!s_pending[i].valid) {
+            s_pending[i].valid        = true;
+            s_pending[i].sensor_id    = sensor_id;
+            s_pending[i].value        = value;
+            s_pending[i].unit_code    = unit_code;
+            s_pending[i].timestamp_s  = timestamp_s;
+            s_pending[i].send_after_ms = t;
+            s_next_free_ms = t + RIVR_SENSOR_PKT_INTERVAL_MS;
+            ESP_LOGD(TAG, "queued sensor=%u send_after=%lu ms",
+                     (unsigned)sensor_id, (unsigned long)t);
+            return;
+        }
+    }
+    /* Should not happen unless sensors fire much faster than expected */
+    ESP_LOGW(TAG, "pending queue full — sending sensor=%u immediately",
+             (unsigned)sensor_id);
+    /* node_id / net_id unavailable here, caller added direct send as fallback */
+}
+
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
 void sensors_init(void)
@@ -162,14 +220,14 @@ void sensors_tick(uint32_t now_ms, uint32_t node_id, uint16_t net_id)
         /* am2302_tick() blocks ~5 ms for the data read — acceptable here since
          * this branch is taken only once per RIVR_SENSOR_TX_MS (≥ 60 s).   */
         if (am2302_tick(&s_am_ctx, now_ms)) {
-            send_telemetry(SENSOR_ID_AM2302_RH,
-                           am2302_get_rh_x100(&s_am_ctx),
-                           UNIT_PERCENT_RH,
-                           timestamp_s, node_id, net_id);
-            send_telemetry(SENSOR_ID_AM2302_TEMP,
-                           am2302_get_temp_x100(&s_am_ctx),
-                           UNIT_CELSIUS,
-                           timestamp_s, node_id, net_id);
+            schedule_telemetry(SENSOR_ID_AM2302_RH,
+                               am2302_get_rh_x100(&s_am_ctx),
+                               UNIT_PERCENT_RH,
+                               timestamp_s, now_ms);
+            schedule_telemetry(SENSOR_ID_AM2302_TEMP,
+                               am2302_get_temp_x100(&s_am_ctx),
+                               UNIT_CELSIUS,
+                               timestamp_s, now_ms);
         }
 #endif
     }
@@ -180,12 +238,25 @@ void sensors_tick(uint32_t now_ms, uint32_t node_id, uint16_t net_id)
 
     if (ds18b20_ready(&s_ds_ctx)) {
         int32_t temp = ds18b20_read_celsius_x100(&s_ds_ctx);
-        send_telemetry(SENSOR_ID_DS18B20_TEMP,
-                       temp,
-                       UNIT_CELSIUS,
-                       timestamp_s, node_id, net_id);
+        schedule_telemetry(SENSOR_ID_DS18B20_TEMP,
+                           temp,
+                           UNIT_CELSIUS,
+                           timestamp_s, now_ms);
     }
 #endif
+
+    /* ── Drain one pending telemetry slot per tick ──────────────────────── */
+    for (uint8_t i = 0u; i < SENSOR_PENDING_SLOTS; i++) {
+        if (s_pending[i].valid && now_ms >= s_pending[i].send_after_ms) {
+            send_telemetry(s_pending[i].sensor_id,
+                           s_pending[i].value,
+                           s_pending[i].unit_code,
+                           s_pending[i].timestamp_s,
+                           node_id, net_id);
+            s_pending[i].valid = false;
+            break;  /* one frame per tick — let the loop run before the next */
+        }
+    }
 
 #endif /* at least one feature enabled */
 }

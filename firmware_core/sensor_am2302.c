@@ -33,9 +33,8 @@
 
 /* ── Timing constants (µs) ─────────────────────────────────────────────────*/
 #define AM_START_LOW_US     1100u  /**< Start signal: pull low for 1.1 ms  */
-#define AM_RELEASE_US         55u  /**< Release wait before sampling response */
+#define AM_RELEASE_US         20u  /**< Release wait before sampling response (~15 µs per FoxKeys ref) */
 #define AM_RESP_TIMEOUT_US   200u  /**< Max wait for device response edge   */
-#define AM_BIT_THRESHOLD_US   50u  /**< High-pulse > this → bit = '1'      */
 #define AM_BIT_TIMEOUT_US    150u  /**< Abort if stuck high this long      */
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
@@ -70,7 +69,7 @@ void am2302_init(am2302_ctx_t *ctx, int gpio)
     gpio_config_t cfg = {
         .pin_bit_mask = (1ULL << gpio),
         .mode         = GPIO_MODE_INPUT_OUTPUT_OD,
-        .pull_up_en   = GPIO_PULLUP_ENABLE,    /* ~45 kΩ internal; add external 10 kΩ for reliable edges */
+        .pull_up_en   = GPIO_PULLUP_DISABLE,   /* external 10 kΩ pull-up to 3.3 V; internal ~45 kΩ disabled */
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type    = GPIO_INTR_DISABLE,
     };
@@ -100,7 +99,7 @@ bool am2302_tick(am2302_ctx_t *ctx, uint32_t now_ms)
      * (~5 ms) is uninterrupted.  Matches Adafruit DHT library behaviour.  */
     portDISABLE_INTERRUPTS();
     gpio_set_level(ctx->gpio, 1);   /* end start signal */
-    esp_rom_delay_us(AM_RELEASE_US); /* 55 µs: device pulls low within ~20-40 µs */
+    esp_rom_delay_us(AM_RELEASE_US); /* 20 µs: device pulls low within ~20-40 µs */
 
     /* Expect device to pull bus low (response low) */
     if (wait_level(ctx->gpio, 0, AM_RESP_TIMEOUT_US) < 0) goto error;
@@ -114,19 +113,23 @@ bool am2302_tick(am2302_ctx_t *ctx, uint32_t now_ms)
     memset(data, 0, sizeof(data));
 
     for (int bit = 39; bit >= 0; bit--) {
-        /* Wait for rising edge (end of ~50 µs low pre-pulse) */
-        if (wait_level(ctx->gpio, 1, AM_RESP_TIMEOUT_US) < 0) goto error;
+        /* Measure low pre-pulse duration (~50 µs) using wait_level's own
+         * internal timer — this has the same overhead structure as the inline
+         * high_us loop below, making the relative comparison symmetric.      */
+        int64_t low_us = wait_level(ctx->gpio, 1, AM_RESP_TIMEOUT_US);
+        if (low_us < 0) goto error;
 
-        /* Measure how long the line stays high using real µs timestamps.
-         * A '0' bit stays high ~26 µs; a '1' bit stays high ~70 µs.
-         * Threshold = 50 µs.  This is immune to loop/call overhead. */
+        /* Measure high pulse duration: '0' ≈ 26 µs, '1' ≈ 70 µs.
+         * Relative comparison (high > low → '1') is self-calibrating:
+         * any systematic poll overhead adds equally to both measurements,
+         * so the decode is correct regardless of loop overhead. */
         int64_t t_start = esp_timer_get_time();
         while (gpio_get_level(ctx->gpio) == 1) {
             if ((esp_timer_get_time() - t_start) > AM_BIT_TIMEOUT_US) goto error;
         }
         int64_t high_us = esp_timer_get_time() - t_start;
 
-        if (high_us > AM_BIT_THRESHOLD_US) {
+        if (high_us > low_us) {
             data[bit / 8] |= (uint8_t)(1u << (bit % 8));
         }
     }

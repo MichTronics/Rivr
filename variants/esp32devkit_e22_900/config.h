@@ -121,4 +121,19 @@
 #  define RIVR_SENSOR_TX_MS 60000U
 #endif
 
+/**
+ * Minimum spacing between successive PKT_TELEMETRY frames (milliseconds).
+ *
+ * Each LoRa node is half-duplex: while relaying packet N it cannot receive
+ * packet N+1.  A relay at SF9 BW125 needs ~330 ms on-air + CSMA back-off
+ * before the channel is clear again.  2 s gives comfortable headroom for
+ * multi-hop meshes and EU868 duty-cycle recovery.
+ *
+ * Override with -DRIVR_SENSOR_PKT_INTERVAL_MS=<ms> if you need faster
+ * telemetry (e.g. direct link, no relay).
+ */
+#ifndef RIVR_SENSOR_PKT_INTERVAL_MS
+#  define RIVR_SENSOR_PKT_INTERVAL_MS 2000U
+#endif
+
 #endif /* RIVR_VARIANT_ESP32DEVKIT_E22_900_H */
