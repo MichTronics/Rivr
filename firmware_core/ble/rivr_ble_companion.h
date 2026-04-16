@@ -26,7 +26,14 @@ void rivr_ble_companion_push_node(uint32_t node_id,
                                   int8_t snr_db,
                                   uint8_t hop_count,
                                   uint8_t link_score,
-                                  uint8_t role);
+                                  uint8_t role,
+                                  int32_t lat_e7,
+                                  int32_t lon_e7);
+void rivr_ble_companion_push_telemetry(uint32_t src_id,
+                                       uint16_t sensor_id,
+                                       int32_t  value,
+                                       uint8_t  unit_code,
+                                       uint32_t timestamp);
 
 #else
 
@@ -56,7 +63,9 @@ static inline void rivr_ble_companion_push_node(uint32_t node_id,
                                                 int8_t snr_db,
                                                 uint8_t hop_count,
                                                 uint8_t link_score,
-                                                uint8_t role)
+                                                uint8_t role,
+                                                int32_t lat_e7,
+                                                int32_t lon_e7)
 {
     (void)node_id;
     (void)callsign;
@@ -65,6 +74,20 @@ static inline void rivr_ble_companion_push_node(uint32_t node_id,
     (void)hop_count;
     (void)link_score;
     (void)role;
+    (void)lat_e7;
+    (void)lon_e7;
+}
+static inline void rivr_ble_companion_push_telemetry(uint32_t src_id,
+                                                     uint16_t sensor_id,
+                                                     int32_t  value,
+                                                     uint8_t  unit_code,
+                                                     uint32_t timestamp)
+{
+    (void)src_id;
+    (void)sensor_id;
+    (void)value;
+    (void)unit_code;
+    (void)timestamp;
 }
 
 #endif

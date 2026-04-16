@@ -64,5 +64,25 @@ static inline esp_err_t nvs_set_u32(nvs_handle_t h, const char *key,
     return ESP_FAIL;
 }
 
+static inline esp_err_t nvs_get_i32(nvs_handle_t h, const char *key,
+                                     int32_t *out_value)
+{
+    (void)h; (void)key; (void)out_value;
+    return ESP_FAIL;
+}
+
+static inline esp_err_t nvs_set_i32(nvs_handle_t h, const char *key,
+                                     int32_t value)
+{
+    (void)h; (void)key; (void)value;
+    return ESP_FAIL;
+}
+
+static inline esp_err_t nvs_erase_key(nvs_handle_t h, const char *key)
+{
+    (void)h; (void)key;
+    return ESP_OK;
+}
+
 static inline esp_err_t nvs_commit(nvs_handle_t h)  { (void)h; return ESP_OK; }
 static inline void      nvs_close(nvs_handle_t h)   { (void)h; }

@@ -207,6 +207,24 @@ _Static_assert(LOOP_GUARD_BYTE_OFFSET  == 22u,
  */
 #define PKT_FLAG_CHANNEL   0x08u
 
+/**
+ * PKT_FLAG_HAS_POS (0x10) — lat/lon appended to PKT_BEACON payload.
+ *
+ * When set on a PKT_BEACON frame the payload is 20 bytes instead of 12:
+ *   [0..9]   callsign  ASCII NUL-padded
+ *   [10]     hop_count 0 at origin
+ *   [11]     role      rivr_node_role_t
+ *   [12..15] lat_e7    i32 LE  degrees × 1e7  (INT32_MIN = unknown)
+ *   [16..19] lon_e7    i32 LE  degrees × 1e7  (INT32_MIN = unknown)
+ *
+ * Backward-compatible: nodes without this firmware bit decode at most
+ * BEACON_PAYLOAD_LEN bytes and ignore the extra 8 bytes harmlessly.
+ */
+#define PKT_FLAG_HAS_POS   0x10u
+
+/** Extended beacon payload length when PKT_FLAG_HAS_POS is set (20 bytes). */
+#define BEACON_PAYLOAD_LEN_POS  20u
+
 /** Byte length of the channel_id prefix when PKT_FLAG_CHANNEL is set. */
 #define RIVR_CHAT_CHAN_HDR_LEN  2u
 

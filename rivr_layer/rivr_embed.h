@@ -271,6 +271,28 @@ void rivr_nvs_load_identity(void);
  */
 bool rivr_nvs_store_identity(const char *callsign, uint16_t net_id);
 
+/**
+ * @brief Store node position to NVS and update the live globals.
+ *
+ * @param lat_e7  Latitude degrees × 1e7 (range: -900000000 .. 900000000).
+ * @param lon_e7  Longitude degrees × 1e7 (range: -1800000000 .. 1800000000).
+ * @return true on success, false if NVS write fails (globals still updated).
+ */
+bool rivr_nvs_store_position(int32_t lat_e7, int32_t lon_e7);
+
+/**
+ * @brief Erase stored position from NVS and reset globals to INT32_MIN.
+ *
+ * @return true if NVS erase+commit succeeded.
+ */
+bool rivr_nvs_clear_position(void);
+
+/** Node position latitude ×1e7; INT32_MIN if not configured. */
+extern int32_t g_node_lat_e7;
+
+/** Node position longitude ×1e7; INT32_MIN if not configured. */
+extern int32_t g_node_lon_e7;
+
 /** Print engine diagnostics to the UART log channel. */
 void rivr_embed_print_stats(void);
 

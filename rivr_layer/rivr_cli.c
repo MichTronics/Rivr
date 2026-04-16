@@ -291,6 +291,8 @@ static void cli_handle_line(void)
                "  rtstats               routing pipeline telemetry snapshot (@RST JSON block)\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
+               "  pos <lat> <lon>       set node position (decimal degrees, e.g. 52.3702 4.8952)\r\n"
+               "  pos clear             clear stored node position\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
                "  ble-clear-bonds       remove all persisted BLE bonds from this node\r\n"
                "  reboot                software reset the device\r\n"
@@ -301,8 +303,15 @@ static void cli_handle_line(void)
 
     /* ── "id" ── */
     if (strncmp(p, "id", 2u) == 0 && (p[2] == '\0' || p[2] == ' ')) {
-        printf("Node ID  : 0x%08lX\r\nCallsign : %s\r\nNet ID   : 0x%04X\r\n",
-               (unsigned long)g_my_node_id, g_callsign, (unsigned)g_net_id);
+        if (g_node_lat_e7 != INT32_MIN && g_node_lon_e7 != INT32_MIN) {
+            printf("Node ID  : 0x%08lX\r\nCallsign : %s\r\nNet ID   : 0x%04X\r\n"
+                   "Position : %.6f, %.6f\r\n",
+                   (unsigned long)g_my_node_id, g_callsign, (unsigned)g_net_id,
+                   (double)g_node_lat_e7 / 1e7, (double)g_node_lon_e7 / 1e7);
+        } else {
+            printf("Node ID  : 0x%08lX\r\nCallsign : %s\r\nNet ID   : 0x%04X\r\n",
+                   (unsigned long)g_my_node_id, g_callsign, (unsigned)g_net_id);
+        }
         fflush(stdout);
         return;
     }
@@ -362,6 +371,52 @@ static void cli_handle_line(void)
             printf("WARN: NVS write failed – net ID updated for this session only\r\n");
         } else {
             printf("OK net ID set to 0x%04X\r\n", (unsigned)g_net_id);
+        }
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "pos <lat> <lon>" / "pos clear" ── */
+    if (strncmp(p, "pos", 3u) == 0 && (p[3] == ' ' || p[3] == '\0')) {
+        char *arg = p + 3;
+        while (*arg == ' ') { arg++; }
+        if (strcmp(arg, "clear") == 0) {
+            if (!rivr_nvs_clear_position()) {
+                printf("WARN: NVS clear failed \u2013 position reset for this session only\r\n");
+            } else {
+                printf("OK position cleared\r\n");
+            }
+            fflush(stdout);
+            return;
+        }
+        /* Parse "lat lon" as two decimal floats */
+        char *end = NULL;
+        double lat = strtod(arg, &end);
+        if (end == arg || *end == '\0') {
+            printf("ERR: usage: pos <lat> <lon>  (e.g. pos 52.3702 4.8952)\r\n"
+                   "     or:   pos clear\r\n");
+            fflush(stdout);
+            return;
+        }
+        while (*end == ' ') { end++; }
+        char *end2 = NULL;
+        double lon = strtod(end, &end2);
+        if (end2 == end) {
+            printf("ERR: usage: pos <lat> <lon>  (e.g. pos 52.3702 4.8952)\r\n");
+            fflush(stdout);
+            return;
+        }
+        if (lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0) {
+            printf("ERR: lat must be -90..90, lon must be -180..180\r\n");
+            fflush(stdout);
+            return;
+        }
+        int32_t lat_e7 = (int32_t)(lat * 1e7);
+        int32_t lon_e7 = (int32_t)(lon * 1e7);
+        if (!rivr_nvs_store_position(lat_e7, lon_e7)) {
+            printf("WARN: NVS write failed \u2013 position set for this session only\r\n");
+        } else {
+            printf("OK position set: lat=%.6f lon=%.6f\r\n", lat, lon);
         }
         fflush(stdout);
         return;

@@ -78,6 +78,8 @@ opfwd_suppress_t      g_opfwd_suppress;     /* Phase 4: overheard-relay suppress
 char             g_callsign[12]           = "RIVR";
 uint16_t         g_net_id                 = 0u;
 bool             g_program_reload_pending = false;
+int32_t          g_node_lat_e7 = INT32_MIN;  /**< Node position latitude × 1e7; INT32_MIN = not set */
+int32_t          g_node_lon_e7 = INT32_MIN;  /**< Node position longitude × 1e7; INT32_MIN = not set */
 
 /* ── NVS program storage ─────────────────────────────────────────────────── */
 
@@ -130,6 +132,8 @@ bool rivr_nvs_store_program(const char *src)
 
 #define RIVR_NVS_KEY_CALLSIGN  "callsign"
 #define RIVR_NVS_KEY_NETID     "netid"
+#define RIVR_NVS_KEY_LAT       "lat_e7"
+#define RIVR_NVS_KEY_LON       "lon_e7"
 
 void rivr_nvs_load_identity(void)
 {
@@ -151,6 +155,17 @@ void rivr_nvs_load_identity(void)
     if (nvs_get_u16(h, RIVR_NVS_KEY_NETID, &nid) == ESP_OK) {
         g_net_id = nid;
         RIVR_LOGI(TAG, "NVS net_id loaded: 0x%04X", (unsigned)g_net_id);
+    }
+
+    /* Position: stored as signed 32-bit integers */
+    int32_t lat = INT32_MIN, lon = INT32_MIN;
+    if (nvs_get_i32(h, RIVR_NVS_KEY_LAT, &lat) == ESP_OK) {
+        g_node_lat_e7 = lat;
+        RIVR_LOGI(TAG, "NVS lat_e7 loaded: %ld", (long)g_node_lat_e7);
+    }
+    if (nvs_get_i32(h, RIVR_NVS_KEY_LON, &lon) == ESP_OK) {
+        g_node_lon_e7 = lon;
+        RIVR_LOGI(TAG, "NVS lon_e7 loaded: %ld", (long)g_node_lon_e7);
     }
 
     nvs_close(h);
@@ -190,6 +205,46 @@ bool rivr_nvs_store_identity(const char *callsign, uint16_t net_id)
     }
     ESP_LOGE(TAG, "NVS identity commit failed: %d", (int)err);
     return false;
+}
+
+bool rivr_nvs_store_position(int32_t lat_e7, int32_t lon_e7)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(RIVR_NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open (position) failed: %d", (int)err);
+        return false;
+    }
+    bool ok = true;
+    err = nvs_set_i32(h, RIVR_NVS_KEY_LAT, lat_e7);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "NVS set lat failed: %d", (int)err); ok = false; }
+    err = nvs_set_i32(h, RIVR_NVS_KEY_LON, lon_e7);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "NVS set lon failed: %d", (int)err); ok = false; }
+    if (ok) { err = nvs_commit(h); }
+    nvs_close(h);
+    if (ok && err == ESP_OK) {
+        g_node_lat_e7 = lat_e7;
+        g_node_lon_e7 = lon_e7;
+        RIVR_LOGI(TAG, "NVS position stored: lat=%ld lon=%ld", (long)lat_e7, (long)lon_e7);
+        return true;
+    }
+    ESP_LOGE(TAG, "NVS position commit failed: %d", (int)err);
+    return false;
+}
+
+bool rivr_nvs_clear_position(void)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(RIVR_NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) return false;
+    nvs_erase_key(h, RIVR_NVS_KEY_LAT);   /* ignore error — key may not exist */
+    nvs_erase_key(h, RIVR_NVS_KEY_LON);
+    err = nvs_commit(h);
+    nvs_close(h);
+    g_node_lat_e7 = INT32_MIN;
+    g_node_lon_e7 = INT32_MIN;
+    RIVR_LOGI(TAG, "NVS position cleared");
+    return (err == ESP_OK);
 }
 
 /* u64 trampoline: rivr_foreach_timer_source gives uint64_t; sources API uses uint32_t */

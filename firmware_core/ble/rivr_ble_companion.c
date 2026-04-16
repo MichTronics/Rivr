@@ -7,6 +7,7 @@
 
 #if RIVR_FEATURE_BLE
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -30,10 +31,12 @@
 #define RIVR_BLE_CP_MAX_CHAT_LEN 180u
 
 enum {
-    RIVR_CP_CMD_APP_START     = 0x01u,
-    RIVR_CP_CMD_DEVICE_QUERY  = 0x02u,
-    RIVR_CP_CMD_SET_CALLSIGN  = 0x03u,
-    RIVR_CP_CMD_GET_NEIGHBORS = 0x04u,
+    RIVR_CP_CMD_APP_START       = 0x01u,
+    RIVR_CP_CMD_DEVICE_QUERY    = 0x02u,
+    RIVR_CP_CMD_SET_CALLSIGN    = 0x03u,
+    RIVR_CP_CMD_GET_NEIGHBORS   = 0x04u,
+    RIVR_CP_CMD_SET_POSITION    = 0x05u,  /* payload: lat_e7 i32 LE, lon_e7 i32 LE */
+    RIVR_CP_CMD_CLEAR_POSITION  = 0x06u,  /* no payload */
 };
 
 enum {
@@ -43,6 +46,7 @@ enum {
     RIVR_CP_PKT_NODE_INFO      = 0x83u,
     RIVR_CP_PKT_NODE_LIST_DONE = 0x84u,
     RIVR_CP_PKT_CHAT_RX        = 0x85u,
+    RIVR_CP_PKT_TELEMETRY      = 0x86u,
 };
 
 typedef struct {
@@ -127,8 +131,38 @@ static void cp_send_err(uint8_t cmd, const char *msg)
 
 static void cp_send_device_info(void)
 {
-    char payload[192];
-    int n = snprintf(payload, sizeof(payload),
+    char payload[256];
+    int n;
+    if (g_node_lat_e7 != INT32_MIN && g_node_lon_e7 != INT32_MIN) {
+        n = snprintf(payload, sizeof(payload),
+                     "{\"node_id\":\"0x%08lx\",\"callsign\":\"%s\","
+                     "\"net_id\":\"0x%04X\",\"env\":\"%s\","
+                     "\"role\":\"%s\",\"radio\":\"%s\","
+                     "\"lat\":%.7f,\"lon\":%.7f}",
+                     (unsigned long)g_my_node_id,
+                     g_callsign,
+                     (unsigned)g_net_id,
+                     RIVR_BUILD_ENV,
+#if RIVR_ROLE_CLIENT
+                     "client",
+#elif RIVR_ROLE_REPEATER || (defined(RIVR_BUILD_REPEATER) && RIVR_BUILD_REPEATER)
+                     "repeater",
+#elif RIVR_ROLE_GATEWAY
+                     "gateway",
+#else
+                     "generic",
+#endif
+#if defined(RIVR_RADIO_LR1110) && RIVR_RADIO_LR1110
+                     "LR1110",
+#elif defined(RIVR_RADIO_SX1276) && RIVR_RADIO_SX1276
+                     "SX1276",
+#else
+                     "SX1262",
+#endif
+                     (double)g_node_lat_e7 / 1e7,
+                     (double)g_node_lon_e7 / 1e7);
+    } else {
+        n = snprintf(payload, sizeof(payload),
                      "{\"node_id\":\"0x%08lx\",\"callsign\":\"%s\","
                      "\"net_id\":\"0x%04X\",\"env\":\"%s\","
                      "\"role\":\"%s\",\"radio\":\"%s\"}",
@@ -152,7 +186,8 @@ static void cp_send_device_info(void)
 #else
                      "SX1262"
 #endif
-    );
+        );
+    }
 
     if (n < 0) {
         cp_send_err(RIVR_CP_CMD_DEVICE_QUERY, "device info failed");
@@ -303,6 +338,40 @@ void rivr_ble_companion_tick(void)
             cp_handle_set_callsign(payload, payload_len);
             break;
 
+        case RIVR_CP_CMD_SET_POSITION:
+            if (!s_session_active) {
+                cp_send_err(cmd, "app start required");
+                break;
+            }
+            if (payload_len < 8u) {
+                cp_send_err(cmd, "bad payload");
+                break;
+            }
+            {
+                int32_t lat_e7, lon_e7;
+                memcpy(&lat_e7, &payload[0], 4u);
+                memcpy(&lon_e7, &payload[4], 4u);
+                g_node_lat_e7 = lat_e7;
+                g_node_lon_e7 = lon_e7;
+                if (!rivr_nvs_store_position(lat_e7, lon_e7)) {
+                    cp_send_err(cmd, "persist failed");
+                    break;
+                }
+                cp_send_ok(cmd);
+            }
+            break;
+
+        case RIVR_CP_CMD_CLEAR_POSITION:
+            if (!s_session_active) {
+                cp_send_err(cmd, "app start required");
+                break;
+            }
+            g_node_lat_e7 = INT32_MIN;
+            g_node_lon_e7 = INT32_MIN;
+            (void)rivr_nvs_clear_position();
+            cp_send_ok(cmd);
+            break;
+
         case RIVR_CP_CMD_GET_NEIGHBORS:
             if (!s_session_active) {
                 cp_send_err(cmd, "app start required");
@@ -362,15 +431,57 @@ void rivr_ble_companion_push_chat(uint32_t src_id,
     (void)cp_send_packet(RIVR_CP_PKT_CHAT_RX, 0u, payload, (uint8_t)(6u + copy_len));
 }
 
+void rivr_ble_companion_push_telemetry(uint32_t src_id,
+                                       uint16_t sensor_id,
+                                       int32_t  value,
+                                       uint8_t  unit_code,
+                                       uint32_t timestamp)
+{
+    /* Payload layout:
+     *   [0-3]   src_id    u32 LE
+     *   [4-5]   sensor_id u16 LE
+     *   [6-9]   value     i32 LE
+     *   [10]    unit_code u8
+     *   [11-14] timestamp u32 LE
+     */
+    uint8_t payload[15];
+
+    if (!s_session_active) {
+        return;
+    }
+
+    payload[0]  = (uint8_t)(src_id & 0xFFu);
+    payload[1]  = (uint8_t)((src_id >> 8)  & 0xFFu);
+    payload[2]  = (uint8_t)((src_id >> 16) & 0xFFu);
+    payload[3]  = (uint8_t)((src_id >> 24) & 0xFFu);
+    payload[4]  = (uint8_t)(sensor_id & 0xFFu);
+    payload[5]  = (uint8_t)((sensor_id >> 8) & 0xFFu);
+    payload[6]  = (uint8_t)((uint32_t)value & 0xFFu);
+    payload[7]  = (uint8_t)(((uint32_t)value >> 8)  & 0xFFu);
+    payload[8]  = (uint8_t)(((uint32_t)value >> 16) & 0xFFu);
+    payload[9]  = (uint8_t)(((uint32_t)value >> 24) & 0xFFu);
+    payload[10] = unit_code;
+    payload[11] = (uint8_t)(timestamp & 0xFFu);
+    payload[12] = (uint8_t)((timestamp >> 8)  & 0xFFu);
+    payload[13] = (uint8_t)((timestamp >> 16) & 0xFFu);
+    payload[14] = (uint8_t)((timestamp >> 24) & 0xFFu);
+
+    (void)cp_send_packet(RIVR_CP_PKT_TELEMETRY, 0u, payload, sizeof(payload));
+}
+
 void rivr_ble_companion_push_node(uint32_t node_id,
                                   const char *callsign,
                                   int8_t rssi_dbm,
                                   int8_t snr_db,
                                   uint8_t hop_count,
                                   uint8_t link_score,
-                                  uint8_t role)
+                                  uint8_t role,
+                                  int32_t lat_e7,
+                                  int32_t lon_e7)
 {
-    uint8_t payload[22];
+    /* [0-3] node_id, [4] rssi, [5] snr, [6] hop, [7] score, [8] role, [9] pad,
+     * [10-21] callsign[12], [22-25] lat_e7 i32 LE, [26-29] lon_e7 i32 LE     */
+    uint8_t payload[30];
     size_t cs_len = 0u;
 
     if (!s_session_active) {
@@ -392,6 +503,8 @@ void rivr_ble_companion_push_node(uint32_t node_id,
         cs_len = strnlen(callsign, 11u);
         memcpy(&payload[10], callsign, cs_len);
     }
+    memcpy(&payload[22], &lat_e7, 4u);
+    memcpy(&payload[26], &lon_e7, 4u);
 
     (void)cp_send_packet(RIVR_CP_PKT_NODE_INFO, 0u, payload, sizeof(payload));
 }

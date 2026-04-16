@@ -410,6 +410,17 @@ uint32_t sources_rf_rx_drain(void)
                                           pkt_hdr.src_id, callsign);
             routing_neighbor_set_role(&g_neighbor_table,
                                       pkt_hdr.src_id, beacon_role);
+            /* If beacon carries position, store it in the ntable neighbor entry */
+            if ((pkt_hdr.flags & PKT_FLAG_HAS_POS) &&
+                 payload_ptr &&
+                 pkt_hdr.payload_len >= BEACON_PAYLOAD_LEN_POS) {
+                int32_t lat_e7, lon_e7;
+                memcpy(&lat_e7, &payload_ptr[12], 4u);
+                memcpy(&lon_e7, &payload_ptr[16], 4u);
+                neighbor_set_position(&g_ntable, pkt_hdr.src_id, lat_e7, lon_e7);
+                RIVR_LOGI(TAG, "BEACON pos src=0x%08lx lat=%ld lon=%ld",
+                         (unsigned long)pkt_hdr.src_id, (long)lat_e7, (long)lon_e7);
+            }
             {
                 const neighbor_entry_t *entry =
                     routing_neighbor_get(&g_neighbor_table, 0u);
@@ -421,13 +432,65 @@ uint32_t sources_rf_rx_drain(void)
                         break;
                     }
                 }
-                rivr_ble_companion_push_node(pkt_hdr.src_id,
-                                             callsign,
-                                             (int8_t)frame.rssi_dbm,
-                                             frame.snr_db,
-                                             pkt_hdr.hop,
-                                             entry ? routing_neighbor_link_score(entry, now_ms) : 0u,
-                                             beacon_role);
+                {
+                    int32_t push_lat = INT32_MIN, push_lon = INT32_MIN;
+                    const rivr_neighbor_t *ntbl_e =
+                        neighbor_find(&g_ntable, pkt_hdr.src_id, now_ms);
+                    if (ntbl_e) {
+                        push_lat = ntbl_e->lat_e7;
+                        push_lon = ntbl_e->lon_e7;
+                    }
+                    rivr_ble_companion_push_node(pkt_hdr.src_id,
+                                                 callsign,
+                                                 (int8_t)frame.rssi_dbm,
+                                                 frame.snr_db,
+                                                 pkt_hdr.hop,
+                                                 entry ? routing_neighbor_link_score(entry, now_ms) : 0u,
+                                                 beacon_role,
+                                                 push_lat,
+                                                 push_lon);
+                }
+            }
+            /* Emit structured @BCN log for USB-serial companion parsing.
+             * Format: @BCN {"src":"0xXX","cs":"CALL","rssi":-87,"snr":8,
+             *               "hop":1,"score":95,"role":1,"lat":0.0,"lon":0.0}
+             * lat/lon fields omitted when position is unknown (INT32_MIN). */
+            {
+                int32_t bcn_lat = INT32_MIN, bcn_lon = INT32_MIN;
+                const rivr_neighbor_t *ntbl_e2 =
+                    neighbor_find(&g_ntable, pkt_hdr.src_id, now_ms);
+                if (ntbl_e2) {
+                    bcn_lat = ntbl_e2->lat_e7;
+                    bcn_lon = ntbl_e2->lon_e7;
+                }
+                uint8_t bcn_score = 0u;
+                {
+                    const neighbor_entry_t *e2 = NULL;
+                    for (uint8_t _ni = 0u; _ni < NEIGHBOR_TABLE_SIZE; _ni++) {
+                        const neighbor_entry_t *c =
+                            routing_neighbor_get(&g_neighbor_table, _ni);
+                        if (c && c->node_id == pkt_hdr.src_id) { e2 = c; break; }
+                    }
+                    if (e2) bcn_score = routing_neighbor_link_score(e2, now_ms);
+                }
+                if (bcn_lat != INT32_MIN && bcn_lon != INT32_MIN) {
+                    printf("@BCN {\"src\":\"0x%08lX\",\"cs\":\"%s\","
+                           "\"rssi\":%d,\"snr\":%d,\"hop\":%u,\"score\":%u,"
+                           "\"role\":%u,\"lat\":%.7f,\"lon\":%.7f}\r\n",
+                           (unsigned long)pkt_hdr.src_id, callsign,
+                           (int)frame.rssi_dbm, (int)frame.snr_db,
+                           (unsigned)pkt_hdr.hop, (unsigned)bcn_score,
+                           (unsigned)beacon_role,
+                           (double)bcn_lat / 1e7, (double)bcn_lon / 1e7);
+                } else {
+                    printf("@BCN {\"src\":\"0x%08lX\",\"cs\":\"%s\","
+                           "\"rssi\":%d,\"snr\":%d,\"hop\":%u,\"score\":%u,"
+                           "\"role\":%u}\r\n",
+                           (unsigned long)pkt_hdr.src_id, callsign,
+                           (int)frame.rssi_dbm, (int)frame.snr_db,
+                           (unsigned)pkt_hdr.hop, (unsigned)bcn_score,
+                           (unsigned)beacon_role);
+                }
             }
             goto maybe_relay;
         }

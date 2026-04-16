@@ -92,6 +92,10 @@ typedef struct {
      * Used by Phase 3 adaptive-flood control for ToA estimation.          */
     uint8_t  etx_x8;        /**< ETX×8 fixed-point quality; 8=best, 255=dead. */
     uint8_t  avg_frame_len; /**< EWMA wire frame length (bytes); 0=no data.   */
+
+    /* ── Position data from PKT_BEACON with PKT_FLAG_HAS_POS ────────────── */
+    int32_t  lat_e7;        /**< Latitude × 1e7; INT32_MIN = unknown.        */
+    int32_t  lon_e7;        /**< Longitude × 1e7; INT32_MIN = unknown.       */
 } rivr_neighbor_t;
 
 /** Fixed-size table of rivr_neighbor_t entries. */
@@ -227,6 +231,19 @@ uint8_t neighbor_link_score_full(const rivr_neighbor_t *n, uint32_t now_ms);
 void neighbor_set_flag(rivr_neighbor_table_t *tbl,
                        uint32_t               node_id,
                        uint8_t                flag);
+
+/**
+ * Store position data received from a PKT_BEACON with PKT_FLAG_HAS_POS.
+ *
+ * @param tbl      Table to update.
+ * @param node_id  Source node ID.
+ * @param lat_e7   Latitude degrees × 1e7.
+ * @param lon_e7   Longitude degrees × 1e7.
+ */
+void neighbor_set_position(rivr_neighbor_table_t *tbl,
+                            uint32_t               node_id,
+                            int32_t                lat_e7,
+                            int32_t                lon_e7);
 
 /**
  * Remove all entries older than NTABLE_EXPIRY_MS.

@@ -159,6 +159,9 @@ void handle_telemetry_publish(const rivr_pkt_hdr_t *hdr,
                unit_str,
                (unsigned long)timestamp);
 
+        rivr_ble_companion_push_telemetry(hdr->src_id, sensor_id, value,
+                                          unit_code, timestamp);
+
         RIVR_LOGD(TAG, "[TEL] src=0x%08lx sid=%u val=%ld unit=%u ts=%lu",
                   (unsigned long)hdr->src_id,
                   (unsigned)sensor_id,

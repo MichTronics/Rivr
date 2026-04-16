@@ -349,13 +349,21 @@ static beacon_sched_t s_beacon_sched = {0};
 static void do_beacon_tx(void)
 {
     /* Build PKT_BEACON payload: callsign[10] + hop_count[1] */
-    uint8_t payload[BEACON_PAYLOAD_LEN];
+    uint8_t payload[BEACON_PAYLOAD_LEN_POS];
     memset(payload, 0, sizeof(payload));
     size_t cs_len = strlen(g_callsign);
     if (cs_len > BEACON_CALLSIGN_MAX) cs_len = BEACON_CALLSIGN_MAX;
     memcpy(payload, g_callsign, cs_len);
     payload[BEACON_CALLSIGN_MAX]      = 0u;  /* hop_count = 0 (origin) */
     payload[BEACON_CALLSIGN_MAX + 1u] = g_policy_params.role; /* node role */
+
+    /* Append lat/lon if position is configured (PKT_FLAG_HAS_POS). */
+    bool has_pos = (g_node_lat_e7 != INT32_MIN && g_node_lon_e7 != INT32_MIN);
+    uint8_t plen = has_pos ? BEACON_PAYLOAD_LEN_POS : BEACON_PAYLOAD_LEN;
+    if (has_pos) {
+        memcpy(&payload[12], &g_node_lat_e7, 4u);
+        memcpy(&payload[16], &g_node_lon_e7, 4u);
+    }
 
     rivr_pkt_hdr_t hdr;
     memset(&hdr, 0, sizeof(hdr));
@@ -370,11 +378,12 @@ static void do_beacon_tx(void)
     hdr.dst_id      = 0;   /* broadcast */
     hdr.seq         = (uint16_t)++g_ctrl_seq;
     hdr.pkt_id      = (uint16_t)g_ctrl_seq;
-    hdr.payload_len = BEACON_PAYLOAD_LEN;
+    hdr.payload_len = plen;
+    if (has_pos) { hdr.flags |= PKT_FLAG_HAS_POS; }
 
     rf_tx_request_t req;
     memset(&req, 0, sizeof(req));
-    int enc = protocol_encode(&hdr, payload, BEACON_PAYLOAD_LEN,
+    int enc = protocol_encode(&hdr, payload, plen,
                                req.data, sizeof(req.data));
     if (enc <= 0) {
         RIVR_LOGW(TAG, "beacon: encode failed");

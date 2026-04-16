@@ -120,6 +120,11 @@ void neighbor_table_init(rivr_neighbor_table_t *tbl)
 {
     if (!tbl) return;
     memset(tbl, 0, sizeof(*tbl));
+    /* Initialise position fields to INT32_MIN (= unknown). */
+    for (uint8_t i = 0u; i < NTABLE_SIZE; i++) {
+        tbl->entries[i].lat_e7 = INT32_MIN;
+        tbl->entries[i].lon_e7 = INT32_MIN;
+    }
 }
 
 rivr_neighbor_t *neighbor_update(rivr_neighbor_table_t *tbl,
@@ -403,4 +408,17 @@ void neighbor_table_print(const rivr_neighbor_table_t *tbl, uint32_t now_ms)
         shown++;
     }
     if (shown == 0u) printf("  (no live neighbours)\r\n");
+}
+
+void neighbor_set_position(rivr_neighbor_table_t *tbl,
+                            uint32_t               node_id,
+                            int32_t                lat_e7,
+                            int32_t                lon_e7)
+{
+    if (!tbl || node_id == 0u) return;
+    int idx = find_slot(tbl, node_id);
+    if (idx >= 0) {
+        tbl->entries[idx].lat_e7 = lat_e7;
+        tbl->entries[idx].lon_e7 = lon_e7;
+    }
 }
