@@ -278,6 +278,41 @@ extern "C" esp_err_t nvs_get_u32(nvs_handle_t h, const char *key, uint32_t *out)
     return (err == ESP_OK && len == sizeof(*out)) ? ESP_OK : ESP_FAIL;
 }
 
+extern "C" esp_err_t nvs_set_i32(nvs_handle_t h, const char *key, int32_t value)
+{
+    rp2040_nvs_handle_t *handle = lookup_handle(h);
+    char path[96];
+    if (!handle || handle->readonly || !build_path(handle, key, path, sizeof(path))) {
+        return ESP_FAIL;
+    }
+    return write_file_bytes(path, &value, sizeof(value));
+}
+
+extern "C" esp_err_t nvs_get_i32(nvs_handle_t h, const char *key, int32_t *out)
+{
+    size_t len = sizeof(*out);
+    rp2040_nvs_handle_t *handle = lookup_handle(h);
+    char path[96];
+    if (!handle || !out || !build_path(handle, key, path, sizeof(path))) {
+        return ESP_FAIL;
+    }
+    esp_err_t err = read_file_bytes(path, out, &len);
+    return (err == ESP_OK && len == sizeof(*out)) ? ESP_OK : ESP_FAIL;
+}
+
+extern "C" esp_err_t nvs_erase_key(nvs_handle_t h, const char *key)
+{
+    rp2040_nvs_handle_t *handle = lookup_handle(h);
+    char path[96];
+    if (!handle || handle->readonly || !build_path(handle, key, path, sizeof(path))) {
+        return ESP_FAIL;
+    }
+    if (!LittleFS.exists(path)) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    return LittleFS.remove(path) ? ESP_OK : ESP_FAIL;
+}
+
 extern "C" esp_err_t nvs_get_blob(nvs_handle_t h, const char *key, void *out, size_t *len)
 {
     rp2040_nvs_handle_t *handle = lookup_handle(h);

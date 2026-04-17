@@ -36,3 +36,44 @@
 #define RIVR_SX1262_USE_DIO3_TCXO   0
 #define RIVR_SX1262_TCXO_VOLTAGE    0x00
 #define RIVR_SX1262_TCXO_DELAY_TICKS 0x000000
+
+/* ── DS18B20 OneWire temperature sensor ─────────────────────────────────── */
+/* Not present on this board; disabled by default. */
+#ifndef RIVR_FEATURE_DS18B20
+#  define RIVR_FEATURE_DS18B20 0
+#endif
+#ifndef PIN_DS18B20_ONEWIRE
+#  define PIN_DS18B20_ONEWIRE 0
+#endif
+
+/* ── AM2302 (DHT22) humidity + temperature sensor ───────────────────────── */
+/* Not present on this board; disabled by default. */
+#ifndef RIVR_FEATURE_AM2302
+#  define RIVR_FEATURE_AM2302 0
+#endif
+#ifndef PIN_AM2302_DATA
+#  define PIN_AM2302_DATA 0
+#endif
+
+/* ── Battery voltage ADC sensor ─────────────────────────────────────────── */
+/* Not present on this board; disabled by default. */
+#ifndef RIVR_FEATURE_VBAT
+#  define RIVR_FEATURE_VBAT 0
+#endif
+#ifndef PIN_ADC_VBAT
+#  define PIN_ADC_VBAT 0
+#endif
+#ifndef RIVR_VBAT_DIV_NUM
+#  define RIVR_VBAT_DIV_NUM 2
+#endif
+#ifndef RIVR_VBAT_DIV_DEN
+#  define RIVR_VBAT_DIV_DEN 1
+#endif
+
+/* ── Sensor publish intervals (shared defaults) ─────────────────────────── */
+#ifndef RIVR_SENSOR_TX_MS
+#  define RIVR_SENSOR_TX_MS 60000U
+#endif
+#ifndef RIVR_SENSOR_PKT_INTERVAL_MS
+#  define RIVR_SENSOR_PKT_INTERVAL_MS 2000U
+#endif
