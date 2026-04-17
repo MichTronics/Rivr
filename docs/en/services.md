@@ -108,10 +108,30 @@ Total: `SVC_TELEMETRY_PAYLOAD_LEN = 11`
 
 ### Handler behaviour
 - Validates `payload_len >= SVC_TELEMETRY_PAYLOAD_LEN`.
+- Supports **bundled readings**: a single `PKT_TELEMETRY` frame may carry
+  `N` consecutive 11-byte readings (`N = payload_len / SVC_TELEMETRY_PAYLOAD_LEN`).
+  Each reading is decoded independently and emits its own `@TEL` log record.
 - Decodes all fields with `memcpy` (no alignment assumption).
-- Emits a `@TEL` log record (§7.2).
+- Emits a `@TEL` log record per reading (§7.2) and calls
+  `rivr_ble_companion_push_telemetry()` for each BLE-connected companion.
 
-### Routing semantics
+### 4.2 Built-in Sensor IDs
+
+The firmware sensor subsystem (`firmware_core/sensors.c`) assigns these fixed
+sensor IDs when the corresponding feature flags are enabled in the variant config:
+
+| Sensor ID | Feature flag | Sensor | Unit code |
+|-----------|-------------|--------|-----------|
+| 1 | `RIVR_FEATURE_DS18B20` | DS18B20 temperature | `UNIT_CELSIUS` (×100) |
+| 2 | `RIVR_FEATURE_AM2302` | AM2302 relative humidity | `UNIT_PERCENT_RH` (×100) |
+| 3 | `RIVR_FEATURE_AM2302` | AM2302 temperature | `UNIT_CELSIUS` (×100) |
+| 4 | `RIVR_FEATURE_VBAT` | Battery voltage | `UNIT_MILLIVOLTS` |
+
+All sensor features default to **disabled** (`= 0`) in every variant. Enable
+them by overriding the feature flag in the variant's `platformio.ini`
+build_flags (e.g. `-DRIVR_FEATURE_VBAT=1`).
+
+Sensor IDs 5–65535 are available for application-defined sensors.
 - Typically broadcast (`dst_id = 0`) from sensor nodes.
 - Relay nodes gate re-transmission with `budget.toa_us` in RIVR programs.
 

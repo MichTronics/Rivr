@@ -151,11 +151,13 @@ unchanged (relay nodes do not inspect payload beyond the common header).
 ## 4. Flags Bitmask
 
 | Bit mask | Constant           | Set by       | Meaning |
-|----------|--------------------|--------------|---------|
+|----------|--------------------|--------------|----------------------|
 | `0x01`   | `PKT_FLAG_ACK_REQ` | Originator   | Receiver should send a `PKT_ACK` unicast |
 | `0x02`   | `PKT_FLAG_RELAY`   | Relay node   | Packet has been forwarded at least once |
 | `0x04`   | `PKT_FLAG_FALLBACK`| Relay node   | Unicast delivery failed; re-sent as flood |
-| `0xF8`   | *(reserved)*       | —            | Must be 0 on transmit; ignored on receive |
+| `0x08`   | `PKT_FLAG_CHANNEL` | Originator   | `PKT_CHAT` only: 2-byte `channel_id` prefix prepended to text payload |
+| `0x10`   | `PKT_FLAG_HAS_POS` | Originator   | `PKT_BEACON` only: lat/lon appended (payload extends to 20 bytes) |
+| `0xE0`   | *(reserved)*       | —            | Must be 0 on transmit; ignored on receive |
 
 ---
 
@@ -163,23 +165,49 @@ unchanged (relay nodes do not inspect payload beyond the common header).
 
 ### 5.1 Beacon Payload (`PKT_BEACON`)
 
-Fixed 11-byte payload. Always set `payload_len = 11`.
+Base payload: **12 bytes** (`BEACON_PAYLOAD_LEN`).  Set `payload_len = 12` when no
+position is available.  Set `payload_len = 20` and add `PKT_FLAG_HAS_POS` to the
+`flags` field when including GPS coordinates.
+
+**Base beacon (12 bytes)**
 
 ```
 ┌─────────┬──────┬────────────────────────────────────┐
 │  Offset │ Size │ Field                               │
 ├─────────┼──────┼────────────────────────────────────┤
 │    0    │  10  │ callsign (ASCII, NUL-padded)        │
-│   10    │   1  │ hop_count (0 for originating node) │
+│   10    │   1  │ hop_count (0 at origin)             │
+│   11    │   1  │ role (rivr_node_role_t; see below)  │
 └─────────┴──────┴────────────────────────────────────┘
 ```
 
-- `callsign` is a human-readable identifier (e.g. amateur radio callsign or
-  node name). Right-padded with NUL (`0x00`). Not NUL-terminated in the
-  wire format—the full 10 bytes are always transmitted.
-- `hop_count` is always 0 for the beacon originator. Relay nodes copy the
-  hop field from the enclosing packet header; this field is application-level
-  diagnostic data only.
+**Extended beacon with position (`PKT_FLAG_HAS_POS` set, 20 bytes)**
+
+```
+┌─────────┬──────┬───────────────────────────────────────────────────────┐
+│  Offset │ Size │ Field                                                  │
+├─────────┼──────┼───────────────────────────────────────────────────────┤
+│    0    │  10  │ callsign (ASCII, NUL-padded)                           │
+│   10    │   1  │ hop_count (0 at origin)                                │
+│   11    │   1  │ role (rivr_node_role_t)                                │
+│   12    │   4  │ lat_e7 (i32 LE, degrees × 1e7; INT32_MIN = unknown)   │
+│   16    │   4  │ lon_e7 (i32 LE, degrees × 1e7; INT32_MIN = unknown)   │
+└─────────┴──────┴───────────────────────────────────────────────────────┘
+```
+
+**Role values (`rivr_node_role_t`)**
+
+| Value | Meaning |
+|-------|---------|
+| 0 | Unknown |
+| 1 | Client |
+| 2 | Repeater |
+| 3 | Gateway |
+
+- `callsign` is right-padded with NUL (`0x00`); all 10 bytes are always transmitted.
+- `hop_count` is 0 at the originator; diagnostic only — relay nodes do not modify it.
+- Backward-compatible: v1 nodes without position support decode only the first
+  `BEACON_PAYLOAD_LEN` (12) bytes and harmlessly ignore the extra 8 bytes.
 
 ### 5.2 OTA Program Push Payload (`PKT_PROG_PUSH`)
 
@@ -278,8 +306,14 @@ to allow legitimate retransmissions after long silences.
 | `RIVR_OTA_KEY_COUNT`    | 2      | `rivr_pubkey.h`  |
 | `DEDUPE_CACHE_SIZE`     | 32     | `routing.h`      |
 | `DEDUPE_EXPIRY_MS`      | 60000  | `routing.h`      |
-| `BEACON_PAYLOAD_LEN`    | 11     | `protocol.h`     |
+| `BEACON_PAYLOAD_LEN`    | 12     | `protocol.h`     |
+| `BEACON_PAYLOAD_LEN_POS`| 20     | `protocol.h`     |
 | `BEACON_CALLSIGN_MAX`   | 10     | `protocol.h`     |
+| `PKT_FLAG_ACK_REQ`      | 0x01   | `protocol.h`     |
+| `PKT_FLAG_RELAY`        | 0x02   | `protocol.h`     |
+| `PKT_FLAG_FALLBACK`     | 0x04   | `protocol.h`     |
+| `PKT_FLAG_CHANNEL`      | 0x08   | `protocol.h`     |
+| `PKT_FLAG_HAS_POS`      | 0x10   | `protocol.h`     |
 
 ---
 
