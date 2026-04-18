@@ -81,6 +81,15 @@ extern "C" {
  *   [7–10] timestamp  u32 LE — seconds since node boot (0 = unset) */
 #define PKT_TELEMETRY      8u
 
+/** Telemetry payload carried in a PKT_TELEMETRY frame.
+ *  Total size = SVC_TELEMETRY_PAYLOAD_LEN (11 bytes). */
+typedef struct __attribute__((packed)) {
+    uint16_t sensor_id;    /**< Application-defined sensor identifier          */
+    int32_t  value;        /**< Scaled integer (e.g. °C × 100, mV, ppm × 100) */
+    uint8_t  unit_code;    /**< UNIT_* constant                                */
+    uint32_t timestamp;    /**< Seconds since node boot (0 = unset)            */
+} rivr_telemetry_payload_t;
+
 /** Store-and-forward mailbox message (SVC_MAILBOX_HDR_LEN = 7 bytes + text):
  *   [0–3]  recipient_id  u32 LE — intended final recipient; 0 = any store node
  *   [4–5]  msg_seq       u16 LE — per-origin message sequence counter
@@ -95,8 +104,11 @@ extern "C" {
 #define PKT_ALERT         10u
 
 /** Compact node-metrics snapshot pushed to BLE clients every 5 s.
- *  Never relayed over LoRa (ttl=1).  Payload = rivr_met_ble_payload_t (48 B).
- *  Total wire size = 23 + 48 + 2 = 73 bytes — fits in one 128-byte MTU. */
+ *  Never relayed over LoRa (ttl=1).
+ *  Two payload sizes are supported for backward compatibility:
+ *    Legacy: rivr_met_ble_compact_t  (48 B)  — older firmware builds
+ *    Full:   rivr_met_ble_payload_t (132 B)  — current firmware (v0.1.0+)
+ *  Receivers must check payload_len to select the correct parser. */
 #define PKT_METRICS       11u
 
 /* ── Service payload lengths ─────────────────────────────────────────────── */

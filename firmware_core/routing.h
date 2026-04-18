@@ -59,7 +59,7 @@ extern "C" {
 /* ── Dedupe cache ──────────────────────────────────────────────────────────── *
  *
  * A power-of-2 ring buffer (DEDUPE_CACHE_SIZE entries) that stores the most
- * recently seen (src_id, seq) pairs.  On each new packet:
+ * recently seen (src_id, pkt_id) pairs.  On each new packet:
  *   - Scan the ring for a matching entry → duplicate, suppress.
  *   - If not found → insert at `head`, advance head (oldest entry evicted).
  *
