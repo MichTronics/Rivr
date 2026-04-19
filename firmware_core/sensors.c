@@ -60,6 +60,7 @@ static am2302_ctx_t s_am_ctx;
 
 /* VBAT is stateless after init — vbat_read_mv() is called directly. */
 
+#if RIVR_FEATURE_DS18B20 || RIVR_FEATURE_AM2302 || RIVR_FEATURE_VBAT
 /** Monotonic timestamp of last sensor TX trigger (in ms). */
 static uint32_t s_last_trigger_ms = 0u;
 
@@ -87,7 +88,9 @@ static uint16_t s_bundle_net_id  = 0u;           /**< Captured at trigger time  
 
 /** True after the trigger fires while waiting for DS18B20 conversion. */
 static bool s_ds18b20_pending = false;
+#endif /* any sensor feature */
 
+#if RIVR_FEATURE_DS18B20 || RIVR_FEATURE_AM2302 || RIVR_FEATURE_VBAT
 /* ── Internal helpers ───────────────────────────────────────────────────── */
 
 /**
@@ -155,6 +158,7 @@ static void send_bundle(void)
     s_bundle_count   = 0u;
     s_ds18b20_pending = false;
 }
+#endif /* any sensor feature */
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
