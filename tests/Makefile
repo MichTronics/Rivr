@@ -127,6 +127,7 @@ CHAN_SRCS := \
     $(FW)/protocol.c       \
     $(FW)/routing.c        \
     $(FW)/route_cache.c    \
+    $(FW)/neighbor_table.c \
     $(FW)/channel.c        \
     $(FW)/rivr_metrics.c   \
     $(FW)/rivr_log.c       \
