@@ -186,7 +186,7 @@ _Static_assert(LOOP_GUARD_BYTE_OFFSET  == 22u,
 
 /* ── Default TTL ─────────────────────────────────────────────────────────── */
 
-#define RIVR_PKT_DEFAULT_TTL   7u   /**< Hops before a packet is discarded   */
+#define RIVR_PKT_DEFAULT_TTL  15u   /**< Hops before a packet is discarded   */
 
 /* ── Flags bitmask ───────────────────────────────────────────────────────── */
 

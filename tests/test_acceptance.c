@@ -1010,8 +1010,8 @@ static void run7_loop_guard(void)
                                                    routing_toa_estimate_us(20u), now);
     CHECK(r7c == RIVR_FWD_FORWARD,
           "7c: fresh packet (loop_guard=0, new seq) → FORWARD");
-    CHECK((pkt7c.loop_guard & h_my) == h_my,
-          "7c: MY_NODE fingerprint set in loop_guard after forward");
+    CHECK(pkt7c.loop_guard == 0u,
+          "7c: loop_guard not written (check disabled for long-path support)");
     CHECK(pkt7c.ttl == RIVR_PKT_DEFAULT_TTL - 1u,
           "7c: TTL decremented correctly");
     CHECK(pkt7c.hop == 1u,
@@ -1034,8 +1034,8 @@ static void run7_loop_guard(void)
     uint32_t loop_drop_before = g_rivr_metrics.loop_detect_drop;
     rivr_fwd_result_t r7d = routing_flood_forward(dc, fb, &pkt7d, MY_NODE,
                                                    routing_toa_estimate_us(20u), now);
-    CHECK(r7d == RIVR_FWD_DROP_LOOP,
-          "7d: mutated-seq packet with MY_NODE fingerprint in guard → LOOP DROP");
+    CHECK(r7d == RIVR_FWD_FORWARD,
+          "7d: loop_guard check disabled → packet with guard bits set still FORWARDS");
 
     /* ── 7e: multi-hop accumulation ────────────────────────────────────── *
      * Packet: A (guard=0) → MY_NODE (adds h_my=0x13) → NODE_D (adds h_d=0x04) *
@@ -1058,7 +1058,7 @@ static void run7_loop_guard(void)
     rivr_fwd_result_t r7e1 = routing_flood_forward(dc, fb, &pkt7e, MY_NODE,
                                                     routing_toa_estimate_us(20u), now);
     CHECK(r7e1 == RIVR_FWD_FORWARD,        "7e: MY_NODE relays first hop → FORWARD");
-    CHECK(pkt7e.loop_guard == h_my,        "7e: guard after MY_NODE relay = h_my (0x13)");
+    CHECK(pkt7e.loop_guard == 0u,          "7e: loop_guard unchanged after MY_NODE relay (write disabled)");
 
     /* Step 2: NODE_D relays (using a fresh dedupe cache to simulate its state) */
     dedupe_cache_t dc_d;
@@ -1071,8 +1071,8 @@ static void run7_loop_guard(void)
                                                     routing_toa_estimate_us(20u), now);
     CHECK(r7e2 == RIVR_FWD_FORWARD,
           "7e: NODE_D relays second hop → FORWARD (no loop detected)");
-    CHECK(pkt7e2.loop_guard == (uint8_t)(h_my | h_d),
-          "7e: guard after NODE_D relay = h_my|h_d (0x17)");
+    CHECK(pkt7e2.loop_guard == 0u,
+          "7e: loop_guard unchanged after NODE_D relay (write disabled)");
 
     /* ── 7f: dedupe check fires before loop-guard check ─────────────────── *
      * Forward (NODE_A, seq=300) once through MY_NODE. Then present identical  *
@@ -1127,15 +1127,15 @@ static void run7_loop_guard(void)
     };
     routing_flood_forward(dc, fb, &pkt7h, MY_NODE,
                           routing_toa_estimate_us(20u), now);
-    CHECK(g_rivr_metrics.loop_detect_drop == 1u,
-          "7h: loop_detect_drop == 1 after first loop drop");
-    /* Second packet with loop guard also set */
+    CHECK(g_rivr_metrics.loop_detect_drop == 0u,
+          "7h: loop_detect_drop stays 0 (check disabled; dedupe is primary protection)");
+    /* Second packet with loop guard also set — also forwards now */
     pkt7h.seq    = 501u;
     pkt7h.pkt_id = 501u;
     routing_flood_forward(dc, fb, &pkt7h, MY_NODE,
                           routing_toa_estimate_us(20u), now);
-    CHECK(g_rivr_metrics.loop_detect_drop == 2u,
-          "7h: loop_detect_drop == 2 after second loop drop");
+    CHECK(g_rivr_metrics.loop_detect_drop == 0u,
+          "7h: loop_detect_drop still 0 after second packet (check disabled)");
 
     /* ── 7i: loop_guard survives protocol encode→decode round-trip ──────── */
     rivr_pkt_hdr_t hdr7i = {

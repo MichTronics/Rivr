@@ -448,18 +448,15 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
         return RIVR_FWD_DROP_TTL;
     }
 
-    /* Step 3 — Loop-guard check (skip if my_id == 0, e.g. replay/fuzz) */
+    /* Step 3 — Loop-guard check disabled: the 1-byte Bloom filter saturates
+     * above ~8 distinct relays, causing false-positive drops on legitimate
+     * long paths (>8 hops).  The dedupe cache keyed on (src_id, pkt_id) is
+     * the primary loop-protection mechanism and scales to any hop count.
+     * my_h is still computed so it can be written into the field below for
+     * potential future re-enablement or diagnostics. */
     uint8_t my_h = 0u;
     if (my_id != 0u) {
         my_h = routing_loop_guard_hash(my_id);
-        if ((pkt->loop_guard & my_h) == my_h) {
-            /* This node's fingerprint is already in the guard byte — the
-             * packet has looped back here (possibly with a mutated seq that
-             * defeated the dedupe cache).  Drop and count. */
-            g_rivr_metrics.loop_detect_drop++;
-            g_rivr_metrics.loop_detect_drop_total++;
-            return RIVR_FWD_DROP_LOOP;
-        }
     }
 
     /* Step 4 — Safety budget */
@@ -475,9 +472,7 @@ rivr_fwd_result_t routing_flood_forward(dedupe_cache_t   *cache,
     pkt->ttl        -= 1u;
     pkt->hop        += 1u;
     pkt->flags       = (uint8_t)(pkt->flags | PKT_FLAG_RELAY);
-    if (my_id != 0u) {
-        pkt->loop_guard = (uint8_t)(pkt->loop_guard | my_h);
-    }
+    (void)my_h;  /* loop_guard write suppressed; check disabled above */
 
     /* Record against budget */
     if (fb) {

@@ -69,7 +69,7 @@ extern "C" {
 /** Minimum metric (0..100 composite score) for a cached reply to qualify. */
 #define RCACHE_REPLY_MIN_METRIC  30u
 /** Maximum hop depth of a qualifying cached route (inclusive). */
-#define RCACHE_REPLY_MAX_HOPS     3u
+#define RCACHE_REPLY_MAX_HOPS     6u
 
 /* ── Entry flags ─────────────────────────────────────────────────────────── */
 

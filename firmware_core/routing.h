@@ -67,7 +67,7 @@ extern "C" {
  * a legitimate retransmit after a long silence is accepted.
  * ────────────────────────────────────────────────────────────────────────── */
 
-#define DEDUPE_CACHE_SIZE    32u    /**< Ring-buffer capacity (power of 2)   */
+#define DEDUPE_CACHE_SIZE    64u    /**< Ring-buffer capacity (power of 2)   */
 #define DEDUPE_EXPIRY_MS  60000u    /**< Entry expiry: 60 seconds            */
 
 /** Single deduplicate-cache entry. */

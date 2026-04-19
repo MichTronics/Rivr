@@ -30,9 +30,9 @@ typedef enum {
 
 /* TTL caps per class (0 = unlimited / use whatever is in the header) */
 #define POLICY_TTL_CONTROL   0u   /* unlimited */
-#define POLICY_TTL_CHAT      5u
-#define POLICY_TTL_METRICS   3u
-#define POLICY_TTL_BULK      2u
+#define POLICY_TTL_CHAT     12u
+#define POLICY_TTL_METRICS   6u
+#define POLICY_TTL_BULK      4u
 
 /* ── Policy verdict ─────────────────────────────────────────────────────── */
 typedef enum {
