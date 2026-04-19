@@ -41,6 +41,12 @@ extern uint32_t g_my_node_id;
 #define RIVR_BLE_CONN_LATENCY    0u
 #define RIVR_BLE_CONN_TIMEOUT    400u  /* 4 s */
 
+/* Bluedroid default NVS bond limit is 7.  A static array avoids heap use in
+ * the bond-management paths — keeping the BLE code zero-heap like the rest of
+ * the firmware core.  Entries beyond this limit are silently ignored. */
+#define RIVR_BLE_MAX_BONDS 7u
+static esp_ble_bond_dev_t s_bond_list[RIVR_BLE_MAX_BONDS];
+
 #if RIVR_BLE_PASSKEY != 0
 #define RIVR_BLE_DEFAULT_SENTINEL_PASSKEY 123456UL
 #endif
@@ -684,21 +690,18 @@ static bool rivr_ble_is_peer_bonded(const esp_bd_addr_t bda)
 {
     int dev_num = esp_ble_get_bond_device_num();
     if (dev_num <= 0) return false;
-
-    esp_ble_bond_dev_t *list = calloc((size_t)dev_num, sizeof(*list));
-    if (!list) return false;
+    if (dev_num > (int)RIVR_BLE_MAX_BONDS) dev_num = (int)RIVR_BLE_MAX_BONDS;
 
     int count = dev_num;
     bool found = false;
-    if (esp_ble_get_bond_device_list(&count, list) == ESP_OK) {
+    if (esp_ble_get_bond_device_list(&count, s_bond_list) == ESP_OK) {
         for (int i = 0; i < count; ++i) {
-            if (memcmp(list[i].bd_addr, bda, sizeof(esp_bd_addr_t)) == 0) {
+            if (memcmp(s_bond_list[i].bd_addr, bda, sizeof(esp_bd_addr_t)) == 0) {
                 found = true;
                 break;
             }
         }
     }
-    free(list);
     return found;
 }
 #endif
@@ -713,17 +716,12 @@ int rivr_ble_clear_bonds(void)
         return 0;
     }
 
-    esp_ble_bond_dev_t *dev_list = calloc((size_t)dev_num, sizeof(*dev_list));
-    if (dev_list == NULL) {
-        RIVR_LOGW(TAG, "BLE clear bonds: allocation failed for %d entries", dev_num);
-        return -1;
-    }
+    if (dev_num > (int)RIVR_BLE_MAX_BONDS) dev_num = (int)RIVR_BLE_MAX_BONDS;
 
     int list_count = dev_num;
-    esp_err_t err = esp_ble_get_bond_device_list(&list_count, dev_list);
+    esp_err_t err = esp_ble_get_bond_device_list(&list_count, s_bond_list);
     if (err != ESP_OK) {
         RIVR_LOGW(TAG, "BLE clear bonds: list fetch failed: %s", esp_err_to_name(err));
-        free(dev_list);
         return -1;
     }
 
@@ -737,7 +735,7 @@ int rivr_ble_clear_bonds(void)
 
     int removed = 0;
     for (int i = 0; i < list_count; ++i) {
-        err = esp_ble_remove_bond_device(dev_list[i].bd_addr);
+        err = esp_ble_remove_bond_device(s_bond_list[i].bd_addr);
         if (err == ESP_OK) {
             removed++;
         } else {
@@ -745,8 +743,6 @@ int rivr_ble_clear_bonds(void)
                       i, esp_err_to_name(err));
         }
     }
-
-    free(dev_list);
 
     RIVR_LOGI(TAG, "BLE clear bonds: removed %d/%d records", removed, list_count);
     if (s_ble_active) {
