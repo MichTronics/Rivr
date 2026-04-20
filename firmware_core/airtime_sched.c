@@ -45,6 +45,7 @@ rivr_pkt_class_t rivr_pkt_classify(uint8_t pkt_type)
         return PKTCLASS_CHAT;
 
     case PKT_DATA:       /* 6 – sensor / metrics payload                  */
+    case PKT_TELEMETRY:  /* 8 – periodic sensor telemetry                 */
         return PKTCLASS_METRICS;
 
     default:             /* future or unrecognised                        */

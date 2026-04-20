@@ -83,6 +83,16 @@ extern "C" {
 #  define _RIVR_SIM_TAG ""
 #endif
 
+#if defined(RIVR_FEATURE_DS18B20) && RIVR_FEATURE_DS18B20 && defined(RIVR_FEATURE_AM2302) && RIVR_FEATURE_AM2302
+#  define _RIVR_SENSORS_TAG "+ds18b20+am2302"
+#elif defined(RIVR_FEATURE_DS18B20) && RIVR_FEATURE_DS18B20
+#  define _RIVR_SENSORS_TAG "+ds18b20"
+#elif defined(RIVR_FEATURE_AM2302) && RIVR_FEATURE_AM2302
+#  define _RIVR_SENSORS_TAG "+am2302"
+#else
+#  define _RIVR_SENSORS_TAG ""
+#endif
+
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
 /**

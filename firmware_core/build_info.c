@@ -22,6 +22,7 @@ static const char k_role[]    = _RIVR_ROLE_TAG;
 static const char k_radio[]   = _RIVR_RADIO_TAG;
 static const char k_fabric[]  = _RIVR_FABRIC_TAG;
 static const char k_sim[]     = _RIVR_SIM_TAG;
+static const char k_sensors[] = _RIVR_SENSORS_TAG;
 
 /* ── Public: boot banner ─────────────────────────────────────────────────── */
 
@@ -30,7 +31,7 @@ void build_info_print_banner(void)
     /* Single line, no ESP_LOG prefix, \r\n for serial monitors that need CR. */
     printf("[RIVR] env=%s sha=%s built=%s %s"
            " role=%s radio=%s freq=%" PRIu32 " SF%u BW%skHz CR4/%u"
-           " cc=%s flags=%s%s\r\n",
+           " cc=%s flags=%s%s%s\r\n",
            RIVR_BUILD_ENV,
            RIVR_GIT_SHA,
            __DATE__, __TIME__,
@@ -42,7 +43,8 @@ void build_info_print_banner(void)
            (unsigned)RF_CODING_RATE,
            RIVR_COMPILER_VER,
            k_fabric,
-           k_sim);
+           k_sim,
+           k_sensors);
     fflush(stdout);
 }
 

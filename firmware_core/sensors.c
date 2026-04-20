@@ -226,8 +226,13 @@ void sensors_tick(uint32_t now_ms, uint32_t node_id, uint16_t net_id)
 
 #if RIVR_FEATURE_DS18B20
         /* Start conversion — result arrives ~800 ms later via ds18b20_tick(). */
-        ds18b20_start_conversion(&s_ds_ctx, now_ms);
-        s_ds18b20_pending = true;
+        if (ds18b20_start_conversion(&s_ds_ctx, now_ms)) {
+            s_ds18b20_pending = true;
+        } else {
+            /* No sensor present or reset failed — send AM2302/VBAT immediately. */
+            s_ds18b20_pending = false;
+            send_bundle();
+        }
 #else
         /* No async sensor — send the bundle immediately. */
         send_bundle();
@@ -238,11 +243,17 @@ void sensors_tick(uint32_t now_ms, uint32_t node_id, uint16_t net_id)
 #if RIVR_FEATURE_DS18B20
     ds18b20_tick(&s_ds_ctx, now_ms);
 
-    if (s_ds18b20_pending && ds18b20_ready(&s_ds_ctx)) {
-        bundle_append(SENSOR_ID_DS18B20_TEMP,
-                      ds18b20_read_celsius_x100(&s_ds_ctx),
-                      UNIT_CELSIUS);
-        send_bundle();
+    if (s_ds18b20_pending) {
+        if (ds18b20_ready(&s_ds_ctx)) {
+            bundle_append(SENSOR_ID_DS18B20_TEMP,
+                          ds18b20_read_celsius_x100(&s_ds_ctx),
+                          UNIT_CELSIUS);
+            send_bundle();
+        } else if (s_ds_ctx.state == DS18B20_STATE_ERROR) {
+            /* Conversion or scratchpad readback failed — send without DS18B20. */
+            ESP_LOGW(TAG, "DS18B20 error — sending bundle without temperature");
+            send_bundle();
+        }
     }
 #endif
 
