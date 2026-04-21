@@ -58,7 +58,13 @@ void rivr_policy_init(void)
     g_policy_params.chat_throttle_ms   = RIVR_PARAM_CHAT_THROTTLE_MS;
     g_policy_params.data_throttle_ms   = RIVR_PARAM_DATA_THROTTLE_MS;
     g_policy_params.duty_percent       = RIVR_PARAM_DUTY_PERCENT;
+#if defined(RIVR_ROLE_GATEWAY) && RIVR_ROLE_GATEWAY
+    g_policy_params.role               = (uint8_t)RIVR_NODE_ROLE_GATEWAY;
+#elif defined(RIVR_ROLE_REPEATER) && RIVR_ROLE_REPEATER
+    g_policy_params.role               = (uint8_t)RIVR_NODE_ROLE_REPEATER;
+#else
     g_policy_params.role               = (uint8_t)RIVR_NODE_ROLE_CLIENT;
+#endif
     /* Zero all metrics counters on (re)init. */
     s_policy_metrics.params_update_count          = 0u;
     s_policy_metrics.last_params_update_uptime_ms = 0u;
