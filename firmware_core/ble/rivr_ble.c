@@ -172,6 +172,13 @@ static void rivr_ble_set_tx_power_max(void)
     if (err != ESP_OK) {
         RIVR_LOGW(TAG, "BLE TX power scan set failed: %s", esp_err_to_name(err));
     }
+
+    /* Also set CONN explicitly — without this Bluedroid falls back to DEFAULT
+     * which happens to be +9 dBm above, but implicit fallback is fragile. */
+    err = esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL_P9);
+    if (err != ESP_OK) {
+        RIVR_LOGW(TAG, "BLE TX power conn set failed: %s", esp_err_to_name(err));
+    }
 }
 
 static void rivr_ble_start_adv(void)

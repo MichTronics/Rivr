@@ -310,7 +310,7 @@ void rivr_ble_init(void)
     Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
     Bluefruit.begin();
     Bluefruit.setName(name);
-    Bluefruit.setTxPower(4);   /* +4 dBm — reasonable for peripheral use */
+    Bluefruit.setTxPower(8);   /* +8 dBm — S140 SoftDevice maximum, matches ESP32 target */
     Bluefruit.Periph.setConnIntervalMS(15u, 30u);
     s_has_bond = rivr_ble_bond_store_has_entries();
 
