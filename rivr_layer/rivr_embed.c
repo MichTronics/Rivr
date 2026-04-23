@@ -90,7 +90,7 @@ int32_t          g_node_lon_e7 = INT32_MIN;  /**< Node position longitude × 1e7
 static char s_nvs_program[RIVR_NVS_PROG_MAX];
 
 /* Buffer for dynamically-generated policy program (from g_policy_params). */
-#define RIVR_POLICY_PROG_MAX  512u
+#define RIVR_POLICY_PROG_MAX  768u
 static char s_policy_buf[RIVR_POLICY_PROG_MAX];
 
 static const char *nvs_load_program(void)

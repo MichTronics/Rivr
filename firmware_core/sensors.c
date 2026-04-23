@@ -31,7 +31,7 @@
 #include "sensor_am2302.h"
 #include "sensor_vbat.h"
 #include "protocol.h"
-#include "iface/rivr_iface_lora.h"
+#include "rivr_layer/rivr_embed.h"
 #include "esp_log.h"
 #include <string.h>
 #include <stdbool.h>
@@ -146,11 +146,24 @@ static void send_bundle(void)
                               buf, (uint8_t)sizeof(buf));
     if (enc <= 0) {
         ESP_LOGW(TAG, "protocol_encode failed (payload_len=%u)", (unsigned)payload_len);
-    } else if (!rivr_iface_lora_send(buf, (size_t)enc)) {
-        ESP_LOGW(TAG, "TX queue full — telemetry bundle dropped");
     } else {
-        ESP_LOGI(TAG, "queued telemetry bundle (%u readings, %u bytes payload)",
-                 (unsigned)s_bundle_count, (unsigned)payload_len);
+        /* Inject the fully-encoded packet into the RIVR engine so the
+         * telemetry_tx pipeline can apply duty-cycle gating before TX. */
+        rivr_event_t ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.stamp.clock    = 0u;  /* mono clock */
+        ev.stamp.tick     = (uint64_t)s_bundle_ts_s * 1000u;
+        ev.v.tag          = RIVR_VAL_BYTES;
+        ev.v.as_bytes.len = (uint16_t)enc;
+        memcpy(ev.v.as_bytes.buf, buf, (size_t)enc);
+        rivr_result_t rc  = rivr_inject_event("telemetry_tx", &ev);
+        if (rc.code != RIVR_OK) {
+            ESP_LOGW(TAG, "rivr_inject_event(telemetry_tx) failed (code=%u)",
+                     (unsigned)rc.code);
+        } else {
+            ESP_LOGI(TAG, "injected telemetry bundle (%u readings, %u bytes payload)",
+                     (unsigned)s_bundle_count, (unsigned)payload_len);
+        }
     }
 
     /* Reset bundle for next trigger */

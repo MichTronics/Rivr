@@ -336,6 +336,7 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
      *
      *   source rf_rx @lmp = rf;
      *   source beacon_tick = timer(<beacon_interval_ms>);
+     *   source telemetry_tx = programmatic;
      *
      *   let chat = rf_rx
      *     |> filter.pkt_type(1)
@@ -346,15 +347,20 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
      *     |> filter.pkt_type(6)
      *     |> throttle.ms(<eff_data_throttle_ms>);
      *
-     *   emit { io.lora.beacon(beacon_tick); }
+     *   let tel_tx = telemetry_tx
+     *     |> budget.toa_us(280000, 0.<duty_percent:02d>, 280000);
      *
-     * Note: io.lora.tx is intentionally absent. Relay (hop increment, TTL
-     * decrement, jitter) is handled exclusively by the C-layer (maybe_relay).
+     *   emit { io.lora.beacon(beacon_tick); }
+     *   emit { io.lora.tx(tel_tx); }
+     *
+     * Note: io.lora.tx for relay traffic is intentionally absent. Relay (hop
+     * increment, TTL decrement, jitter) is handled exclusively by the C-layer
+     * (maybe_relay).  io.lora.tx here gates ORIGINATED telemetry only.
      * budget.toa_us second arg uses 0.<duty_percent_2digit> format so that
      * duty=1 → "0.01", duty=10 → "0.10" (RIVR parser accepts plain decimal).
      *
-     * Max generated length (all params at u32 max, duty=10): ~340 chars.
-     * bufsz must be >= 512. Truncation is detected and handled below.
+     * Max generated length (all params at u32 max, duty=10): ~480 chars.
+     * bufsz must be >= 768. Truncation is detected and handled below.
      */
     uint32_t eff_chat = g_policy_params.chat_throttle_ms;
     uint32_t eff_data = g_policy_params.data_throttle_ms;
@@ -367,6 +373,7 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
     int len = snprintf(buf, bufsz,
         "source rf_rx @lmp = rf;\n"
         "source beacon_tick = timer(%lu);\n"
+        "source telemetry_tx = programmatic;\n"
         "\n"
         "let chat = rf_rx\n"
         "  |> filter.pkt_type(1)\n"
@@ -377,11 +384,16 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
         "  |> filter.pkt_type(6)\n"
         "  |> throttle.ms(%lu);\n"
         "\n"
-        "emit { io.lora.beacon(beacon_tick); }\n",
+        "let tel_tx = telemetry_tx\n"
+        "  |> budget.toa_us(280000, 0.%02u, 280000);\n"
+        "\n"
+        "emit { io.lora.beacon(beacon_tick); }\n"
+        "emit { io.lora.tx(tel_tx); }\n",
         (unsigned long)BEACON_POLL_MS,   /* always 60 000 ms poll; C gate controls TX rate */
         (unsigned)g_policy_params.duty_percent,
         (unsigned long)eff_chat,
-        (unsigned long)eff_data);
+        (unsigned long)eff_data,
+        (unsigned)g_policy_params.duty_percent);
 
     /* Guarantee NUL termination regardless of snprintf outcome. */
     buf[bufsz - 1u] = '\0';
@@ -392,7 +404,7 @@ void rivr_policy_build_program(char *buf, size_t bufsz)
         buf[0] = '\0';
     } else if ((size_t)len >= bufsz) {
         /* Output was truncated — bufsz is too small. This should not happen
-         * with bufsz=512 and validated param values, but guard defensively. */
+         * with bufsz=768 and validated param values, but guard defensively. */
         RIVR_LOGE(TAG, "rivr_policy_build_program: output truncated "
                   "(%d chars needed, buf=%u) — using empty program",
                   len, (unsigned)bufsz);
@@ -539,9 +551,9 @@ void rivr_policy_selftest(void)
 
     /* Role-based program generation: repeater throttle < client throttle */
     {
-        char prog_client[512];
-        char prog_repeater[512];
-        char prog_gateway[512];
+        char prog_client[768];
+        char prog_repeater[768];
+        char prog_gateway[768];
 
         /* Reset to client with known throttle values */
         rivr_policy_init();
@@ -561,7 +573,7 @@ void rivr_policy_selftest(void)
 
         /* Restore to client → program matches original */
         rivr_policy_set_param(RIVR_PARAM_ID_ROLE, (uint32_t)RIVR_NODE_ROLE_CLIENT);
-        char prog_client2[512];
+        char prog_client2[768];
         rivr_policy_build_program(prog_client2, sizeof(prog_client2));
         assert(strcmp(prog_client, prog_client2) == 0);
     }

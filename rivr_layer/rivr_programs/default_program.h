@@ -182,16 +182,21 @@
  * would re-broadcast them with the original hop=0, creating phantom origins
  * and relay loops.
  */
-#define RIVR_DEFAULT_PROGRAM                                    \
-    "source rf_rx @lmp = rf;\n"                                 \
-    "source beacon_tick = timer(60000);\n"                      \
-    "\n"                                                        \
-    "let chat = rf_rx\n"                                        \
-    "  |> filter.pkt_type(1)\n"                                 \
-    "  |> budget.toa_us(280000, 0.10, 280000)\n"               \
-    "  |> throttle.ticks(1);\n"                                 \
-    "\n"                                                        \
-    "emit { io.lora.beacon(beacon_tick); }\n"
+#define RIVR_DEFAULT_PROGRAM                                            \
+    "source rf_rx @lmp = rf;\n"                                         \
+    "source beacon_tick = timer(60000);\n"                              \
+    "source telemetry_tx = programmatic;\n"                             \
+    "\n"                                                                \
+    "let chat = rf_rx\n"                                                \
+    "  |> filter.pkt_type(1)\n"                                         \
+    "  |> budget.toa_us(280000, 0.10, 280000)\n"                        \
+    "  |> throttle.ticks(1);\n"                                         \
+    "\n"                                                                \
+    "let tel_tx = telemetry_tx\n"                                       \
+    "  |> budget.toa_us(280000, 0.10, 280000);\n"                       \
+    "\n"                                                                \
+    "emit { io.lora.beacon(beacon_tick); }\n"                           \
+    "emit { io.lora.tx(tel_tx); }\n"
 
 /**
  * Proof-of-life program used when RIVR_SIM_MODE is defined.
