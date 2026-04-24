@@ -73,6 +73,7 @@
 #include "../firmware_core/rivr_metrics.h"
 #include "../firmware_core/dutycycle.h"
 #include "../firmware_core/rivr_policy.h"
+#include "../firmware_core/sensors.h"
 #include "../firmware_core/routing_stats.h"
 #include "../firmware_core/ble/rivr_ble.h"
 
@@ -291,6 +292,7 @@ static void cli_handle_line(void)
                "  rtstats               routing pipeline telemetry snapshot (@RST JSON block)\r\n"
                "  set callsign <CS>     set and persist callsign (1-11 chars: A-Z a-z 0-9 -)\r\n"
                "  set netid <HEX>       set and persist network ID (hex 0..FFFF)\r\n"
+               "  set sensor <tx_ms> <min_dlt_ms> <d_temp> <d_rh> <d_vbat>  set sensor TX config\r\n"
                "  pos <lat> <lon>       set node position (decimal degrees, e.g. 52.3702 4.8952)\r\n"
                "  pos clear             clear stored node position\r\n"
                "  log <debug|metrics|silent>  set log verbosity\r\n"
@@ -371,6 +373,56 @@ static void cli_handle_line(void)
             printf("WARN: NVS write failed – net ID updated for this session only\r\n");
         } else {
             printf("OK net ID set to 0x%04X\r\n", (unsigned)g_net_id);
+        }
+        fflush(stdout);
+        return;
+    }
+
+    /* ── "set sensor <tx_ms> <min_dlt_ms> <d_temp> <d_rh> <d_vbat>" ── */
+    if (strncmp(p, "set sensor", 10u) == 0 && (p[10] == ' ' || p[10] == '\0')) {
+        char *arg = p + 10;
+        while (*arg == ' ') { arg++; }
+        char *end = NULL;
+        unsigned long tx_ms = strtoul(arg, &end, 10);
+        if (end == arg || *end == '\0' || tx_ms < 5000UL) {
+            printf("ERR: usage: set sensor <tx_ms> <min_dlt_ms> <d_temp> <d_rh> <d_vbat>\r\n"
+                   "     tx_ms >= 5000, min_dlt_ms >= 1000, d_temp/d_rh/d_vbat in raw units\r\n");
+            fflush(stdout);
+            return;
+        }
+        arg = end; while (*arg == ' ') { arg++; }
+        unsigned long min_dlt = strtoul(arg, &end, 10);
+        if (end == arg || *end == '\0' || min_dlt < 1000UL) {
+            printf("ERR: min_dlt_ms must be >= 1000\r\n"); fflush(stdout); return;
+        }
+        arg = end; while (*arg == ' ') { arg++; }
+        unsigned long d_temp = strtoul(arg, &end, 10);
+        if (end == arg || *end == '\0') {
+            printf("ERR: missing d_temp\r\n"); fflush(stdout); return;
+        }
+        arg = end; while (*arg == ' ') { arg++; }
+        unsigned long d_rh = strtoul(arg, &end, 10);
+        if (end == arg || *end == '\0') {
+            printf("ERR: missing d_rh\r\n"); fflush(stdout); return;
+        }
+        arg = end; while (*arg == ' ') { arg++; }
+        unsigned long d_vbat = strtoul(arg, &end, 10);
+        if (end == arg) {
+            printf("ERR: missing d_vbat\r\n"); fflush(stdout); return;
+        }
+        sensors_config_t cfg = {
+            .tx_ms        = (uint32_t)tx_ms,
+            .min_delta_ms = (uint32_t)min_dlt,
+            .delta_temp   = (uint16_t)d_temp,
+            .delta_rh     = (uint16_t)d_rh,
+            .delta_vbat   = (uint16_t)d_vbat,
+        };
+        sensors_set_config(&cfg);
+        if (!sensors_nvs_save()) {
+            printf("WARN: NVS write failed – sensor config updated for this session only\r\n");
+        } else {
+            printf("OK sensor config: tx_ms=%lu min_dlt_ms=%lu d_temp=%lu d_rh=%lu d_vbat=%lu\r\n",
+                   tx_ms, min_dlt, d_temp, d_rh, d_vbat);
         }
         fflush(stdout);
         return;
