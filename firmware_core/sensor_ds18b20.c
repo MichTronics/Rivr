@@ -41,7 +41,16 @@
 /* 1-Wire ROM commands */
 #define OW_CMD_SKIP_ROM     0xCCu
 #define OW_CMD_CONVERT_T    0x44u
-#define OW_CMD_READ_SCRATCH 0xBEu
+#define OW_CMD_READ_SCRATCH  0xBEu
+#define OW_CMD_WRITE_SCRATCH 0x4Eu
+
+/* Configuration register bits[6:5] select resolution:
+ *   0x1F = 9-bit  (0.5°C   steps, ~94 ms)   ← common EEPROM default
+ *   0x3F = 10-bit (0.25°C  steps, ~188 ms)
+ *   0x5F = 11-bit (0.125°C steps, ~375 ms)
+ *   0x7F = 12-bit (0.0625°C steps, ~750 ms) ← driver decode assumes this
+ */
+#define DS18B20_CFG_12BIT    0x7Fu
 
 /* ── Low-level 1-Wire primitives ─────────────────────────────────────────── */
 
@@ -156,7 +165,22 @@ void ds18b20_init(ds18b20_ctx_t *ctx, int gpio)
     gpio_config(&cfg);
     gpio_set_level(gpio, 1);   /* release bus */
 
-    ESP_LOGI(TAG, "init GPIO%d", gpio);
+    /* Force 12-bit resolution via Write Scratchpad.
+     * Without this the sensor uses its EEPROM default — often 9-bit (0.5°C
+     * steps) — which causes a blocky staircase in charts.  The driver decode
+     * formula (raw * 25 / 4) assumes 12-bit; setting it here makes them match.
+     * Conversion time at 12-bit is ~750 ms; the 800 ms wait in ds18b20_tick()
+     * already covers this. */
+    if (ow_reset(gpio)) {
+        ow_write_byte(gpio, OW_CMD_SKIP_ROM);
+        ow_write_byte(gpio, OW_CMD_WRITE_SCRATCH);
+        ow_write_byte(gpio, 0x00u);           /* TH alarm — not used */
+        ow_write_byte(gpio, 0x00u);           /* TL alarm — not used */
+        ow_write_byte(gpio, DS18B20_CFG_12BIT);
+        ESP_LOGI(TAG, "init GPIO%d — resolution set to 12-bit", gpio);
+    } else {
+        ESP_LOGW(TAG, "init GPIO%d — no device detected", gpio);
+    }
 }
 
 bool ds18b20_start_conversion(ds18b20_ctx_t *ctx, uint32_t now_ms)

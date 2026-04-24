@@ -16,6 +16,7 @@
 #include "../routing.h"
 #include "../rivr_log.h"
 #include "../rivr_metrics.h"
+#include "../sensors.h"
 #include "../timebase.h"
 #include "rivr_ble.h"
 #include "rivr_ble_service.h"
@@ -37,6 +38,9 @@ enum {
     RIVR_CP_CMD_GET_NEIGHBORS   = 0x04u,
     RIVR_CP_CMD_SET_POSITION    = 0x05u,  /* payload: lat_e7 i32 LE, lon_e7 i32 LE */
     RIVR_CP_CMD_CLEAR_POSITION  = 0x06u,  /* no payload */
+    RIVR_CP_CMD_SET_NETID       = 0x07u,  /* payload: net_id u16 LE */
+    RIVR_CP_CMD_SET_SENSOR_CFG  = 0x08u,  /* payload: tx_ms u32, min_dlt_ms u32,
+                                             delta_temp u16, delta_rh u16, delta_vbat u16 (14 bytes) */
 };
 
 enum {
@@ -259,6 +263,44 @@ static void cp_handle_set_callsign(const uint8_t *payload, uint8_t payload_len)
     cp_send_ok(RIVR_CP_CMD_SET_CALLSIGN);
 }
 
+static void cp_handle_set_netid(const uint8_t *payload, uint8_t payload_len)
+{
+    if (!payload || payload_len < 2u) {
+        cp_send_err(RIVR_CP_CMD_SET_NETID, "bad payload");
+        return;
+    }
+    uint16_t nid = (uint16_t)payload[0] | ((uint16_t)payload[1] << 8);
+    g_net_id = nid;
+    if (!rivr_nvs_store_identity(g_callsign, g_net_id)) {
+        cp_send_err(RIVR_CP_CMD_SET_NETID, "persist failed");
+        return;
+    }
+    cp_send_ok(RIVR_CP_CMD_SET_NETID);
+}
+
+static void cp_handle_set_sensor_cfg(const uint8_t *payload, uint8_t payload_len)
+{
+    /* Payload: tx_ms u32 LE (4) | min_delta_ms u32 LE (4) |
+     *          delta_temp u16 LE (2) | delta_rh u16 LE (2) | delta_vbat u16 LE (2)
+     * Total: 14 bytes. */
+    if (!payload || payload_len < 14u) {
+        cp_send_err(RIVR_CP_CMD_SET_SENSOR_CFG, "bad payload");
+        return;
+    }
+    sensors_config_t cfg;
+    memcpy(&cfg.tx_ms,        &payload[0],  4u);
+    memcpy(&cfg.min_delta_ms, &payload[4],  4u);
+    memcpy(&cfg.delta_temp,   &payload[8],  2u);
+    memcpy(&cfg.delta_rh,     &payload[10], 2u);
+    memcpy(&cfg.delta_vbat,   &payload[12], 2u);
+    sensors_set_config(&cfg);
+    if (!sensors_nvs_save()) {
+        cp_send_err(RIVR_CP_CMD_SET_SENSOR_CFG, "persist failed");
+        return;
+    }
+    cp_send_ok(RIVR_CP_CMD_SET_SENSOR_CFG);
+}
+
 static void cp_handle_get_neighbors(void)
 {
     uint32_t now_ms = tb_millis();
@@ -378,6 +420,22 @@ void rivr_ble_companion_tick(void)
                 break;
             }
             cp_handle_get_neighbors();
+            break;
+
+        case RIVR_CP_CMD_SET_NETID:
+            if (!s_session_active) {
+                cp_send_err(cmd, "app start required");
+                break;
+            }
+            cp_handle_set_netid(payload, payload_len);
+            break;
+
+        case RIVR_CP_CMD_SET_SENSOR_CFG:
+            if (!s_session_active) {
+                cp_send_err(cmd, "app start required");
+                break;
+            }
+            cp_handle_set_sensor_cfg(payload, payload_len);
             break;
 
         default:

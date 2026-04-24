@@ -43,6 +43,45 @@ void sensors_init(void);
  */
 void sensors_tick(uint32_t now_ms, uint32_t node_id, uint16_t net_id);
 
+/**
+ * @brief Runtime sensor transmit policy — all fields configurable at runtime.
+ *
+ * Compile-time defaults are loaded first; NVS overrides on boot; BLE command
+ * RIVR_CP_CMD_SET_SENSOR_CONFIG (0x08) can update fields at any time and
+ * optionally persist them to NVS.
+ */
+typedef struct {
+    uint32_t tx_ms;          /**< Heartbeat interval (ms).         Default 300000. */
+    uint32_t min_delta_ms;   /**< Min gap between delta TXes (ms). Default 30000.  */
+    uint16_t delta_temp;     /**< Temp change to trigger (°C×100). Default 50.     */
+    uint16_t delta_rh;       /**< RH change to trigger (%×100).    Default 100.    */
+    uint16_t delta_vbat;     /**< VBAT change to trigger (mV).     Default 100.    */
+} sensors_config_t;
+
+/**
+ * @brief Load sensor config from NVS (if available) or apply compile-time defaults.
+ * Call once, after NVS is initialised, before sensors_init().
+ */
+void sensors_nvs_load(void);
+
+/**
+ * @brief Persist current sensor config to NVS.
+ * @return true on success, false if NVS write fails.
+ */
+bool sensors_nvs_save(void);
+
+/**
+ * @brief Read current sensor transmit policy.
+ */
+sensors_config_t sensors_get_config(void);
+
+/**
+ * @brief Apply new sensor transmit policy at runtime.
+ * Changes take effect on the next sensors_tick() call.
+ * @param cfg  New policy to apply (all fields validated).
+ */
+void sensors_set_config(const sensors_config_t *cfg);
+
 #ifdef __cplusplus
 }
 #endif

@@ -757,6 +757,7 @@ void app_main(void)
 
     load_node_identity();
     rivr_subsystems_init();
+    sensors_nvs_load();
     sensors_init();
     build_info_print_banner();
     rivr_role_init();
