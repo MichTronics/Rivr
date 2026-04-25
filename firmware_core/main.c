@@ -1052,6 +1052,10 @@ void app_main(void)
 #endif
             }
 #endif /* any sensor */
+            /* ── GPS / Position page (NVS-sourced when no live GPS) ── */
+            disp.gps_lat_e7  = g_node_lat_e7;
+            disp.gps_lon_e7  = g_node_lon_e7;
+            disp.gps_from_nvs = true;  /* live GPS not yet supported */
             display_post_stats(&disp);
         }
 #endif

@@ -24,6 +24,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
@@ -462,6 +463,39 @@ static void render_page_neighbors(const display_stats_t *s)
     }
 }
 
+static void render_page_gps(const display_stats_t *s)
+{
+    char buf[22];
+
+    fb_str(0u, 0u, "GPS / POSITION");
+    fb_hline(1u);
+
+    if (s->gps_lat_e7 == INT32_MIN || s->gps_lon_e7 == INT32_MIN) {
+        fb_str(1u, 3u, "no position set");
+        return;
+    }
+
+    /* abs values — safe: valid positions never reach INT32_MIN */
+    int32_t alat = (s->gps_lat_e7 < 0) ? -s->gps_lat_e7 : s->gps_lat_e7;
+    int32_t alon = (s->gps_lon_e7 < 0) ? -s->gps_lon_e7 : s->gps_lon_e7;
+
+    /* lat/lon × 1e7 → degrees + 5 decimal places */
+    snprintf(buf, sizeof(buf), "LAT %c%ld.%05ld",
+             (s->gps_lat_e7 >= 0) ? '+' : '-',
+             (long)(alat / 10000000L),
+             (long)((alat % 10000000L) / 100L));
+    fb_str(0u, 2u, buf);
+
+    snprintf(buf, sizeof(buf), "LON %c%ld.%05ld",
+             (s->gps_lon_e7 >= 0) ? '+' : '-',
+             (long)(alon / 10000000L),
+             (long)((alon % 10000000L) / 100L));
+    fb_str(0u, 3u, buf);
+
+    snprintf(buf, sizeof(buf), "SRC: %s", s->gps_from_nvs ? "NVS" : "GPS");
+    fb_str(0u, 5u, buf);
+}
+
 #if DISPLAY_HAS_SENSORS
 static void render_page_sensors(const display_stats_t *s)
 {
@@ -735,6 +769,7 @@ static void display_update(const display_stats_t *stats)
         case 3u: render_page_dutycycle(stats);  break;
         case 4u: render_page_vm(stats);         break;
         case 5u: render_page_neighbors(stats);  break;
+        case DISP_PAGE_GPS: render_page_gps(stats); break;
 #if DISPLAY_HAS_SENSORS
         case DISP_PAGE_SENSORS: render_page_sensors(stats); break;
 #endif

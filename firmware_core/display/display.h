@@ -100,13 +100,15 @@ extern "C" {
 #  define DISPLAY_FABRIC_PAGES 0u
 #endif
 
-/** Total pages: 6 base + optional sensor page + optional fabric page. */
-#define DISPLAY_PAGES         (6u + DISPLAY_SENSOR_PAGES + DISPLAY_FABRIC_PAGES)
+/** Total pages: 6 base + GPS page + optional sensor page + optional fabric page. */
+#define DISPLAY_PAGES         (7u + DISPLAY_SENSOR_PAGES + DISPLAY_FABRIC_PAGES)
 
+/** Index of the GPS / position page (always present). */
+#define DISP_PAGE_GPS         6u
 /** Index of the sensor page (only valid when DISPLAY_HAS_SENSORS). */
-#define DISP_PAGE_SENSORS     6u
+#define DISP_PAGE_SENSORS     7u
 /** Index of the fabric page (only valid when DISPLAY_HAS_FABRIC). */
-#define DISP_PAGE_FABRIC      (6u + DISPLAY_SENSOR_PAGES)
+#define DISP_PAGE_FABRIC      (7u + DISPLAY_SENSOR_PAGES)
 
 /** Number of neighbour slots carried in the stats snapshot for page 5. */
 #define DISPLAY_NEIGHBOR_MAX    3u
@@ -182,6 +184,11 @@ typedef struct {
     int32_t sensor_am2302_temp_x100;   /**< AM2302 temperature (°C × 100)               */
     bool    sensor_vbat_valid;          /**< true when a VBAT reading is available       */
     int32_t sensor_vbat_mv;            /**< Battery voltage (mV)                        */
+
+    /* GPS / Position page (loaded from NVS or live GPS; INT32_MIN = not set) */
+    int32_t  gps_lat_e7;    /**< Latitude × 1e7; INT32_MIN = not set          */
+    int32_t  gps_lon_e7;    /**< Longitude × 1e7; INT32_MIN = not set         */
+    bool     gps_from_nvs;  /**< true = sourced from NVS, false = live GPS    */
 
     /* Optional page – Fabric debug (from rivr_fabric_get_debug; zero when RIVR_FABRIC_REPEATER=0) */
     uint8_t  fabric_score;              /**< Congestion score 0..100                    */
