@@ -18,6 +18,7 @@
 
 #pragma once
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,6 +82,27 @@ sensors_config_t sensors_get_config(void);
  * @param cfg  New policy to apply (all fields validated).
  */
 void sensors_set_config(const sensors_config_t *cfg);
+
+/**
+ * @brief Last-known readings from all enabled sensors.
+ *
+ * Fields are INT32_MIN when no reading has been taken yet (e.g. DS18B20
+ * conversion not yet complete, sensor not enabled at compile time).
+ */
+typedef struct {
+    int32_t ds18b20_temp_x100;  /**< DS18B20 temperature  (°C × 100)  */
+    int32_t am2302_rh_x100;     /**< AM2302 humidity      (% RH × 100) */
+    int32_t am2302_temp_x100;   /**< AM2302 temperature   (°C × 100)  */
+    int32_t vbat_mv;            /**< Battery voltage      (mV)         */
+} sensors_last_t;
+
+/**
+ * @brief Return the most recent readings from all enabled sensors.
+ *
+ * Any field that has not yet received a reading is set to INT32_MIN.
+ * Safe to call from the main loop on every iteration — no I/O, pure state read.
+ */
+sensors_last_t sensors_get_last(void);
 
 #ifdef __cplusplus
 }

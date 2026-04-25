@@ -311,6 +311,64 @@ static void render_page_neighbors(const display_stats_t *s)
     }
 }
 
+#if DISPLAY_HAS_SENSORS
+static void render_page_sensors(const display_stats_t *s)
+{
+    char buf[32];
+
+    fb_str(0u, 0u, "SENSORS");
+    fb_hline(1u);
+
+    uint8_t row = 2u;
+
+#if RIVR_FEATURE_DS18B20
+    if (s->sensor_ds18b20_valid) {
+        int32_t v = s->sensor_ds18b20_temp_x100;
+        bool ng = (v < 0); int32_t av = ng ? -v : v;
+        snprintf(buf, sizeof(buf), "DS18B20 %s%ld.%02ld C",
+                 ng ? "-" : "", (long)(av / 100), (long)(av % 100));
+    } else {
+        snprintf(buf, sizeof(buf), "DS18B20 ---");
+    }
+    if (row < 8u) { fb_str(0u, row++, buf); }
+#endif
+
+#if RIVR_FEATURE_AM2302
+    if (s->sensor_am2302_rh_valid) {
+        snprintf(buf, sizeof(buf), "RH   %lu.%02lu %%",
+                 (unsigned long)(s->sensor_am2302_rh_x100 / 100u),
+                 (unsigned long)(s->sensor_am2302_rh_x100 % 100u));
+    } else {
+        snprintf(buf, sizeof(buf), "RH   ---");
+    }
+    if (row < 8u) { fb_str(0u, row++, buf); }
+
+    if (s->sensor_am2302_temp_valid) {
+        int32_t t = s->sensor_am2302_temp_x100;
+        bool ng = (t < 0); int32_t at = ng ? -t : t;
+        snprintf(buf, sizeof(buf), "TEMP %s%ld.%02ld C",
+                 ng ? "-" : "", (long)(at / 100), (long)(at % 100));
+    } else {
+        snprintf(buf, sizeof(buf), "TEMP ---");
+    }
+    if (row < 8u) { fb_str(0u, row++, buf); }
+#endif
+
+#if RIVR_FEATURE_VBAT
+    if (s->sensor_vbat_valid) {
+        snprintf(buf, sizeof(buf), "VBAT %ldmV", (long)s->sensor_vbat_mv);
+    } else {
+        snprintf(buf, sizeof(buf), "VBAT ---");
+    }
+    if (row < 8u) { fb_str(0u, row++, buf); }
+#endif
+
+    (void)row;
+    (void)s;
+}
+#endif /* DISPLAY_HAS_SENSORS */
+
+#if DISPLAY_HAS_FABRIC
 static void render_page_fabric(const display_stats_t *s)
 {
     char buf[22];
@@ -339,6 +397,7 @@ static void render_page_fabric(const display_stats_t *s)
              (unsigned long)s->fabric_relay_delay);
     fb_str(0u, 6u, buf);
 }
+#endif /* DISPLAY_HAS_FABRIC */
 
 static void render_boot(const display_stats_t *s)
 {
@@ -434,7 +493,12 @@ static void display_update_internal(const display_stats_t *stats)
         case 3u: render_page_dutycycle(stats); break;
         case 4u: render_page_vm(stats); break;
         case 5u: render_page_neighbors(stats); break;
-        case 6u: render_page_fabric(stats); break;
+#if DISPLAY_HAS_SENSORS
+        case DISP_PAGE_SENSORS: render_page_sensors(stats); break;
+#endif
+#if DISPLAY_HAS_FABRIC
+        case DISP_PAGE_FABRIC:  render_page_fabric(stats);  break;
+#endif
         default: render_page_overview(stats); break;
     }
 

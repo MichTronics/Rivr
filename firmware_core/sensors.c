@@ -126,7 +126,9 @@ static bool s_started = false;
 static int32_t s_last_ds18b20  = INT32_MIN;
 static int32_t s_last_am2302_rh   = INT32_MIN;
 static int32_t s_last_am2302_temp = INT32_MIN;
+#if RIVR_FEATURE_VBAT
 static int32_t s_last_vbat        = INT32_MIN;
+#endif
 
 /* Helper: absolute difference clamped to positive. */
 static inline int32_t abs_diff(int32_t a, int32_t b)
@@ -319,6 +321,26 @@ void sensors_set_config(const sensors_config_t *cfg)
     ESP_LOGI(TAG, "sensor config updated (tx_ms=%lu min_dlt=%lu d_temp=%u d_rh=%u d_vbat=%u)",
              (unsigned long)s_cfg.tx_ms, (unsigned long)s_cfg.min_delta_ms,
              (unsigned)s_cfg.delta_temp, (unsigned)s_cfg.delta_rh, (unsigned)s_cfg.delta_vbat);
+}
+
+sensors_last_t sensors_get_last(void)
+{
+    sensors_last_t r;
+    r.ds18b20_temp_x100 = INT32_MIN;
+    r.am2302_rh_x100    = INT32_MIN;
+    r.am2302_temp_x100  = INT32_MIN;
+    r.vbat_mv           = INT32_MIN;
+#if RIVR_FEATURE_DS18B20
+    r.ds18b20_temp_x100 = s_last_ds18b20;
+#endif
+#if RIVR_FEATURE_AM2302
+    r.am2302_rh_x100   = s_last_am2302_rh;
+    r.am2302_temp_x100 = s_last_am2302_temp;
+#endif
+#if RIVR_FEATURE_VBAT
+    r.vbat_mv = s_last_vbat;
+#endif
+    return r;
 }
 
 void sensors_tick(uint32_t now_ms, uint32_t node_id, uint16_t net_id)

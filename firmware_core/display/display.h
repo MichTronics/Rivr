@@ -65,10 +65,50 @@ extern "C" {
 /** Auto-rotate to the next page after this many milliseconds. */
 #define DISPLAY_PAGE_ROTATE_MS  3000u
 
-/** Total number of display pages. */
-#define DISPLAY_PAGES           7u
+/* ── Optional-page feature guards ──────────────────────────────────────────
+ *
+ * These are normally set by platformio build flags (-DRIVR_FABRIC_REPEATER=1
+ * etc.).  The #ifndef defaults ensure display.h is safe to include from any
+ * translation unit that does not set them.
+ * ─────────────────────────────────────────────────────────────────────────── */
+#ifndef RIVR_FABRIC_REPEATER
+#  define RIVR_FABRIC_REPEATER 0
+#endif
+#ifndef RIVR_FEATURE_DS18B20
+#  define RIVR_FEATURE_DS18B20 0
+#endif
+#ifndef RIVR_FEATURE_AM2302
+#  define RIVR_FEATURE_AM2302  0
+#endif
+#ifndef RIVR_FEATURE_VBAT
+#  define RIVR_FEATURE_VBAT    0
+#endif
 
-/** Number of neighbour slots carried in the stats snapshot for page 6. */
+#if RIVR_FEATURE_DS18B20 || RIVR_FEATURE_AM2302 || RIVR_FEATURE_VBAT
+#  define DISPLAY_HAS_SENSORS  1
+#  define DISPLAY_SENSOR_PAGES 1u
+#else
+#  define DISPLAY_HAS_SENSORS  0
+#  define DISPLAY_SENSOR_PAGES 0u
+#endif
+
+#if RIVR_FABRIC_REPEATER
+#  define DISPLAY_HAS_FABRIC   1
+#  define DISPLAY_FABRIC_PAGES 1u
+#else
+#  define DISPLAY_HAS_FABRIC   0
+#  define DISPLAY_FABRIC_PAGES 0u
+#endif
+
+/** Total pages: 6 base + optional sensor page + optional fabric page. */
+#define DISPLAY_PAGES         (6u + DISPLAY_SENSOR_PAGES + DISPLAY_FABRIC_PAGES)
+
+/** Index of the sensor page (only valid when DISPLAY_HAS_SENSORS). */
+#define DISP_PAGE_SENSORS     6u
+/** Index of the fabric page (only valid when DISPLAY_HAS_FABRIC). */
+#define DISP_PAGE_FABRIC      (6u + DISPLAY_SENSOR_PAGES)
+
+/** Number of neighbour slots carried in the stats snapshot for page 5. */
 #define DISPLAY_NEIGHBOR_MAX    3u
 
 /* ── I2C pin defaults (can be overridden by compiler flags) ─────────────── */
@@ -133,7 +173,17 @@ typedef struct {
         bool     valid;        /**< true when slot contains live data         */
     } neighbors[DISPLAY_NEIGHBOR_MAX];
 
-    /* Page 6 – Fabric debug (from rivr_fabric_get_debug; zero when RIVR_FABRIC_REPEATER=0) */
+    /* Optional page – Sensors (all zero when DISPLAY_HAS_SENSORS=0) */
+    bool    sensor_ds18b20_valid;       /**< true when a DS18B20 reading is available   */
+    int32_t sensor_ds18b20_temp_x100;   /**< DS18B20 temperature (°C × 100)             */
+    bool    sensor_am2302_rh_valid;     /**< true when an AM2302 RH reading is available */
+    int32_t sensor_am2302_rh_x100;     /**< AM2302 relative humidity (% RH × 100)      */
+    bool    sensor_am2302_temp_valid;   /**< true when an AM2302 temp reading is available */
+    int32_t sensor_am2302_temp_x100;   /**< AM2302 temperature (°C × 100)               */
+    bool    sensor_vbat_valid;          /**< true when a VBAT reading is available       */
+    int32_t sensor_vbat_mv;            /**< Battery voltage (mV)                        */
+
+    /* Optional page – Fabric debug (from rivr_fabric_get_debug; zero when RIVR_FABRIC_REPEATER=0) */
     uint8_t  fabric_score;              /**< Congestion score 0..100                    */
     uint16_t fabric_rx_per_s_x100;      /**< RX rate × 100  (e.g. 150 = 1.50/s)         */
     uint16_t fabric_blocked_per_s_x100; /**< DC-blocked rate × 100                      */

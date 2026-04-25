@@ -1032,6 +1032,26 @@ void app_main(void)
                 disp.fabric_relay_drop         = fab_dbg.relay_drop_total;
                 disp.fabric_relay_delay        = fab_dbg.relay_delay_total;
             }
+            /* ── Sensor page ── */
+#if RIVR_FEATURE_DS18B20 || RIVR_FEATURE_AM2302 || RIVR_FEATURE_VBAT
+            {
+                sensors_last_t sl = sensors_get_last();
+#if RIVR_FEATURE_DS18B20
+                disp.sensor_ds18b20_valid     = (sl.ds18b20_temp_x100 != INT32_MIN);
+                disp.sensor_ds18b20_temp_x100 = sl.ds18b20_temp_x100;
+#endif
+#if RIVR_FEATURE_AM2302
+                disp.sensor_am2302_rh_valid   = (sl.am2302_rh_x100 != INT32_MIN);
+                disp.sensor_am2302_rh_x100    = sl.am2302_rh_x100;
+                disp.sensor_am2302_temp_valid = (sl.am2302_temp_x100 != INT32_MIN);
+                disp.sensor_am2302_temp_x100  = sl.am2302_temp_x100;
+#endif
+#if RIVR_FEATURE_VBAT
+                disp.sensor_vbat_valid = (sl.vbat_mv != INT32_MIN);
+                disp.sensor_vbat_mv    = sl.vbat_mv;
+#endif
+            }
+#endif /* any sensor */
             display_post_stats(&disp);
         }
 #endif
