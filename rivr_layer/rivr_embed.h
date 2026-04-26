@@ -315,6 +315,10 @@ extern pending_queue_t  g_pending_queue;
 /** ACK-and-retry table — initialised in BSS; ticked in sources_rf_rx_drain(). */
 extern retry_table_t g_retry_table;
 
+#include "../firmware_core/send_queue.h"
+/** Originated-frame outbox — absorbs user-originated bursts before rf_tx_queue. */
+extern send_queue_t g_send_queue;
+
 /**
  * This node's unique 32-bit ID.
  * In production: derive from ESP32 MAC (e.g. esp_efuse_mac_get_default()).

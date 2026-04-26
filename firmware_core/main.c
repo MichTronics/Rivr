@@ -61,6 +61,7 @@
 #include "firmware_core/routing.h"
 #include "firmware_core/route_cache.h"
 #include "firmware_core/pending_queue.h"
+#include "firmware_core/send_queue.h"
 #include "firmware_core/rivr_fabric.h"
 #include "firmware_core/rivr_metrics.h"
 #include "firmware_core/rivr_log.h"
@@ -81,6 +82,12 @@
 #define TAG              "MAIN"
 #define TX_DRAIN_LIMIT   2u     /**< Max TX frames sent per main-loop iteration */
 #define STATS_INTERVAL_MS 30000u /**< Print stats every 30 s                   */
+
+/* ── Originated-frame outbox ─────────────────────────────────────────────── *
+ * Absorbs bursts of CLI-originated frames before they hit rf_tx_queue.      *
+ * Defined here; exported as extern via rivr_layer/rivr_embed.h so that      *
+ * rivr_cli.c can call send_queue_enqueue() without extra coupling.           */
+send_queue_t g_send_queue;
 
 /** Compile-time node callsign — override with -DRIVR_CALLSIGN="N0CALL" */
 #ifndef RIVR_CALLSIGN
@@ -606,6 +613,7 @@ static void hardware_and_timing_init(void)
     /* Timeout is set by CONFIG_ESP_TASK_WDT_TIMEOUT_S in sdkconfig.defaults. */
     esp_task_wdt_add(NULL);
 #endif
+    send_queue_init(&g_send_queue);
 }
 
 #if !RIVR_SIM_MODE
@@ -815,6 +823,15 @@ void app_main(void)
 
         /* ─ 1. RIVR processing tick ─ */
         rivr_tick();
+
+        /* ─ 1b. Drain outbox: move buffered originated frames into rf_tx_queue ─ *
+         * Runs after rivr_tick() so that control frames from the engine    *
+         * (beacons, ACKs, ROUTE_REQ) are already in the TX ring before we *
+         * add user messages.  send_queue_tick() pushes at most one frame   *
+         * per iteration to keep the loop bounded.                          */
+#if RIVR_ROLE_CLIENT || RIVR_ROLE_REPEATER || RIVR_ROLE_GATEWAY
+        send_queue_tick(&g_send_queue, &rf_tx_queue, tb_millis());
+#endif
 
         /* ─ 2. TX drain (with duty-cycle gate) ─ */
         tx_drain_loop();
