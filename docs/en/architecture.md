@@ -27,6 +27,10 @@
   │              ├─ beacon_sink_cb()   → rf_tx_queue        │ │
 │  │              └─ usb_print_sink_cb() → printf            │ │
 │  │                                                          │ │
+│  │  send_queue_tick()                                       │ │
+│  │   └─ pop head from send_queue → rb_try_push(rf_tx_queue) │ │
+│  │      (at most 1 frame/iteration; skips if queue empty)   │ │
+│  │                                                          │ │
 │  │  tx_drain_loop()                                         │ │
 │  │   └─ rb_pop(rf_tx_queue) → dutycycle_check() → TX        │ │
 │  └──────────────────────────────────────────────────────────┘ │
@@ -57,6 +61,7 @@
 | `platform_esp32.c` | GPIO, SPI bus, LED initialisation |
 | `ringbuf.h` | Lock-free SPSC ring buffer (ISR-safe) |
 | `protocol.c` | Binary packet encode/decode, CRC-16/CCITT |
+| `send_queue.c` | 16-slot FIFO originated-frame outbox; absorbs CLI-originated bursts before `rf_tx_queue`; evicts entries after `SEND_QUEUE_EXPIRY_MS` (2 min); `send_queue_tick()` drains one frame per main-loop call when `rf_tx_queue` has space; metrics: `sq_dropped`, `sq_expired`, `sq_peak` |
 | `routing.c` | Dedupe cache (LRU ring), TTL decrement, jitter, forward-budget caps, loop-guard relay fingerprint, `pkt_id` split; `routing_next_hop_score()` computes composite RSSI+SNR score for a candidate next-hop peer |
 | `route_cache.c` | Unicast reverse-path cache; `rivr_route_t` (dest, next_hop, metric, hop_count, expires_ms); `route_cache_best_hop()` three-tier next-hop decision: (1) best scored cache entry, (2) `neighbor_best()` direct peer fallback, (3) return false → caller floods; `entry_composite_score()`: metric × hop-weight × age-decay × loss-penalty |
 | `neighbor_table.c` | 16-slot BSS link-quality table; `rivr_neighbor_t` tracks EWMA RSSI/SNR (`rssi_avg`, `snr_avg`), seq-gap loss-rate (`loss_rate`), `last_seen_ms`, and `flags` (`NTABLE_FLAG_DIRECT`, `NTABLE_FLAG_STALE`, `NTABLE_FLAG_BEACON`); API: `neighbor_update()`, `neighbor_find()`, `neighbor_best()`, `neighbor_link_score()`, `neighbor_set_flag()`, `neighbor_table_expire()`; `g_ntable` global exposed via `rivr_embed.h` |
@@ -186,6 +191,7 @@ their time constraints in.
 | BSS (Rust `static mut`) | ~16 KB | `ENGINE_SLOT: MaybeUninit<Engine>` |
 | BSS (C) | configurable | `rf_rx_ringbuf`, `rf_tx_queue` ring buffers |
 | BSS (C) | 2 KB | `s_nvs_program[2048]` — NVS-loaded program text |
+| BSS (C) | ~4.3 KB | `send_queue_t g_send_queue` — originated-frame outbox (16 × 270 B) |
 | Stack (C) | per-call | Decoded frames, `rivr_event_t` temporaries |
 | Flash (C string) | ~512 bytes | Compiled-in RIVR program strings |
 | NVS partition | up to 2 KB | User-pushed RIVR program (`rivr/program`) |
@@ -356,10 +362,11 @@ build_flags =
 |--------|-----------|-------------|
 | `hal/radio_if.c` (vtable pointer) | +4 bytes | +48 bytes |
 | `rivr_panic.c` (RTC crash marker) | +16 bytes RTC | ~200 bytes |
-| `rivr_metrics_t` (2 new fields) | +8 bytes | +60 bytes |
+| `rivr_metrics_t` (2 new fields, Phases 1–12) | +8 bytes | +60 bytes |
 | `rivr_log.h` (compile-time strip) | 0 | 0 (or −2-4 KB at SILENT) |
 | `hal/*.h` (headers, no .c) | 0 | 0 |
-| **Total** | **+28 bytes (+16 RTC)** | **~+308 bytes** |
+| `send_queue_t g_send_queue` (Phase 13) | **+4.3 KB BSS** | ~+460 bytes |
+| **Total** | **~+4.3 KB (+16 RTC)** | **~+768 bytes** |
 
 Measured firmware sizes after hardening:
 - **client_esp32devkit_e22_900**: RAM 11.5% (37,772 / 327,680 B), Flash 31.0% (609,385 / 1,966,080 B)
@@ -754,3 +761,73 @@ that wants to compare peer quality without routing a packet.
 | `route_cache_best_hop()` + score fn | 0 | ~+200 bytes |
 | 2 new metrics fields | +8 bytes | +60 bytes |
 | **Total** | **+232 bytes** | **~+360 bytes** |
+
+---
+
+### Phase 13 — Originated-frame outbox (`send_queue`)
+
+#### Problem
+
+`RF_TX_QUEUE_CAP = 4` (effectively 3 usable slots in the SPSC ring) means that
+if a user sends 5 messages in quick succession the 5th `rb_try_push()` call
+fails and the frame is **silently dropped** with an ERR log line.  The duty
+cycle often cannot drain the queue fast enough between key presses because each
+LoRa frame takes tens of milliseconds on-air.
+
+#### Solution
+
+A FIFO outbox (`firmware_core/send_queue.h/.c`) is inserted between the CLI and
+`rf_tx_queue`.  `cli_enqueue_chat()` and `cli_enqueue_chan_chat()` now call
+`send_queue_enqueue()` instead of `rb_try_push()` directly.  A new
+`send_queue_tick()` call in the main loop — positioned after `rivr_tick()` and
+before `tx_drain_loop()` — drains **one frame per iteration** into
+`rf_tx_queue` whenever there is room.
+
+```
+[user types fast] → send_queue (16 slots, 2 min expiry)
+                         │  (≤1 frame per main-loop tick)
+                         ▼
+                   rf_tx_queue (4 slots)
+                         │
+                   tx_drain_loop → duty-cycle gate → radio TX
+                         │
+                   retry_table (ACK-wait, 3 retries, fallback flood)
+```
+
+Control frames generated by the engine (beacons, ACKs, ROUTE_REQ) bypass the
+outbox and continue to push directly into `rf_tx_queue`, preserving their
+priority.
+
+#### Configuration
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `SEND_QUEUE_SIZE` | 16 | FIFO depth; increase for very chatty clients |
+| `SEND_QUEUE_EXPIRY_MS` | 120 000 (2 min) | Frames older than this are evicted from the head |
+
+#### New metrics
+
+| Field | `@MET` key | Meaning |
+|-------|-----------|---------|
+| `sq_dropped` | `sq_drop` | Originated frame dropped — outbox was full |
+| `sq_expired` | `sq_exp` | Outbox entry evicted because it aged past `SEND_QUEUE_EXPIRY_MS` |
+| `sq_peak` | `sq_peak` | High-water mark of simultaneous entries in the outbox |
+
+#### Delivery note
+
+Broadcast CHAT frames (`dst_id = 0`) have no RF-layer ACK — the outbox
+guarantees frames reach the transmitter but cannot confirm over-the-air
+reception.  For unicast messages the existing retry table provides
+end-to-end delivery confirmation.
+
+#### Memory impact (send_queue)
+
+| Change | RAM delta | Flash delta |
+|--------|-----------|-------------|
+| `send_queue_t g_send_queue` (16 × ~270 B) | **+4.3 KB BSS** | — |
+| `send_queue.c` | 0 | ~+400 bytes |
+| 3 new metrics fields | +12 bytes | +60 bytes |
+| **Total** | **~+4.3 KB** | **~+460 bytes** |
+
+Measured firmware sizes after adding the outbox:
+- **client_esp32devkit_e22_900**: RAM 15.8% (51,768 / 327,680 B), Flash 33.4% (656,337 / 1,966,080 B)

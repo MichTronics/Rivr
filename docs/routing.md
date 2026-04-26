@@ -120,6 +120,40 @@ expire after `RIVR_NEIGHBOR_TIMEOUT_MS` (default 2 minutes).
 
 ---
 
+## Originated-frame outbox (`send_queue`)
+
+The **send queue** (`firmware_core/send_queue.h/.c`) sits between the CLI and
+`rf_tx_queue`.  It absorbs bursts of user-originated frames so that rapid
+consecutive messages are never silently dropped when the 4-slot TX ring is
+full.
+
+```
+[user types fast] → send_queue (16 slots, 2 min expiry)
+                         │  (one frame per main-loop tick, when rf_tx_queue has room)
+                         ▼
+                   rf_tx_queue (4 slots)
+                         │
+                   tx_drain_loop → duty-cycle gate → radio TX
+                         │
+                   retry_table (ACK-wait, 3 retries, fallback flood)
+```
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `SEND_QUEUE_SIZE` | 16 | Outbox FIFO depth |
+| `SEND_QUEUE_EXPIRY_MS` | 120 000 ms (2 min) | Evict unsent messages after this time |
+
+`send_queue_tick()` is called every main-loop iteration after `rivr_tick()`.  It
+pushes at most **one frame per call** into `rf_tx_queue` — control frames
+(beacons, ACKs, ROUTE_REQ) that the engine generates always go directly into
+`rf_tx_queue` and therefore keep priority over buffered user messages.
+
+Broadcast CHAT frames (`dst_id = 0`) have no RF-layer ACK; the outbox guarantees
+they reach the transmitter but cannot confirm over-the-air reception.  For
+unicast delivery the retry table layer provides end-to-end confirmation.
+
+---
+
 ## Pending queue and retry
 
 When a unicast destination is unreachable:
@@ -213,6 +247,9 @@ Key counters from `rivr> metrics` (or `@MET` JSON lines):
 | `route_cache_miss_total` | Cache misses → route discovery |
 | `route_rpl_learn_total` | New routes learned from RPL frames |
 | `neighbor_route_used_total` | Next-hop selected via neighbor score |
+| `sq_dropped` | Originated frames dropped (send_queue full) |
+| `sq_expired` | Originated frames evicted (2 min expiry) |
+| `sq_peak` | High-water mark of send_queue occupancy |
 | `duty_blocked` | TX blocked by duty-cycle gate |
 | `fabric_drop` | Fabric relay suppression drops |
 | `bcn_tx` | Beacon frames transmitted |
@@ -234,6 +271,8 @@ build_flags =
     -DRIVR_MAX_ROUTES=16              ; route cache slots
     -DRIVR_MAX_NEIGHBORS=16           ; neighbor table slots
     -DRIVR_MAX_PENDING=16             ; pending queue slots
+    -DSEND_QUEUE_SIZE=16              ; originated-frame outbox slots
+    -DSEND_QUEUE_EXPIRY_MS=120000     ; outbox expiry (ms)
 ```
 
 ---

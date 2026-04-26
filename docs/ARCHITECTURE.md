@@ -22,6 +22,7 @@ graph TD
             ROUTE["routing.c\nflood forward · TTL · dedupe · jitter"]
             RC["route_cache.c\nreverse-path cache · RSSI scoring"]
             PQ["pending_queue.c\n16-slot unicast hold"]
+            SQ["send_queue.c\n16-slot originated-frame outbox"]
             AT["airtime_sched.c\ntoken-bucket fairness gate"]
             DC["dutycycle.c\nEU868 1% hard cap"]
             NB["neighbor table\nRSSI/SNR/callsign · EWMA · aging"]
@@ -57,6 +58,8 @@ graph TD
         SOURCES --> ENGINE
         ENGINE --> SINKS
         SINKS --> TXQ
+        CLI --> SQ
+        SQ --> TXQ
         TXQ --> DRAIN
         DRAIN --> DC
         DRAIN --> SX
@@ -188,6 +191,7 @@ flowchart TD
 |---|---|---|---|
 | `rf_rx_ringbuf` | 255 × 8 | 1 | ~2 KB |
 | `rf_tx_queue` | 255 × 4 | 1 | ~1 KB |
+| `send_queue_t` | ~270 × 16 | 1 | ~4.3 KB |
 | `dedupe_cache_t` | ~16 × 8 | 1 | ~128 B |
 | `neighbor_table_t` | ~64 × 16 | 1 | ~1 KB |
 | `route_cache_t` | ~40 × 16 | 1 | ~640 B |
@@ -195,7 +199,7 @@ flowchart TD
 | `airtime_ctx_t` | ~12 + 16×12 | 1 | ~216 B |
 | `rivr_fabric_ctx_t` | ~80 | 1 | ~80 B |
 | RIVR engine (Rust) | fixed compile-time | 1 | ~2 KB |
-| **Total** | | | **~12 KB** |
+| **Total** | | | **~16 KB** |
 
 All buffers allocated statically in BSS. `rivr_embed_init()` parses the RIVR source from a stack-allocated cursor — no heap is touched after boot.
 
