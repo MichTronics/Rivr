@@ -104,11 +104,11 @@ static void test_ttl_clamp(void)
     uint32_t now = 5000u;
     uint8_t  clamp;
 
-    /* CHAT cap=5: TTL=7 → TTL_CLAMP, clamped=5 */
-    rivr_pkt_hdr_t h = make_hdr(PKT_CHAT, 7u, 0x3333u);
+    /* CHAT cap=12: TTL=15 → TTL_CLAMP, clamped=12 */
+    rivr_pkt_hdr_t h = make_hdr(PKT_CHAT, 15u, 0x3333u);
     clamp = 99u;
     rivr_policy_verdict_t v = policy_check(&ps, &h, now, &clamp);
-    CHECK(v == RIVR_POLICY_TTL_CLAMP,    "CHAT ttl=7 (cap=5) → TTL_CLAMP");
+    CHECK(v == RIVR_POLICY_TTL_CLAMP,    "CHAT ttl=15 (cap=12) → TTL_CLAMP");
     CHECK(clamp == POLICY_TTL_CHAT,      "clamped_ttl == POLICY_TTL_CHAT");
 
     /* DATA (BULK) cap=2: TTL=5 → TTL_CLAMP, clamped=2 */
