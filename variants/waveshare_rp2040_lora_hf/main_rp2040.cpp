@@ -25,6 +25,7 @@ extern "C" {
 #include "firmware_core/rivr_panic.h"
 #include "firmware_core/rivr_policy.h"
 #include "firmware_core/opfwd_suppress.h"
+#include "firmware_core/send_queue.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
 #include "rivr_layer/rivr_cli.h"
@@ -37,6 +38,9 @@ extern "C" {
 #define TX_DRAIN_LIMIT 2u
 #define STATS_INTERVAL_MS 30000u
 #define USB_GRACE_MS 1500u
+
+/* ── Global originated-message outbox (defined here; extern in rivr_embed.h) */
+send_queue_t g_send_queue;
 
 #ifndef RIVR_RP2040_USB_DEBUG
 #  define RIVR_RP2040_USB_DEBUG 0
@@ -209,6 +213,7 @@ static void rivr_boot(void)
     rivr_fabric_init();
     rivr_embed_init();
     rivr_bus_init();
+    send_queue_init(&g_send_queue);
 
     build_info_print_banner();
 
@@ -269,6 +274,7 @@ void loop(void)
     rivr_tick();
     rivr_ble_tick(tb_millis());
     rivr_ble_companion_tick();
+    send_queue_tick(&g_send_queue, &rf_tx_queue, tb_millis());
 #if !RIVR_RP2040_USB_DEBUG
     tx_drain_loop();
 #endif

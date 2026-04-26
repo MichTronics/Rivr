@@ -56,6 +56,7 @@ extern "C" {
 #include "firmware_core/rivr_panic.h"
 #include "firmware_core/rivr_policy.h"
 #include "firmware_core/opfwd_suppress.h"
+#include "firmware_core/send_queue.h"
 #include "rivr_layer/rivr_embed.h"
 #include "rivr_layer/rivr_sinks.h"
 #include "rivr_layer/rivr_cli.h"
@@ -67,6 +68,9 @@ extern "C" {
 #define TAG              "MAIN"
 #define TX_DRAIN_LIMIT   2u
 #define STATS_INTERVAL_MS 30000u
+
+/* ── Global originated-message outbox (defined here; extern in rivr_embed.h) */
+send_queue_t g_send_queue;
 
 /* ── Compile-time identity defaults ──────────────────────────────────────── */
 #ifndef RIVR_CALLSIGN
@@ -306,6 +310,7 @@ static void rivr_main_task(void *pvParameters)
     rivr_fabric_init();
     rivr_embed_init();
     rivr_bus_init();
+    send_queue_init(&g_send_queue);
 
     /* ── 4. Boot banner ──────────────────────────────────────────────────── */
     build_info_print_banner();
@@ -355,6 +360,9 @@ static void rivr_main_task(void *pvParameters)
 
         /* RIVR processing tick */
         rivr_tick();
+
+        /* Drain originated messages into rf_tx_queue */
+        send_queue_tick(&g_send_queue, &rf_tx_queue, tb_millis());
 
         /* BLE timeout state machine — no-op when RIVR_FEATURE_BLE=0 */
         rivr_ble_tick(tb_millis());
