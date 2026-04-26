@@ -1,6 +1,6 @@
 [package]
 name        = "rivr_host"
-version     = "0.1.0"
+version     = "0.2.0"
 edition     = "2021"
 description = "RIVR host – demos, JSONL replay, and dev tooling"
 

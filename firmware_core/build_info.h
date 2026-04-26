@@ -39,6 +39,8 @@ extern "C" {
 #  define RIVR_BUILD_ENV "unknown"
 #endif
 
+#define RIVR_VERSION_STR "0.2.0"
+
 /* Compiler version string — always available via pre-defined macros */
 #define RIVR_COMPILER_VER \
     "gcc-" __GNUC_STRING__ "." __GNUC_MINOR_STRING__ "." __GNUC_PATCHLEVEL_STRING__

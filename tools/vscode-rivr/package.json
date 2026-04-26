@@ -2,7 +2,7 @@
   "name": "vscode-rivr",
   "displayName": "RIVR",
   "description": "Syntax highlighting, snippets, and build integration for the RIVR stream-policy language.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "rivr",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages"],
