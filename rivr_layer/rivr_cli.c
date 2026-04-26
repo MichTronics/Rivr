@@ -76,6 +76,7 @@
 #include "../firmware_core/sensors.h"
 #include "../firmware_core/routing_stats.h"
 #include "../firmware_core/ble/rivr_ble.h"
+#include "../firmware_core/send_queue.h"
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 
@@ -105,6 +106,9 @@
 
 static char    s_buf[CLI_LINE_MAX];   /**< Current input line buffer          */
 static uint8_t s_pos = 0u;           /**< Write cursor inside s_buf          */
+
+/* Outbox queue — absorbs bursts of originated frames before rf_tx_queue */
+extern send_queue_t g_send_queue;
 
 /* ─── Forward declarations ───────────────────────────────────────────────── */
 
@@ -832,12 +836,6 @@ static void cli_enqueue_chan_chat(uint16_t channel_id, const char *msg, size_t l
         return;
     }
 
-    if (!rivr_policy_allow_origination(PKT_CHAT, tb_millis())) {
-        printf("@DROP origination throttled type=CHAT\r\n");
-        fflush(stdout);
-        return;
-    }
-
     payload[0] = (uint8_t)(channel_id & 0xFFu);
     payload[1] = (uint8_t)((channel_id >> 8) & 0xFFu);
     memcpy(&payload[2], msg, len);
@@ -873,8 +871,8 @@ static void cli_enqueue_chan_chat(uint16_t channel_id, const char *msg, size_t l
     req.toa_us = RF_TOA_APPROX_US(req.len);
     req.due_ms = 0u;
 
-    if (!rb_try_push(&rf_tx_queue, &req)) {
-        ESP_LOGW(TAG, "TX queue full — chan chat frame dropped");
+    if (!send_queue_enqueue(&g_send_queue, req.data, req.len, req.toa_us, tb_millis())) {
+        ESP_LOGW(TAG, "TX send_queue full — chan chat frame dropped");
         printf("ERR: TX queue full\r\n");
         fflush(stdout);
         return;
@@ -891,17 +889,6 @@ static void cli_enqueue_chat(const char *msg, size_t len)
 {
     if (len > (size_t)CLI_MSG_MAX) {
         printf("ERR: message too long (max %u bytes)\r\n", (unsigned)CLI_MSG_MAX);
-        fflush(stdout);
-        return;
-    }
-
-    /* ── Origination policy gate ────────────────────────────────────────── *
-     * Rivr policy decides ALLOW/DENY only.  Frame construction and queuing  *
-     * are unchanged — they only run when the gate passes.                   *
-     * The throttle window is OTA-adjustable via "@PARAMS chat=<ms>".        *
-     * ─────────────────────────────────────────────────────────────────────  */
-    if (!rivr_policy_allow_origination(PKT_CHAT, tb_millis())) {
-        printf("@DROP origination throttled type=CHAT\r\n");
         fflush(stdout);
         return;
     }
@@ -938,8 +925,8 @@ static void cli_enqueue_chat(const char *msg, size_t len)
     req.toa_us = RF_TOA_APPROX_US(req.len);
     req.due_ms = 0u;    /* send as soon as duty-cycle permits */
 
-    if (!rb_try_push(&rf_tx_queue, &req)) {
-        ESP_LOGW(TAG, "TX queue full — chat frame dropped");
+    if (!send_queue_enqueue(&g_send_queue, req.data, req.len, req.toa_us, tb_millis())) {
+        ESP_LOGW(TAG, "TX send_queue full — chat frame dropped");
         printf("ERR: TX queue full\r\n");
         fflush(stdout);
         return;

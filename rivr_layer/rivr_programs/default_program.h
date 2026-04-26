@@ -145,7 +145,7 @@
 #  endif
 #endif
 
-#define RIVR_PARAM_CHAT_THROTTLE_MS      2000UL  /**< PKT_CHAT throttle window, ms       */
+#define RIVR_PARAM_CHAT_THROTTLE_MS      2000UL  /**< PKT_CHAT relay throttle window, ms (origination is ungated — send_queue + duty-cycle handle rate) */
 #define RIVR_PARAM_DATA_THROTTLE_MS      2000UL  /**< PKT_DATA throttle window, ms       */
 #define RIVR_PARAM_DUTY_PERCENT             10u  /**< TX duty-cycle limit 1–10 %         */
 
