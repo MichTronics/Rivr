@@ -39,10 +39,11 @@
 #define OW_READ_TAIL_US      55u   /**< Read slot: guard time after sample   */
 
 /* 1-Wire ROM commands */
-#define OW_CMD_SKIP_ROM     0xCCu
-#define OW_CMD_CONVERT_T    0x44u
+#define OW_CMD_SKIP_ROM      0xCCu
+#define OW_CMD_CONVERT_T     0x44u
 #define OW_CMD_READ_SCRATCH  0xBEu
 #define OW_CMD_WRITE_SCRATCH 0x4Eu
+#define OW_CMD_COPY_SCRATCH  0x48u
 
 /* Configuration register bits[6:5] select resolution:
  *   0x1F = 9-bit  (0.5°C   steps, ~94 ms)   ← common EEPROM default
@@ -177,7 +178,13 @@ void ds18b20_init(ds18b20_ctx_t *ctx, int gpio)
         ow_write_byte(gpio, 0x00u);           /* TH alarm — not used */
         ow_write_byte(gpio, 0x00u);           /* TL alarm — not used */
         ow_write_byte(gpio, DS18B20_CFG_12BIT);
-        ESP_LOGI(TAG, "init GPIO%d — resolution set to 12-bit", gpio);
+        /* Persist config to EEPROM — survives sensor power-cycles. */
+        if (ow_reset(gpio)) {
+            ow_write_byte(gpio, OW_CMD_SKIP_ROM);
+            ow_write_byte(gpio, OW_CMD_COPY_SCRATCH);
+            esp_rom_delay_us(10000u);   /* ≥10 ms EEPROM write time */
+        }
+        ESP_LOGI(TAG, "init GPIO%d — 12-bit resolution set and saved to EEPROM", gpio);
     } else {
         ESP_LOGW(TAG, "init GPIO%d — no device detected", gpio);
     }
@@ -193,6 +200,27 @@ bool ds18b20_start_conversion(ds18b20_ctx_t *ctx, uint32_t now_ms)
         ESP_LOGW(TAG, "no device on GPIO%d", ctx->gpio);
         ctx->state = DS18B20_STATE_ERROR;
         return false;
+    }
+
+    /* If the sensor was absent at init() time (or power-cycled independently
+     * of the ESP32), its EEPROM may still hold a lower-resolution default.
+     * Re-program and persist 12-bit before the first successful conversion. */
+    if (!ctx->valid) {
+        ow_write_byte(ctx->gpio, OW_CMD_SKIP_ROM);
+        ow_write_byte(ctx->gpio, OW_CMD_WRITE_SCRATCH);
+        ow_write_byte(ctx->gpio, 0x00u);
+        ow_write_byte(ctx->gpio, 0x00u);
+        ow_write_byte(ctx->gpio, DS18B20_CFG_12BIT);
+        if (ow_reset(ctx->gpio)) {
+            ow_write_byte(ctx->gpio, OW_CMD_SKIP_ROM);
+            ow_write_byte(ctx->gpio, OW_CMD_COPY_SCRATCH);
+            esp_rom_delay_us(10000u);   /* ≥10 ms EEPROM write time */
+            ESP_LOGI(TAG, "GPIO%d — 12-bit resolution programmed and saved", ctx->gpio);
+        }
+        if (!ow_reset(ctx->gpio)) {
+            ctx->state = DS18B20_STATE_ERROR;
+            return false;
+        }
     }
 
     /* Skip ROM (broadcast to all devices on bus) + start conversion */
