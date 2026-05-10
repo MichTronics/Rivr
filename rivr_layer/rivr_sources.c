@@ -32,6 +32,9 @@
  * to BLE/USB, and detects cross-transport duplicates before routing sees them. */
 #include "../firmware_core/rivr_bus/rivr_bus.h"
 #include "../firmware_core/rivr_bus/rivr_bus_types.h"
+#if RIVR_ENABLE_RML
+#  include "../firmware_core/rml/rml.h"
+#endif
 
 #define TAG "RIVR_SRC"
 
@@ -120,6 +123,95 @@ static bool source_handle_ble_origination(const rf_rx_frame_t *frame, uint32_t n
     return true;
 }
 
+#if RIVR_ENABLE_RML
+static bool source_handle_rml_frame(const rf_rx_frame_t *frame, uint32_t now_ms)
+{
+    if (!frame || frame->len == 0u || frame->data[0] != RML_MAGIC) {
+        return false;
+    }
+
+    rml_message_t msg;
+    if (!rml_decode(frame->data, frame->len, &msg)) {
+        RIVR_LOGW("RML", "drop decode len=%u", (unsigned)frame->len);
+        return true;
+    }
+
+    uint32_t now_s = now_ms / 1000u;
+    uint16_t local16 = (uint16_t)(g_my_node_id & 0xFFFFu);
+    rml_context_t ctx = {
+        .local_id = local16,
+        .now_s = now_s,
+        .now_ms = now_ms,
+        .has_time = true,
+        .hard_radio_ok = true,
+        .duty_cycle_blocked = false,
+        .duty_budget_us = UINT32_MAX,
+        .duty_remaining_us = UINT32_MAX,
+        .rssi_dbm = frame->rssi_dbm,
+        .snr_db = frame->snr_db,
+#if RIVR_ROLE_GATEWAY
+        .local_role = RML_ROLE_GATEWAY,
+#elif RIVR_BUILD_REPEATER
+        .local_role = RML_ROLE_REPEATER,
+#elif RIVR_ROLE_CLIENT
+        .local_role = RML_ROLE_CLIENT,
+#else
+        .local_role = RML_ROLE_UNKNOWN,
+#endif
+        .queue_depth = (uint8_t)rb_available(&rf_tx_queue),
+        .queue_capacity = (uint8_t)rf_tx_queue.cap,
+        .queue_pressure = 0u,
+        .route_hint_valid = (msg.target_id != 0u),
+        .target_hint_useful = (msg.target_id != 0u && msg.target_id != local16),
+    };
+
+    if (msg.sender_id == local16) {
+        return true;
+    }
+
+    rml_policy_decision_t decision = rml_policy_decide(&msg, &ctx);
+    if (!decision.accept) {
+        return true;
+    }
+
+    if (decision.relay) {
+        rml_message_t relay = msg;
+        if (decision.forward_reconstructed) {
+            rml_thread_entry_t entry;
+            if (rml_thread_cache_get(msg.sender_id, msg.thread_id, &entry) &&
+                entry.payload_len <= RML_MAX_PAYLOAD) {
+                relay.type = RML_TYPE_THREAD_SYNC;
+                relay.prev_id = entry.prev_id;
+                relay.payload_len = entry.payload_len;
+                memcpy(relay.payload, entry.payload, entry.payload_len);
+                relay.supersedes = true;
+            } else {
+                RIVR_LOGW("RML", "thread compression unavailable msg=%08lx",
+                          (unsigned long)msg.msg_id);
+                return true;
+            }
+        }
+        relay.ttl = decision.next_ttl;
+
+        rf_tx_request_t req;
+        memset(&req, 0, sizeof(req));
+        size_t enc_len = 0u;
+        if (rml_encode(&relay, req.data, sizeof(req.data), &enc_len) && enc_len <= UINT8_MAX) {
+            req.len = (uint8_t)enc_len;
+            req.toa_us = RF_TOA_APPROX_US(req.len);
+            req.due_ms = decision.delay_ms == 0u ? 0u : now_ms + (uint32_t)decision.delay_ms;
+            if (!rb_try_push(&rf_tx_queue, &req)) {
+                RIVR_LOGW("RML", "relay queue full msg=%08lx", (unsigned long)msg.msg_id);
+            }
+        } else {
+            RIVR_LOGW("RML", "relay encode fail msg=%08lx", (unsigned long)msg.msg_id);
+        }
+    }
+
+    return true;
+}
+#endif /* RIVR_ENABLE_RML */
+
 /* ── ACK / retry state (owned here; exposed via rivr_embed.h extern) ──────── */
 retry_table_t g_retry_table;   /* zero-initialised in BSS */
 
@@ -146,6 +238,12 @@ uint32_t sources_rf_rx_drain(void)
         if (source_handle_ble_origination(&frame, now_ms)) {
             continue;
         }
+
+#if RIVR_ENABLE_RML
+        if (source_handle_rml_frame(&frame, now_ms)) {
+            continue;
+        }
+#endif
 
         /* ── 1. Validate: must be a RIVR binary protocol packet ── */
         rivr_pkt_hdr_t pkt_hdr;

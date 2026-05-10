@@ -97,6 +97,9 @@
 #ifndef FEATURE_DISPLAY
 #  define FEATURE_DISPLAY 1
 #endif
+#ifndef PIN_VEXT_EN
+#  define PIN_VEXT_EN 36   /* Active-low P-FET gate; drive LOW to power OLED */
+#endif
 
 /* ── DS18B20 OneWire temperature sensor ─────────────────────────────────── */
 /* GPIO4 is free on the expansion header (no SPI/I²C/UART conflict).        */

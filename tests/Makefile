@@ -183,6 +183,31 @@ BEACON_SRCS := \
 BEACON_BIN   := beacon_test
 BEACON_FLAGS := $(COMMON_FLAGS)
 
+# RML TEST
+#   Tests the compact Rivr Message Layer codec, policy, seen cache, and helpers.
+RML_SRCS := \
+	$(FW)/rml/rml.c \
+	$(FW)/rml/rml_codec.c \
+	$(FW)/rml/rml_policy.c \
+	$(FW)/rml/rml_seen.c \
+	$(FW)/rml/rml_stats.c \
+	$(FW)/rivr_log.c \
+	test_rml.c
+
+RML_SIM_SRCS := \
+	$(FW)/rml/rml.c \
+	$(FW)/rml/rml_codec.c \
+	$(FW)/rml/rml_policy.c \
+	$(FW)/rml/rml_seen.c \
+	$(FW)/rml/rml_stats.c \
+	$(FW)/rivr_log.c \
+	rml_sim.c \
+	test_rml_sim.c
+
+RML_BIN   := rml_test
+RML_SIM_BIN := rml_sim_test
+RML_FLAGS := $(COMMON_FLAGS) -DRIVR_ENABLE_RML=1
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ASAN / UBSAN (P3.2)
 #   Rebuilds the four main suites + P2 suites with AddressSanitizer and
@@ -193,10 +218,10 @@ ASAN_FLAGS := $(COMMON_FLAGS) -O1 -g -fsanitize=address,undefined \
               -fno-omit-frame-pointer
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all test acceptance recovery replay dutycycle policy ota retry fabric beacon channel asan fuzz_harness clean \
+.PHONY: all test acceptance recovery replay dutycycle policy ota retry fabric beacon channel rml asan fuzz_harness clean \
         size_check update_baselines determinism_check variant_check
 
-all: acceptance recovery replay dutycycle policy ota retry fabric beacon channel
+all: acceptance recovery replay dutycycle policy ota retry fabric beacon channel rml
 
 # `make test` is the CI-friendly single-command alias.
 test: all
@@ -257,6 +282,16 @@ beacon: $(BEACON_BIN)
 	@echo
 $(BEACON_BIN): $(BEACON_SRCS)
 	$(CC) $(BEACON_FLAGS) $^ -o $@
+rml: $(RML_BIN) $(RML_SIM_BIN)
+	@echo "── Running RML tests ─────────────────────────────────────────"
+	./$(RML_BIN)
+	@echo "── Running RML sim tests ─────────────────────────────────────"
+	./$(RML_SIM_BIN)
+	@echo
+$(RML_BIN): $(RML_SRCS)
+	$(CC) $(RML_FLAGS) $^ -o $@
+$(RML_SIM_BIN): $(RML_SIM_SRCS)
+	$(CC) $(RML_FLAGS) $^ -o $@
 channel: $(CHAN_BIN)
 	@echo "── Running channel messaging tests ───────────────────────────"
 	./$(CHAN_BIN)
@@ -293,6 +328,12 @@ asan:
 	@echo
 	@echo "── ASan/UBSan: channel ───────────────────────────────────────────"
 	$(CC) $(ASAN_FLAGS) $(CHAN_SRCS) -o channel_asan && ./channel_asan
+	@echo
+	@echo "── ASan/UBSan: rml ───────────────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) -DRIVR_ENABLE_RML=1 $(RML_SRCS) -o rml_asan && ./rml_asan
+	@echo
+	@echo "── ASan/UBSan: rml sim ───────────────────────────────────────────"
+	$(CC) $(ASAN_FLAGS) -DRIVR_ENABLE_RML=1 $(RML_SIM_SRCS) -o rml_sim_asan && ./rml_sim_asan
 	@echo
 $(POL_BIN): $(POL_SRCS)
 	$(CC) $(POL_FLAGS) $^ -o $@
@@ -332,7 +373,7 @@ $(FUZZ_BIN): $(FUZZ_SRCS)
 	$(CC) $(FUZZ_FLAGS) $^ -o $@
 
 clean:
-	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FABRIC_BIN) $(BEACON_BIN) $(CHAN_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan fabric_asan beacon_asan channel_asan
+	rm -f $(ACC_BIN) $(REC_BIN) $(REP_BIN) $(DC_BIN) $(POL_BIN) $(OTA_BIN) $(RETRY_BIN) $(FABRIC_BIN) $(BEACON_BIN) $(CHAN_BIN) $(RML_BIN) $(RML_SIM_BIN) $(FUZZ_BIN) acceptance_asan recovery_asan replay_asan dutycycle_asan policy_asan ota_asan retry_asan fabric_asan beacon_asan channel_asan rml_asan rml_sim_asan
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Release workflow utilities

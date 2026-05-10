@@ -64,6 +64,12 @@ idf_component_register(
         "rivr_bus/rivr_bus.c"
         "rivr_bus/rivr_dup_cache.c"
         "rivr_bus/rivr_dispatch.c"
+        # Rivr Message Layer (optional via compile-time RIVR_ENABLE_RML)
+        "rml/rml.c"
+        "rml/rml_codec.c"
+        "rml/rml_policy.c"
+        "rml/rml_seen.c"
+        "rml/rml_stats.c"
         # Transport interface adapters
         "iface/rivr_iface_lora.c"
         "iface/rivr_iface_ble.c"

@@ -419,6 +419,7 @@ The biggest remaining work is in advanced adaptive radio behavior, full opportun
 | Wire protocol | [docs/en/protocol.md](docs/en/protocol.md) | — |
 | Application services | [docs/en/services.md](docs/en/services.md) | — |
 | **Companion app BLE** | [docs/en/companion-ble-integration.md](docs/en/companion-ble-integration.md) | — |
+| **RML (Message Layer)** | [docs/RML.md](docs/RML.md) | — |
 | Release process | [docs/releasing.md](docs/releasing.md) | — |
 
 ---

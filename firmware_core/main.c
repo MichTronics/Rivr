@@ -78,6 +78,9 @@
 #include "firmware_core/rivr_bus/rivr_bus.h"      /* Multi-transport packet bus              */
 #include "firmware_core/iface/rivr_iface_usb.h"   /* USB-UART SLIP bridge (stub when USB=0) */
 #include "firmware_core/sensors.h"                 /* DS18B20 + AM2302 sensor subsystem     */
+#if RIVR_ENABLE_RML
+#  include "firmware_core/rml/rml.h"
+#endif
 
 #define TAG              "MAIN"
 #define TX_DRAIN_LIMIT   2u     /**< Max TX frames sent per main-loop iteration */
@@ -660,6 +663,9 @@ static void rivr_subsystems_init(void)
 {
     rivr_policy_init();   /* load compiled-in defaults into g_policy_params */
     rivr_fabric_init();
+#if RIVR_ENABLE_RML
+    rml_init();
+#endif
     rivr_embed_init();
     rivr_bus_init();      /* zero dup-cache, log transport init */
 }

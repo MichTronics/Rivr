@@ -48,6 +48,7 @@
  *   RIVR_FEATURE_DEBUG_LOG   1 = verbose ESP_LOG* output (costs flash)
  *   RIVR_FEATURE_OTA         1 = PKT_PROG_PUSH OTA reception enabled
  *   RIVR_FEATURE_CRYPTO      1 = Ed25519 OTA sig verification
+ *   RIVR_ENABLE_RML          1 = optional Rivr Message Layer RX/relay path
  *
  * SIMULATION
  *   RIVR_SIM_MODE            1 = no SPI/radio, inject synthetic frames
@@ -454,6 +455,16 @@
  */
 #ifndef RIVR_FEATURE_OTA
 #  define RIVR_FEATURE_OTA  1
+#endif
+
+/**
+ * @brief Enable the optional Rivr Message Layer above the legacy transport.
+ *
+ * Disabled by default so existing Rivr packet handling and mesh behavior stay
+ * unchanged unless firmware is built with -DRIVR_ENABLE_RML=1.
+ */
+#ifndef RIVR_ENABLE_RML
+#  define RIVR_ENABLE_RML  0
 #endif
 
 /**
