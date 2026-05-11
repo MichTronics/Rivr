@@ -47,6 +47,8 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "rivr_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdatomic.h>
