@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.2.1 — 2026-05-11
+
+### Fixed
+
+- **Heltec LoRa32 V4 OLED blank screen**: `PIN_VEXT_EN` was documented in
+  `variants/heltec_lora32_v4/config.h` comments but never `#define`'d.
+  `platform_init()` never drove GPIO 36 low, leaving the OLED peripheral rail
+  unpowered. Fixed by adding `#define PIN_VEXT_EN 36` to the variant config.
+
+- **SX1276 driver build error** (`client_lilygo_lora32_v21`): `vTaskDelay` and
+  `pdMS_TO_TICKS` caused implicit-declaration errors because `radio_sx1276.c`
+  was missing `freertos/FreeRTOS.h` and `freertos/task.h` includes.
+
+### Versions
+
+| Component | Version |
+|-----------|---------|
+| Firmware (`RIVR_VERSION_STR`) | `0.2.1` |
+
+---
+
 ## v0.2.0 — 2026-04-26
 
 ### Added

@@ -39,7 +39,7 @@ extern "C" {
 #  define RIVR_BUILD_ENV "unknown"
 #endif
 
-#define RIVR_VERSION_STR "0.2.0"
+#define RIVR_VERSION_STR "0.2.1"
 
 /* Compiler version string — always available via pre-defined macros */
 #define RIVR_COMPILER_VER \
